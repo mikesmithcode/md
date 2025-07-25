@@ -1,0 +1,15 @@
+# your_md_project/Cargo.toml
+[workspace]
+members = [
+    "md_sim",
+    "md_viz",
+]
+resolver = "2"
+
+[workspace.dependencies]
+rand = "0.8"
+three-d = "0.18"
+cgmath = "0.18"
+
+
+

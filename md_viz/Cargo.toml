@@ -1,0 +1,23 @@
+# md_viz/Cargo.toml
+[package]
+name = "md_viz"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+md_sim = { path = "../md_sim" }
+three-d = { workspace = true } 
+cgmath = { workspace = true }  
+
+# --- Examples ---
+[[example]]
+name = "view_sphere" 
+path = "../examples/view_sphere.rs"
+
+[[example]]
+name = "triangle" 
+path = "../examples/triangle.rs"
+
+[[example]]
+name = "setup" 
+path = "../examples/setup.rs"
