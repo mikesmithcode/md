@@ -5,9 +5,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-md_sim = { path = "../md_sim" }
 three-d = { workspace = true } 
 cgmath = { workspace = true }  
+md_sim = { path = "../md_sim"}
 
 # --- Examples ---
 [[example]]

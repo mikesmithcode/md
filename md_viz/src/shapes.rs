@@ -1,35 +1,30 @@
 use three_d::*;
-use cgmath::{Matrix3, SquareMatrix};
 use three_d::core::Mat4;
 
 // Import the Particle and Simulation from your simulation crate
-use md_sim::{Particle, Simulation};
+use md_sim::{Particle};
 
-// For shared mutable state within the render loop
-use std::rc::Rc;
-use std::cell::RefCell;
-
-
-
+//------------------------------------------------------------------------------
+// Simulation box
+//------------------------------------------------------------------------------
+///Define simulation box
 pub struct SimBox{
     pub on: bool, // turn simulation box on or off
-    pub sim_box_size: [f64; 3], // dimensions [x, y, z]
-}
-
-impl SimBox{
-    pub fn sim_box_size_f32(&self)->[f32;3]{
-        [self.sim_box_size[0] as f32, self.sim_box_size[1] as f32, self.sim_box_size[2] as f32]
-    }
-      
+    pub thickness: f32,
+    pub sim_box_size: [f32; 3], // dimensions [x, y, z]
 }
 
 /// Creates and returns a `Gm<BoundingBox, PhysicalMaterial>` representing the simulation box.
-pub fn create_simbox(context: &Context, sim_box: SimBox) -> Option<Gm<BoundingBox, PhysicalMaterial>> {
+pub fn create_simbox(context: &Context, sim_box: &SimBox) -> Option<Gm<BoundingBox, PhysicalMaterial>> {
     let mut cube_mesh = CpuMesh::cube();
-    let sim_box_size = sim_box.sim_box_size_f32();
+    let sim_box_size = sim_box.sim_box_size;
     // Scale the mesh to the desired simulation box size
-    cube_mesh.transform(Mat4::from_nonuniform_scale(sim_box_size[0], sim_box_size[1], sim_box_size[2]));
-    let thickness:f32 = 2.1;
+    let _ = cube_mesh.transform(Mat4::from_nonuniform_scale(
+        sim_box_size[0] / 2.0, 
+        sim_box_size[1] / 2.0, 
+        sim_box_size[2] / 2.0,
+    ));
+    let thickness:f32 = sim_box.thickness;
 
     if sim_box.on{
         Some(Gm::new(
@@ -53,38 +48,92 @@ pub fn create_simbox(context: &Context, sim_box: SimBox) -> Option<Gm<BoundingBo
 }
 
 
+//---------------------------------------------------------------------------------------
+// Create particles
+//---------------------------------------------------------------------------------------
 
+//---------------------------------------------------------------------------------------
+// Spheres
+//---------------------------------------------------------------------------------------
 
-/// Creates and returns a `Gm<Mesh, PhysicalMaterial>` representing a particle.
-pub fn create_sphere(context: &three_d::Context, particle: &Particle) -> Gm<Mesh, PhysicalMaterial> {
-    let mut sphere = Gm::new(
-        Mesh::new(&context, &CpuMesh::sphere(16)),
-        PhysicalMaterial::new_transparent(
-            &context,
-            &CpuMaterial {
-                albedo: Srgba {
-                    r: particle.color.r,
-                    g: particle.color.g,
-                    b: particle.color.b,
-                    a: particle.color.a,
-                },
-                ..Default::default()
-            },
-        ),
-    );
-    // Initial transformation will be updated per frame
-    sphere.set_transformation(
-        Mat4::from_translation(
-            vec3(
-                particle.position.x as f32,
-                particle.position.y as f32,
-                particle.position.z as f32,
-            )
-        ) * Mat4::from_scale(particle.radius as f32),
-    );
-    sphere
+// Your renamed struct
+pub struct SphereTemplate {
+    // We'll store the base CpuMesh and the shared material here.
+    pub cpu_mesh: CpuMesh,
+    pub material: PhysicalMaterial,
 }
 
+// Your renamed setup function
+pub fn create_sphere_template(context: &three_d::Context) -> SphereTemplate {
+    // Create the base sphere CpuMesh once.
+    let cpu_mesh = CpuMesh::sphere(16);
+
+    // Create a single, shared material.
+    let material = PhysicalMaterial::new_transparent(
+        &context,
+        &CpuMaterial {
+            albedo: Srgba { r: 255, g: 255, b: 255, a: 255 },
+            ..Default::default()
+        },
+    );
+
+    SphereTemplate {
+        cpu_mesh,
+        material,
+    }
+}
+
+// Assuming `particles` is a slice of your `Particle` structs.
+pub fn draw(
+    target: &mut RenderTarget,
+    context: &three_d::Context,
+    sphere_template: &SphereTemplate,
+    particles: &[Particle],
+    camera: &Camera,
+    light: &DirectionalLight,
+) {
+    // Collect transformations for all particles.
+    let transformations: Vec<Mat4> = particles
+        .iter()
+        .map(|p| {
+            Mat4::from_translation(vec3(p.position.x as f32, p.position.y as f32, p.position.z as f32))
+            * Mat4::from_scale(p.radius as f32)
+        })
+        .collect();
+
+    //Collect colours for all particles
+    let colors: Vec<Srgba> = particles
+        .iter()
+        .map(|p| p.color)
+        .collect();
+
+    // Create the Instances struct using the collected data.
+    let instances = Instances {
+        transformations,
+        texture_transformations: None, // Not needed
+        colors: Some(colors),
+    };
+
+    // Create the Gm<InstancedMesh, PhysicalMaterial> for this frame to render
+    let instanced_mesh = Gm::new(
+        InstancedMesh::new(
+            &context,
+            &instances,
+            &sphere_template.cpu_mesh,
+        ),
+        sphere_template.material.clone(),
+    );
+
+     // Render the single instanced mesh using the provided target.
+    target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0)); // Clear the screen first
+    target.render(camera, &[&instanced_mesh], &[light]);
+}
+
+//-----------------------------------------------------------------------------------
+// Triangle
+//-----------------------------------------------------------------------------------
+
+/// Creates a triangle mesh
 pub fn create_triangle(context: &Context) -> Gm<Mesh, ColorMaterial> {
     // Create a CPU-side mesh consisting of a single colored triangle
     let positions = vec![
