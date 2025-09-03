@@ -3,14 +3,16 @@ pub mod shapes;
 pub mod objects;
 
 // Re-export common types and functions for easier consumption
-// You might want to be more selective about what you re-export.
 pub use crate::scene::*;
 pub use crate::objects::*;
 pub use crate::shapes::*;
 
-use three_d::FrameOutput;
-use md_sim::simulation::Simulation;
 
+//use three_d::FrameOutput;
+/*use md_sim::simulation::Simulation;
+
+
+///Used to display live animation whilst running simulation.
 pub fn run_animated_simulation(mut simulation: Simulation, scene_settings: SceneSetup) {
 
     let window = create_window(scene_settings.window_size);
@@ -26,8 +28,9 @@ pub fn run_animated_simulation(mut simulation: Simulation, scene_settings: Scene
         }
 
         let particles_data = simulation.get_particles();
-        scene.update_and_render_frame(&mut frame_input, &particles_data);
+        scene.render(&mut frame_input, &particles_data);
 
         FrameOutput::default()
     });
 }
+*/

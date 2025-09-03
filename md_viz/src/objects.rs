@@ -1,9 +1,11 @@
 use three_d::*;
 use three_d::core::Mat4;
 
-use crate::SceneSetup;
+use three_d::Srgba;
 
 
+
+use crate::scene::SceneSetup;
 
 /*-----------------------------------------------------------------------------------
 Fns to create objects
@@ -19,6 +21,8 @@ pub fn create_window(window_size:(u32,u32)) -> Window {
     .unwrap()
 }
 
+
+
 /// Enum used to switch between different camera perspectives.
 #[derive(Debug, Clone, Copy)]
 pub enum Perspective {
@@ -28,6 +32,7 @@ pub enum Perspective {
 
 pub struct CameraSettings {
     pub perspective: Perspective, // or Perspective::Orthographic
+    pub dt_frame: f32,
 }
 
 /// Creates and returns a `Camera` instance.
@@ -88,9 +93,23 @@ pub fn create_control(camera: &Camera) -> OrbitControl {
 
 
 /// Creates and returns a `DirectionalLight`.
-pub fn create_light(context: &Context) -> DirectionalLight {
-    DirectionalLight::new(context, 1.0, Srgba::WHITE, vec3(0.0, -1.0, -1.0))
+/// 
+/// If your contect is a HeadlessContect you need to dereference value
+/// as you send it. ie *context.
+
+pub fn create_directional_light(context: &Context)->DirectionalLight{
+    DirectionalLight::new(
+        context,
+        1.0,
+        Srgba::WHITE,
+        vec3(0.0, -1.0, -0.5),
+    )
 }
+
+pub fn create_ambient_light(context: &Context)->AmbientLight{
+    AmbientLight::new(context, 0.1, Srgba::WHITE)
+}
+
 
 /// Creates and returns `Axes` for visualization.
 pub fn create_axes(context: &Context, sim_box_max: f32) -> Axes {

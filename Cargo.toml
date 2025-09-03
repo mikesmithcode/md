@@ -1,6 +1,6 @@
 # your_md_project/Cargo.toml
 [workspace]
-members = [
+members = [ "md_core",
     "md_sim",
     "md_viz",
 ]
@@ -8,8 +8,9 @@ resolver = "2"
 
 [workspace.dependencies]
 rand = "0.8"
-three-d = "0.18"
-cgmath = "0.18"
+three-d = { version = "0.18.2", features = ["headless"] }
+glam = "0.27"
+image = "0.24"
 
 
 

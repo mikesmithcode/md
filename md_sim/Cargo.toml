@@ -7,5 +7,5 @@ edition = "2021"
 [dependencies] 
 rand = { workspace = true }   
 three-d = { workspace = true }  
-cgmath = { workspace = true }
-
+glam = { workspace = true }
+md_core = { path = "../md_core" }

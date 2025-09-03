@@ -1,140 +1,133 @@
 use three_d::*;
+use three_d::window::HeadlessContext;
+use three_d::Srgba;
+use crate::objects::{create_camera, create_ambient_light, create_directional_light};
 
-// For shared mutable state within the render loop
-use crate::shapes::SphereTemplate;
-pub use crate::shapes::{create_simbox, create_sphere_template, SimBox};
-pub use crate::objects::{create_window, create_camera, create_control, create_light, create_axes, CameraSettings};
+use crate::shapes::{SphereTemplate, SimBox, create_simbox};
+use md_core::particle::Particle;
+use crate::objects::CameraSettings;
+use image::{ImageBuffer, Rgba};
 
-use md_sim::{Particle, Simulation};
-
-
-/*-----------------------------------------------------------------------------------
-Create structs
--------------------------------------------------------------------------------------*/
-///## SceneSetup:
-/// top-level struct that defines all the visualization options such as window_size
-/// It uses various lower level structs to define certain features.
-/// If you want to view output from your simulation this will need to be defined in your
-/// example script.
 pub struct SceneSetup {
     pub camera: CameraSettings,
     pub window_size: (u32, u32),
     pub sim_box: SimBox,
 }
-
-
-/// The main structure encapsulating the 3D scene elements.
 pub struct Scene {
-    pub context: Context,
-    pub camera: Camera,
-    pub control: OrbitControl,
-    pub simbox: Option<Gm<BoundingBox, PhysicalMaterial>>,
-    pub light: DirectionalLight,
-    pub sphere_template: Option<SphereTemplate>,
-    pub sphere_mesh: Option<Gm<InstancedMesh, PhysicalMaterial>>,
-}
-
-
-fn max_f32(arr: &[f32; 3]) -> f32 {
-    arr.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
+    context: HeadlessContext,
+    camera: Camera,
+    ambient_light: AmbientLight,
+    directional_light: DirectionalLight,
+    simbox: Option<Gm<BoundingBox, PhysicalMaterial>>,
+    sphere_template: SphereTemplate,
+    width: u32,
+    height: u32,
+    // 🐛 Fixed: Use Option types to allow for a two-step initialization
+    color_texture: Texture2D,
+    depth_texture: DepthTexture2D,
 }
 
 impl Scene {
-    /// Creates a new `Scene` instance. context: &Context, initial_viewport: Viewport,
-    pub fn new(window: &Window,  scene_settings: SceneSetup)->Self{
+    pub fn new(scene_settings: &SceneSetup) -> Scene {
+        let context = HeadlessContext::new().expect("Failed to create context");
+        let width = scene_settings.window_size.0;
+        let height = scene_settings.window_size.1;
+
+        let viewport = Viewport::new_at_origo(width, height);
+        let camera = create_camera(viewport, scene_settings);
+        let ambient_light = create_ambient_light(&context);
+        let directional_light = create_directional_light(&context);
         
-        let sim_box_size = scene_settings.sim_box.sim_box_size;
-        let context = window.gl();
-        let initial_viewport = window.viewport();
-        let camera = create_camera(initial_viewport, &scene_settings);
-        let control = create_control(&camera);
         let simbox = create_simbox(&context, &scene_settings.sim_box);
-        let light = create_light(&context);
-
-        let sphere_template = Some(create_sphere_template(&context));
-
-        Self {
-            context: context.clone(),
-            camera,
-            control,
-            simbox,
-            light,
-            sphere_template,
-            sphere_mesh: None,
-        }
-    }
-
-    /// Updates the scene state and renders a single frame.
-    /// Takes the current state of particles from the simulation.
-    pub fn update_and_render_frame(&mut self, frame_input: &mut FrameInput, particles: &[Particle]) -> FrameOutput { 
-        self.camera.set_viewport(frame_input.viewport);
-
-        let Scene {
-            ref mut camera,
-            ref mut control,
-            ..
-        } = *self;
-
-        control.handle_events(camera, &mut frame_input.events);
-
-        let screen = frame_input.screen();
-
-        screen
-            .clear(ClearState::color_and_depth(0.8, 0.8, 0.8, 1.0, 1.0));
-
-        // Check if the sphere template exists and if there are spheres to render
-        if let Some(template) = &self.sphere_template {
-            if !particles.is_empty() {
-                let transformations: Vec<Mat4> = particles
-                    .iter()
-                    .map(|p| {
-                        Mat4::from_translation(vec3(p.position.x as f32, p.position.y as f32, p.position.z as f32))
-                        * Mat4::from_scale(p.radius as f32)
-                    })
-                    .collect();
-                let colors: Vec<Srgba> = particles
-                    .iter()
-                    .map(|p| p.color)
-                    .collect();
-
-                let instances = Instances {
-                    transformations,
-                    texture_transformations: None,
-                    colors: Some(colors),
-                };
-
-                self.sphere_mesh = Some(Gm::new(
-                    InstancedMesh::new(&self.context, &instances, &template.cpu_mesh),
-                    template.material.clone(),
-                ));
-            }else{
-                self.sphere_mesh = None;
-            }
-        }
-
-        //-------------------------------------------------------------------------------------------
-        // Add all the objects to the frame to be rendered
-        //-------------------------------------------------------------------------------------------
-
-        let mut main_scene_objects: Vec<&dyn Object> = Vec::with_capacity(particles.len()+1);
-
-        // Add the simulation box if it exists
-        if let Some(sim_box_ref) = &self.simbox {
-            main_scene_objects.push(sim_box_ref);
-        }
+        let sphere_template = SphereTemplate::new(&context);
         
-        // Add the spheres if they exist
-        if let Some(sphere_mesh_ref) = &self.sphere_mesh {
-            main_scene_objects.push(sphere_mesh_ref);
-        }
+        let color_texture = Texture2D::new_empty::<[u8; 4]>(
+            &context, width, height, Interpolation::Nearest, Interpolation::Nearest, None, Wrapping::ClampToEdge, Wrapping::ClampToEdge,
+        );
         
-        screen.render(
-            &self.camera,
-            main_scene_objects,
-            &[&self.light],
+        let depth_texture = DepthTexture2D::new::<f32>(
+            &context, width, height, Wrapping::ClampToEdge, Wrapping::ClampToEdge,
         );
 
-        FrameOutput::default()
+        Self {
+            context,
+            camera,
+            ambient_light,
+            directional_light,
+            simbox,
+            sphere_template,
+            width,
+            height,
+            // Initialize with None
+            color_texture,
+            depth_texture,
+        }
     }
 
+    pub fn save_img(&mut self,particles: &[Particle],filename: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Build RenderTarget temporarily
+    let img_target = RenderTarget::new(
+        self.color_texture.as_color_target(None),
+        self.depth_texture.as_depth_target(),
+    );
+
+    // Build instancing data from particles
+    let transformations: Vec<Mat4> = particles
+        .iter()
+        .map(|p| {
+            Mat4::from_translation(vec3(
+                p.position.x as f32,
+                p.position.y as f32,
+                p.position.z as f32,
+            )) * Mat4::from_scale(p.radius as f32)
+        })
+        .collect();
+
+    let colors: Vec<Srgba> = particles.iter().map(|p| p.color).collect();
+
+    let instances = Instances {
+        transformations,
+        texture_transformations: None,
+        colors: Some(colors),
+    };
+
+    let mut mat = PhysicalMaterial::default();
+    mat.albedo = Srgba::WHITE;   // base color neutral
+    mat.metallic = 0.0;
+    mat.roughness = 1.0;
+    // One instanced sphere mesh for all particles
+    let sphere_mesh = Gm::new(
+        InstancedMesh::new(&*self.context, &instances, &self.sphere_template.cpu_mesh), mat
+    );
+
+    // Collect objects to render
+    let mut objects: Vec<&dyn three_d::Object> = Vec::new();
+    if let Some(simbox) = &self.simbox {
+        objects.push(simbox);
+    }
+    objects.push(&sphere_mesh);
+
+    // Render
+    img_target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
+    img_target.render(&self.camera, objects, &[&self.ambient_light, &self.directional_light]);
+
+    // Read back pixels
+    let pixels: Vec<u8> = img_target.read_color::<[u8;4]>().into_iter().flatten().collect();
+
+    // Create ImageBuffer
+    let image_buffer: ImageBuffer<Rgba<u8>, _> =
+        ImageBuffer::from_raw(self.width, self.height, pixels)
+            .ok_or("Failed to create ImageBuffer")?;
+
+    // Ensure output folder exists
+    if let Some(parent) = std::path::Path::new(filename).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    // Save image
+    image_buffer.save(filename)?;
+    println!("Saved image to {:?}", std::fs::canonicalize(filename)?);
+
+    Ok(())
+}
 }
