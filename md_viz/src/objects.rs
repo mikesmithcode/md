@@ -96,7 +96,6 @@ pub fn create_control(camera: &Camera) -> OrbitControl {
 /// 
 /// If your contect is a HeadlessContect you need to dereference value
 /// as you send it. ie *context.
-
 pub fn create_directional_light(context: &Context)->DirectionalLight{
     DirectionalLight::new(
         context,

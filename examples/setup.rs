@@ -32,6 +32,8 @@ pub fn main() {
     let mut simulation = Simulation::new(sim_settings.clone());
     let mut scene: Scene = Scene::new(&scene_settings);
 
+    scene.init_headless(&scene_settings);
+
     //run_animated_simulation(simulation, scene_settings);
     
     println!("Starting headless simulation...");
