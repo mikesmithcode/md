@@ -8,6 +8,7 @@ use md_core::particle::Particle;
 // Simulation box
 //------------------------------------------------------------------------------
 ///Define simulation box
+#[derive(Debug, Clone, Copy)]
 pub struct SimBox{
     pub on: bool, // turn simulation box on or off
     pub thickness: f32,
@@ -15,7 +16,7 @@ pub struct SimBox{
 }
 
 /// Creates and returns a `Gm<BoundingBox, PhysicalMaterial>` representing the simulation box.
-pub fn create_simbox(context: &Context, sim_box: &SimBox) -> Option<Gm<BoundingBox, PhysicalMaterial>> {
+pub fn create_simbox(context: &Context, sim_box: SimBox) -> Option<Gm<BoundingBox, PhysicalMaterial>> {
     let mut cube_mesh = CpuMesh::cube();
     let sim_box_size = sim_box.sim_box_size;
     // Scale the mesh to the desired simulation box size

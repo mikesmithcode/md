@@ -8,6 +8,7 @@ edition = "2021"
 three-d = { workspace = true } 
 glam = { workspace = true } 
 image = {workspace = true} 
+winit = {workspace = true}
 md_core = { path = "../md_core" }
 md_sim = { path = "../md_sim" }
 

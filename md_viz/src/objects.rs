@@ -30,13 +30,14 @@ pub enum Perspective {
     Orthographic,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct CameraSettings {
     pub perspective: Perspective, // or Perspective::Orthographic
     pub dt_frame: f32,
 }
 
 /// Creates and returns a `Camera` instance.
-pub fn create_camera(viewport: Viewport, scene_settings: &SceneSetup) -> Camera {
+pub fn create_camera(viewport: Viewport, scene_settings: SceneSetup) -> Camera {
 
     match scene_settings.camera.perspective {
         Perspective::Perspective => create_perspective_camera(viewport, scene_settings.sim_box.sim_box_size),

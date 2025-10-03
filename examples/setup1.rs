@@ -74,9 +74,13 @@ pub fn main() {
     for i in sim_settings.start..sim_settings.stop {
         simulation.update();
         if i % 1000 == 0 {
+            let update_particles = simulation.particles;
             //scene.display(&simulation.get_particles())
-            //scene.save_img(&simulation.get_particles(), &format!("test/test{:04}.png", i)).expect("Error saving img"); 
-            scene.display(&simulation.get_particles()).expect("Error updating display");
+            expect("Error saving img"); 
+            scene.update_particles(update_particles.clone())
+            scene.save_img(&simulation.get_particles(), &format!("test/test{:04}.png", i)).
+            //scene.display(&simulation.get_particles()).expect("Error updating display");
+
             sleep(Duration::from_millis(100));
         }
         println!("Headless simulation finished");

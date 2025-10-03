@@ -987,6 +987,7 @@ dependencies = [
  "md_core",
  "md_sim",
  "three-d",
+ "winit 0.28.7",
 ]
 
 [[package]]
