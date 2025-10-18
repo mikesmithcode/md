@@ -1,9 +1,12 @@
     use std::io::Error;
 
-use three_d::*;
+    use three_d::*;
+    
     use three_d::window::HeadlessContext;
-    use three_d::Srgba;
-    use winit::event_loop::EventLoop;
+    use three_d::{Srgba, Context, FrameInputGenerator};
+    //use three_d_winit::*;
+    use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder};
+    use winit::window::Window as WinitWindow;
     use crate::objects::{create_camera, create_ambient_light, create_directional_light};
 
     use crate::scene;
@@ -18,38 +21,43 @@ use three_d::*;
     Headless(HeadlessContext),
     Windowed(Window),
 }
-#[derive(Debug, Clone, Copy)]
+
+
+#[derive(Debug, Clone)]
 pub struct SceneSetup {
     pub camera: CameraSettings,
     pub window_size: (u32, u32),
-    pub sim_box: SimBox,
+    pub sim_box_setup: SimBox,
+    pub img_filepath: String,
 }
+
+
 pub struct Scene {
     settings: SceneSetup,
+
     // Core scene data - shared between contexts
     camera: Camera,
     ambient_light: Option<AmbientLight>,
     directional_light: Option<DirectionalLight>,
     simbox: Option<Gm<BoundingBox, PhysicalMaterial>>,
     sphere_template: Option<SphereTemplate>,
-    width: u32,
-    height: u32,
     
-    // Separate contexts
+    // Windowed resources
+    windowed_context: Option<WindowedContext>,
+    frame_input_generator: Option<FrameInputGenerator>,
+    
+    // Headless resources
     headless_context: Option<HeadlessContext>,
-    window: Option<Window>,
-    
-    // Headless rendering resources
     color_texture: Option<Texture2D>,
     depth_texture: Option<DepthTexture2D>,
 }
 
 impl Scene {
     pub fn new(scene_settings: SceneSetup) -> Scene {
-        let width = scene_settings.window_size.0;
-        let height = scene_settings.window_size.1;
+        let frame_width = scene_settings.window_size.0;
+        let frame_height = scene_settings.window_size.1;
 
-        let viewport = Viewport::new_at_origo(width, height);
+        let viewport = Viewport::new_at_origo(frame_width, frame_height);
         let camera = create_camera(viewport, scene_settings.clone());
         
         Self {
@@ -57,12 +65,11 @@ impl Scene {
             camera,
             ambient_light: None,
             directional_light: None,
-            simbox: None,
+            simbox: None, 
             sphere_template: None,
-            width,
-            height,
             headless_context: None,
-            window: None,
+            windowed_context: None,
+            frame_input_generator: None,
             color_texture: None,
             depth_texture: None,
         }
@@ -83,32 +90,27 @@ impl Scene {
     ///Initialise headless rendering
     pub fn init_headless(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let context = HeadlessContext::new()?;
-        self._init_resources(&context, self.settings.sim_box);        
+        self._init_resources(&context, self.settings.sim_box_setup);        
         self.headless_context = Some(context);
         Ok(())
     }
-    
-    // Initialize window rendering
-    pub fn init_window(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let window = Window::new(WindowSettings {
-            title: "Particle Simulation".to_string(),
-            max_size: Some((self.width, self.height)),
-            ..Default::default()
-        })?;
 
-        let context = window.gl();
-        self._init_resources(&context, self.settings.sim_box);
-        self.window = Some(window);
+    pub fn init_window(&mut self, winit_window: WinitWindow) -> Result<(), Box<dyn std::error::Error>> {
+         let context = WindowedContext::from_winit_window(&winit_window, SurfaceSettings::default())?; 
+         self.windowed_context = Some(context);
+         self.frame_input_generator  = Some(three_d::FrameInputGenerator::from_winit_window(&winit_window));
+
         Ok(())
     }
     
-
     // Display to window (requires window context)
-    pub fn display(&self, particles: &[Particle]) -> Result<(), Box<dyn std::error::Error>>{
-        let window = self.window.as_ref().expect("window failed");
-        let context = window.gl();
+    pub fn display(&mut self, particles: &[Particle]) -> Result<(), Box<dyn std::error::Error>>{
+        let generator = self.frame_input_generator.as_mut().expect("Frame generator not setup. Call init_window");
+        let context = self.windowed_context.as_ref().expect("Context requires window to be initialised");
+        let frame_input = generator.generate(context);
+
         // Render directly to the window
-        let mut target = RenderTarget::screen(&context, self.width, self.height);
+        let mut target = RenderTarget::screen(&context, frame_input.window_width, frame_input.window_height);
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
         self.render_particles_to_target(&context, &mut target, particles)?;
         Ok(())
@@ -116,16 +118,20 @@ impl Scene {
 
     // Save image (requires headless context)
     pub fn save_img(&mut self, particles: &[Particle], filename: &str) -> Result<(), Error> {
+
+        let frame_width = self.settings.window_size.0;
+        let frame_height = self.settings.window_size.1;
+
         let headless_context = self.headless_context.as_ref()
             .expect("Headless context not initialised");
 
         let mut color_texture = Texture2D::new_empty::<[u8; 4]>(
-            &headless_context, self.width, self.height, Interpolation::Nearest, Interpolation::Nearest,
+            &headless_context, frame_width, frame_height, Interpolation::Nearest, Interpolation::Nearest,
             None, Wrapping::ClampToEdge, Wrapping::ClampToEdge,
         );
         
         let mut depth_texture = DepthTexture2D::new::<f32>(
-            &headless_context, self.width, self.height, Wrapping::ClampToEdge, Wrapping::ClampToEdge,
+            &headless_context, frame_width, frame_height, Wrapping::ClampToEdge, Wrapping::ClampToEdge,
         );
 
         let mut img_target = {
@@ -142,7 +148,7 @@ impl Scene {
         let pixels: Vec<u8> = img_target.read_color::<[u8;4]>().into_iter().flatten().collect();
         
         let image_buffer: ImageBuffer<Rgba<u8>, _> =
-            ImageBuffer::from_raw(self.width, self.height, pixels)
+            ImageBuffer::from_raw(frame_width, frame_height, pixels)
                 .expect("Failed to create ImageBuffer");
 
         if let Some(parent) = std::path::Path::new(filename).parent() {
@@ -153,6 +159,7 @@ impl Scene {
         println!("Saved image to {:?}", std::fs::canonicalize(filename)?);
         Ok(())
     }
+
 
     // Shared rendering logic that works with any context
     fn render_particles_to_target(
@@ -213,4 +220,9 @@ impl Scene {
 
         Ok(())
     }
+
+   
+
 }
+
+

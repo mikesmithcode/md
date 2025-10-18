@@ -2,11 +2,13 @@ use glam::DVec3;
 use three_d::core::Srgba;
 use std::time::Duration;
 use std::thread::sleep;
+use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder,};
 
 // Import everything from your md_viz library
 use md_viz::scene::{Scene, SceneSetup};
 use md_viz::objects::{Perspective, CameraSettings};
 use md_viz::shapes::SimBox;
+use md_viz::video::assemble_pngs_to_mp4;
 use md_sim::Simulation;
 use md_sim::simulation::SimulationSettings;
 
@@ -23,6 +25,7 @@ pub fn main() {
         sim_box_size: [5.0, 5.0, 5.0],
         start: 0,
         stop: 10000,
+        sim_filename: String::from("test/test"),
     };
 
     let scene_settings = SceneSetup {
@@ -35,7 +38,8 @@ pub fn main() {
                 on: true,
                 thickness: 0.1,
                 sim_box_size: sim_settings.sim_box_size_f32(),
-            },  
+            },
+            img_filepath: sim_settings.sim_filename.clone(),   
     };
 
     //Initialise simulation with bunch of particles
@@ -65,24 +69,8 @@ pub fn main() {
 
 
     let mut simulation = Simulation::new(particles, sim_settings.clone());
+
+    let event_loop = EventLoop::new();
     let mut scene: Scene = Scene::new(scene_settings.clone());
-
-    //scene.init_headless();
-    scene.init_window();
-    
-    println!("Starting headless simulation...");
-    for i in sim_settings.start..sim_settings.stop {
-        simulation.update();
-        if i % 1000 == 0 {
-            let update_particles = simulation.particles;
-            //scene.display(&simulation.get_particles())
-            expect("Error saving img"); 
-            scene.update_particles(update_particles.clone())
-            scene.save_img(&simulation.get_particles(), &format!("test/test{:04}.png", i)).
-            //scene.display(&simulation.get_particles()).expect("Error updating display");
-
-            sleep(Duration::from_millis(100));
-        }
-        println!("Headless simulation finished");
-    }
+    scene.create_window(&event_loop);
 }

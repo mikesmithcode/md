@@ -25,3 +25,7 @@ path = "../examples/triangle.rs"
 [[example]]
 name = "setup" 
 path = "../examples/setup.rs"
+
+[[example]]
+name = "window" 
+path = "../examples/window.rs"

@@ -1,18 +1,21 @@
 use md_core::particle::Particle;
+use crate::file_io::*;
 
 use glam::DVec3;
 use three_d::core::Srgba;
+use serde::{Serialize, Deserialize};
 
 ///---------------------------------------------------------
 ///Simulation settings 
 /// 
 /// These are parameters that affect the running of the simulation such as time step.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimulationSettings{
     pub dt: f64,
     pub sim_box_size: [f64; 3], 
     pub start: usize,
     pub stop: usize,
+    pub sim_filename: String,
 }
 
 impl SimulationSettings{
@@ -36,7 +39,9 @@ impl Simulation {
     /// creates initial position of particles.
     pub fn new(particles: Vec<Particle>, settings: SimulationSettings)-> Self {
         ///Simulation takes ownership or particles and a cloned copy of simulation settings
+        save_metadata(settings.sim_filename.clone(), settings.clone());
         Self { particles, settings}
+        
     }
 
     ///advance the simulation one step
@@ -51,5 +56,6 @@ impl Simulation {
     pub fn get_particles(&self) -> &Vec<Particle>{
         &self.particles
     }
+
 }
 
