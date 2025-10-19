@@ -2,7 +2,8 @@ use glam::DVec3;
 use three_d::core::Srgba;
 use std::time::Duration;
 use std::thread::sleep;
-use winit::{event::{Event, WindowEvent}, event_loop::{ControlFlow, EventLoop}, window::WindowBuilder,};
+use winit::event_loop::EventLoop;
+use winit::window::WindowBuilder;
 
 // Import everything from your md_viz library
 use md_viz::scene::{Scene, SceneSetup};
@@ -23,10 +24,10 @@ pub fn main() {
     // Define simulation
     //---------------------------------------------------------------
     let sim_settings = SimulationSettings{
-        dt: 0.0001,
+        dt: 0.01,
         sim_box_size: [5.0, 5.0, 5.0],
         start: 0,
-        stop: 10000,
+        stop: 1000,
         sim_filename: String::from("test/test"),
     };
 
@@ -94,13 +95,13 @@ pub fn main() {
     // Create the winit window
     let window = WindowBuilder::new()
         .with_title("Simulation")
-        .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
+        .with_inner_size(winit::dpi::LogicalSize::new(scene_settings.window_size.0, scene_settings.window_size.1))
         .build(&event_loop).expect("New window failed");
     
     let mut scene: Scene = Scene::new(scene_settings.clone());
     
-    //scene.init_headless();
-    scene.init_window(window);
+    //let _ = scene.init_headless();
+    let _ = scene.init_window(window);
 
     //--------------------------------------------------------------
     // Start simulation loop
@@ -109,17 +110,18 @@ pub fn main() {
     // img to file. simulation.update() to advance the simulation by one step
     //--------------------------------------------------------------
     
-    println!("Starting headless simulation...");
+    println!("Simulation started...");
     for i in sim_settings.start..sim_settings.stop {
         simulation.update();
-        if i % 1000 == 0 {
-            //scene.display(&simulation.get_particles())
-            //scene.save_img(&simulation.get_particles(), &format!("{}/{:04}.png",scene_settings.img_filepath, i)).expect("Error saving img"); 
+        if i % 100 == 0 {
+            
+            //scene.save_img(&simulation.get_particles(), &scene_settings.img_filepath, i).expect("Error saving img"); 
             scene.display(&simulation.get_particles()).expect("Error updating display");
             sleep(Duration::from_millis(100));
         }
-        println!("Headless simulation finished");
+        
     }
+    println!("Simulation finished");
 
     // Assemble images into movie as required upon completion using ffmpeg.
     //assemble_pngs_to_mp4(scene_settings.img_filepath).expect("Video writing failed");

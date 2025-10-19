@@ -72,9 +72,6 @@ fn create_orthographic_camera(viewport: Viewport, sim_box_size: [f32;3]) -> Came
     
     let sim_box_max = sim_box_size.iter().cloned().fold(0.0, f32::max);
     let camera_height_units = 2.*sim_box_max; // Adjust height to
-    println!("Camera height units: {}", camera_height_units);
-    println!("Viewport: {:?}", viewport);
-    println!("Sim box size: {:?}", sim_box_size);
     
     Camera::new_orthographic(
         viewport,

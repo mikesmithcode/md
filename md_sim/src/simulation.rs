@@ -1,8 +1,8 @@
 use md_core::particle::Particle;
 use crate::file_io::*;
 
-use glam::DVec3;
-use three_d::core::Srgba;
+//use glam::DVec3;
+//use three_d::core::Srgba;
 use serde::{Serialize, Deserialize};
 
 ///---------------------------------------------------------
