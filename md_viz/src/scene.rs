@@ -1,4 +1,5 @@
     use std::io::ErrorKind;
+    use winit::event_loop::EventLoop;
 
     use three_d::*;  
     use three_d::window::HeadlessContext;
@@ -43,6 +44,7 @@ pub struct Scene {
     
         
     // Windowed resources
+    window_id: Option<winit::window::WindowId>,
     windowed_context: Option<WindowedContext>,
     windowed_resources: Option<GpuResources>,
     frame_input_generator: Option<FrameInputGenerator>,
@@ -50,8 +52,6 @@ pub struct Scene {
     // Headless resources
     headless_context: Option<HeadlessContext>,
     headless_resources: Option<GpuResources>,
-    color_texture: Option<Texture2D>,
-    depth_texture: Option<DepthTexture2D>,
 }
 
 impl Scene {
@@ -65,13 +65,12 @@ impl Scene {
         Self {
             settings: scene_settings,
             camera,
+            window_id: None,
             windowed_context: None,
             windowed_resources: None,
             headless_context: None,
             headless_resources: None,            
             frame_input_generator: None,
-            color_texture: None,
-            depth_texture: None,
         }
     }
 
@@ -102,6 +101,7 @@ impl Scene {
          self.windowed_resources =  Some(self._init_gpu_resources(&context, self.settings.sim_box_setup)?);
          self.windowed_context = Some(context);
          self.frame_input_generator  = Some(three_d::FrameInputGenerator::from_winit_window(&winit_window));
+         self.window_id = Some(winit_window.id());
         Ok(())
     }
     
@@ -119,6 +119,35 @@ impl Scene {
         let _=context.swap_buffers()?;
         Ok(())
     }
+
+    pub fn poll_and_process_events(
+        &mut self, 
+        event_loop: &mut EventLoop<()>
+        ) -> bool { // Returns true if the mouse was clicked
+    
+        let mut mouse_clicked = false;
+
+        event_loop.poll_events(|event, _| {
+            // --- Winit Boilerplate Encapsulated Here ---
+            if let Event::WindowEvent { event, window_id: event_window_id, .. } = event {
+                // Filter events to ensure they belong to this window
+                if event_window_id == self.window_id {
+                    if let WindowEvent::MouseInput { state, button, .. } = event {
+                        if state == ElementState::Pressed {
+                            println!("{:?} clicked!", button);
+                            mouse_clicked = true;
+                        }
+                    }
+                    // Handle other events like resizing or closing here...
+                    if let WindowEvent::CloseRequested = event {
+                        // Note: You must handle exiting the main loop outside this closure
+                    }
+                }
+            }
+        });
+
+        mouse_clicked
+}
 
     // Save image (requires headless context)
     pub fn save_img(&mut self, particles: &[Particle], filestub: &str, index: usize) -> Result<(), Box<dyn std::error::Error>> {

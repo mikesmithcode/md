@@ -27,12 +27,12 @@ pub fn main() {
         dt: 0.01,
         sim_box_size: [5.0, 5.0, 5.0],
         start: 0,
-        stop: 1000,
+        stop: 10000,
         sim_filename: String::from("test/test"),
     };
 
     //----------------------------------------------------------------
-    //  Define grpahics
+    //  Define graphics
     //----------------------------------------------------------------
 
     let scene_settings = SceneSetup {
@@ -114,9 +114,9 @@ pub fn main() {
     for i in sim_settings.start..sim_settings.stop {
         simulation.update();
         if i % 100 == 0 {
-            
-            //scene.save_img(&simulation.get_particles(), &scene_settings.img_filepath, i).expect("Error saving img"); 
             scene.display(&simulation.get_particles()).expect("Error updating display");
+            //scene.save_img(&simulation.get_particles(), &scene_settings.img_filepath, i).expect("Error saving img"); 
+            
             sleep(Duration::from_millis(100));
         }
         
