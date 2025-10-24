@@ -100,7 +100,7 @@ pub fn main() {
     
     let mut scene: Scene = Scene::new(scene_settings.clone());
     
-    //let _ = scene.init_headless();
+    let _ = scene.init_headless();
     let _ = scene.init_window(window);
 
     //--------------------------------------------------------------
@@ -115,7 +115,7 @@ pub fn main() {
         simulation.update();
         if i % 100 == 0 {
             scene.display(&simulation.get_particles()).expect("Error updating display");
-            //scene.save_img(&simulation.get_particles(), &scene_settings.img_filepath, i).expect("Error saving img"); 
+            scene.save_img(&simulation.get_particles(), &scene_settings.img_filepath, i).expect("Error saving img"); 
             
             sleep(Duration::from_millis(100));
         }
