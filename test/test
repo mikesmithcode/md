@@ -6,6 +6,6 @@
     5.0
   ],
   "start": 0,
-  "stop": 5000,
+  "stop": 15000,
   "sim_filename": "test/test"
 }

@@ -27,7 +27,7 @@ pub fn main() {
         dt: 0.01,
         sim_box_size: [5.0, 5.0, 5.0],
         start: 0,
-        stop: 5000,
+        stop: 15000,
         sim_filename: String::from("test/test"),
     };
 
