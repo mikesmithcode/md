@@ -1,9 +1,9 @@
     use std::io::ErrorKind;
     use winit::event_loop::EventLoop;
 
-    use three_d::*;  
-    use three_d::window::HeadlessContext;
-    use three_d::{Srgba, Context, FrameInputGenerator};
+    use three_d::window::{HeadlessContext, Window};
+    use three_d::{Srgba, FrameInputGenerator};
+    use three_d::context::Context;
     //use three_d_winit::*;
     use winit::window::Window as WinitWindow;
     use crate::objects::{create_camera, create_ambient_light, create_directional_light};
@@ -16,9 +16,18 @@
 
     // Add this enum to support both headless and windowed contexts
     pub enum RenderContext {
-    Headless(HeadlessContext),
-    Windowed(Window),
-}
+        Headless(HeadlessContext),
+        Windowed(Window),
+    }
+
+    impl RenderContext {
+        pub fn as_context(&self) -> &Context {
+            match self {
+                RenderContext::Windowed(ctx) => &ctx.gl(),
+                RenderContext::Headless(ctx) => ctx,
+            }
+        }
+    }
 
 
 #[derive(Debug, Clone)]
@@ -37,21 +46,16 @@ struct GpuResources {
 }
 
 pub struct Scene {
-    settings: SceneSetup,
-    camera: Camera,
+    pub settings: SceneSetup,
+    pub camera_window: Option<Camera>,
+    pub camera_img: Option<Camera>,
 
     // Core scene data - shared between contexts
+    pub window_id: Option<winit::window::WindowId>,
+    pub context: Option<RenderContext>,
+    pub gpu_resources: Option<GpuResources>,
+    pub frame_input_generator: Option<FrameInputGenerator>,
     
-        
-    // Windowed resources
-    window_id: Option<winit::window::WindowId>,
-    windowed_context: Option<WindowedContext>,
-    windowed_resources: Option<GpuResources>,
-    frame_input_generator: Option<FrameInputGenerator>,
-    
-    // Headless resources
-    headless_context: Option<HeadlessContext>,
-    headless_resources: Option<GpuResources>,
 }
 
 impl Scene {
@@ -60,23 +64,26 @@ impl Scene {
         let frame_height = scene_settings.window_size.1;
 
         let viewport = Viewport::new_at_origo(frame_width, frame_height);
-        let camera = create_camera(viewport, scene_settings.clone());
+        let camera_window = Some(create_camera(viewport, scene_settings.clone()));
+        let camera_img = Some(create_camera(viewport, scene_settings.clone()));
         
+
         Self {
             settings: scene_settings,
-            camera,
+            camera_window: camera_window,
+            camera_img: camera_img,
             window_id: None,
-            windowed_context: None,
-            windowed_resources: None,
-            headless_context: None,
-            headless_resources: None,            
+            context: None,
+            gpu_resources: None,     
             frame_input_generator: None,
         }
     }
 
     /// Private helper to create all GPU-backed resources (lights, simbox, templates).
     /// This is called only if the resources haven't been created yet.
-    fn _init_gpu_resources(&mut self, context: &Context, sim_box_settings: SimBox)-> Result<GpuResources, Box<dyn std::error::Error>> {
+    fn _init_gpu_resources(&mut self, context: &RenderContext, sim_box_settings: SimBox)-> Result<GpuResources, Box<dyn std::error::Error>> {
+        let context = context.as_context();
+
         let resources = GpuResources { 
                 ambient_light: Some(create_ambient_light(context)), 
                 directional_light: Some(create_directional_light(context)), 
@@ -89,14 +96,14 @@ impl Scene {
 
     ///Initialise headless rendering
     pub fn init_headless(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let context = HeadlessContext::new()?;
-        self.headless_resources = Some(self._init_gpu_resources(&context, self.settings.sim_box_setup)?);
-        self.headless_context = Some(context);
+        let context = RenderContext::Headless(HeadlessContext::new()?);
+        self.gpu_resources = Some(self._init_gpu_resources(&context, self.settings.sim_box_setup)?);
+        self.context = Some(context);
         Ok(())
     }
 
     //Setup code for a live window
-    pub fn init_window(&mut self, winit_window: WinitWindow) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn init_graphics(&mut self, winit_window: Option<WinitWindow>, filestub: Option<String>) -> Result<(), Box<dyn std::error::Error>> {
          let context = WindowedContext::from_winit_window(&winit_window, SurfaceSettings::default())?; 
          self.windowed_resources =  Some(self._init_gpu_resources(&context, self.settings.sim_box_setup)?);
          self.windowed_context = Some(context);
