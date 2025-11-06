@@ -3,7 +3,7 @@ use three_d::core::Srgba;
 use std::time::Duration;
 use std::thread::sleep;
 use winit::event_loop::EventLoop;
-use winit::window::WindowBuilder;
+
 
 // Import everything from your md_viz library
 use md_viz::scene::{Scene, SceneSetup};
@@ -27,12 +27,12 @@ pub fn main() {
         dt: 0.01,
         sim_box_size: [5.0, 5.0, 5.0],
         start: 0,
-        stop: 10000,
+        stop: 1000,
         sim_filename: String::from("test/test"),
     };
 
     //----------------------------------------------------------------
-    //  Define graphics
+    //  Define grpahics
     //----------------------------------------------------------------
 
     let scene_settings = SceneSetup {
@@ -79,6 +79,8 @@ pub fn main() {
     ];
 
 
+
+
     //-------------------------------------------------------------
     //  Create simulation
     //--------------------------------------------------------------
@@ -87,21 +89,17 @@ pub fn main() {
     //--------------------------------------------------------------
     //  Initialise all graphics
     //
-    //  event_loop and window + scene.init_window() for live display
+    //  event_loop and scene.init_window(&event_loop) for live display
     //  scene.init_headless() for images saved to file
-    //  Can run both, either or none as required
+    //  Can run either or none as required. Can't seem to get both to run at present
     //--------------------------------------------------------------
-    let event_loop = EventLoop::new();
-    // Create the winit window
-    let window = WindowBuilder::new()
-        .with_title("Simulation")
-        .with_inner_size(winit::dpi::LogicalSize::new(scene_settings.window_size.0, scene_settings.window_size.1))
-        .build(&event_loop).expect("New window failed");
+      
     
     let mut scene: Scene = Scene::new(scene_settings.clone());
     
     //let _ = scene.init_headless();
-    let _ = scene.init_graphics(Some(window),  Some(&scene_settings.img_filepath));
+    let event_loop = EventLoop::new(); 
+    let _ = scene.init_window(&event_loop);
 
     //--------------------------------------------------------------
     // Start simulation loop
@@ -114,9 +112,9 @@ pub fn main() {
     for i in sim_settings.start..sim_settings.stop {
         simulation.update();
         if i % 100 == 0 {
-            scene.display(&simulation.get_particles()).expect("Error updating display");
-            scene.save_img(&simulation.get_particles(), i).expect("Error saving img"); 
             
+            //scene.save_img(&simulation.get_particles(), &scene_settings.img_filepath, i).expect("Error saving img"); 
+            scene.display(&simulation.get_particles()).expect("Error updating display");
             sleep(Duration::from_millis(100));
         }
         
