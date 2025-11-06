@@ -27,7 +27,7 @@ pub fn main() {
         dt: 0.01,
         sim_box_size: [5.0, 5.0, 5.0],
         start: 0,
-        stop: 1000,
+        stop: 5000,
         sim_filename: String::from("test/test"),
     };
 
@@ -98,7 +98,7 @@ pub fn main() {
     let mut scene: Scene = Scene::new(scene_settings.clone());
     
     //let _ = scene.init_headless();
-    let event_loop = EventLoop::new(); 
+    let mut event_loop = EventLoop::new(); 
     let _ = scene.init_window(&event_loop);
 
     //--------------------------------------------------------------
@@ -114,6 +114,11 @@ pub fn main() {
         if i % 100 == 0 {
             
             //scene.save_img(&simulation.get_particles(), &scene_settings.img_filepath, i).expect("Error saving img"); 
+            if scene.poll_events(&mut event_loop) {
+                break; // exit if window close requested
+            }
+
+        scene.camera_control.update_camera(&mut scene.camera);
             scene.display(&simulation.get_particles()).expect("Error updating display");
             sleep(Duration::from_millis(100));
         }
