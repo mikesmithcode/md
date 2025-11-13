@@ -28,5 +28,14 @@ Then in your simulation loop you can call `scene.display()` to update the window
 
 ### How are things drawn?
 
+1. an immutable reference to a Vec of Particles is passed to scene.display() or scene.save_img() and then internally to self.
+render_particles_to_target(). 
+
+2. Each Particle struct has the Draw trait implemented for it which has a .draw() method. This takes a mutable reference to the objects vec in Scene. It uses the primitives defined templates e.g. sphere and adds to the vec. 
+
+3. Other objects like lights and camera are also added to the objects vec in Scene.
+
+4. The scene is rendered using the three_d crate.
+
 
 

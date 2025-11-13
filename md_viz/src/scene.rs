@@ -1,4 +1,5 @@
 use std::io::ErrorKind;
+use std::collections::HashMap;
 
 use three_d::*;  
 use three_d::window::HeadlessContext;
@@ -8,15 +9,18 @@ use winit::window::Window as WinitWindow;
 use winit::window::WindowBuilder;
 use winit::event_loop::EventLoop;
 use winit::platform::run_return::EventLoopExtRunReturn;
-use winit::event::{Event as WinitEvent, WindowEvent, ElementState, MouseButton};
+use winit::event::{Event as WinitEvent, WindowEvent};
 
-use crate::objects::{create_camera, create_ambient_light, create_directional_light};
-use crate::primitives::SphereTemplate;
-use crate::shapes::{SimBox, create_simbox};
-use crate::camera::CameraControl;
-use md_core::particle::Particle;
-use crate::objects::CameraSettings;
+use crate::objects::{create_ambient_light, create_directional_light};
+use crate::templates::{Geometry,SphereTemplate};
+use crate::objects::{SimBox, create_simbox};
+use crate::camera::{create_camera, CameraControl, CameraSettings};
+use md_core::particle::{self, Particle};
 use image::{ImageBuffer, Rgba};
+use crate::Draw;
+
+
+type RenderableGeometry = Gm<InstancedMesh,PhysicalMaterial>;
 
 /// Support both headless and windowed rendering
 pub enum RenderContext {
@@ -216,17 +220,89 @@ impl Scene {
         target: &mut RenderTarget, 
         particles: &[Particle]
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let transformations: Vec<Mat4> = particles.iter().map(|p| {
-            Mat4::from_translation(vec3(p.position.x as f32, p.position.y as f32, p.position.z as f32))
-            * Mat4::from_scale(p.radius as f32)
-        }).collect();
+    
+    
 
-        let colors: Vec<Srgba> = particles.iter().map(|p| p.color).collect();
+    // Collection for all the transformations and colors of particles split by geometry type
+    //according to the Geometry enum stored in Struct
+    type InstanceGroups = HashMap<Geometry, (Vec<Mat4>, Vec<Srgba>)>;
+    let mut groups: InstanceGroups = HashMap::new();
+    
+    let mut particle_geometries: Vec<RenderableGeometry> = Vec::new();
 
+    //Get info about all particles storing colors and transformations by geometry type.
+    for p in particles {
+        let components = p.get_components()?; 
+        
+        //There could be multiple things to render from each particle if it is composite.
+        for component in components {
+            let (transforms, colors) = groups
+            .entry(component.template)
+            .or_insert_with(|| (Vec::new(), Vec::new()));
+            
+            transforms.push(component.transformation);
+            colors.push(component.color);
+        }      
+    }
+
+
+        for (key, (transforms, colors)) in groups {
+            let cpu_mesh: &CpuMesh = match key {
+                Geometry::Sphere => &resources.sphere_template.as_ref().ok_or("Sphere template missing")?.cpu_mesh,           
+            };
+
+            
+            let mesh = self.create_instanced_mesh(
+                context,
+                cpu_mesh,
+                transforms, // Note: The Vecs are moved out of the HashMap here
+                colors,
+            );
+
+            particle_geometries.push(mesh);
+        }
+
+
+        //This is a vec to which I will add all objects to be rendered in the scene
+        let mut objects: Vec<&dyn three_d::Object> = Vec::new();
+        
+        //Add particle mesh refs
+        for mesh in &particle_geometries {
+            objects.push(mesh);
+        }
+        
+        //Add simulation box
+        if let Some(simbox) = &resources.simbox {
+            objects.push(simbox);
+        }
+        
+        let lights: Vec<&dyn three_d::Light> = vec![
+            resources.ambient_light.as_ref().expect("Error creating ambient light"),
+            resources.directional_light.as_ref().expect("Error creating directional light")
+        ];
+
+        
+
+        target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
+        target.render(&self.camera, objects, &lights);
+        Ok(())
+    }
+
+    /// Creates a single InstancedMesh object from batched transformation and color data.
+    fn create_instanced_mesh(
+        &self,
+        context: &Context,
+        cpu_mesh_template: &CpuMesh, // This replaces the sphere_template lookup
+        transformations: Vec<Mat4>,  // Takes the batched transformations
+        colors: Vec<Srgba>,          // Takes the batched colors
+    ) -> RenderableGeometry {
+        
+        // --- YOUR REUSED CODE GOES HERE ---
+        
         let instances = Instances {
-            transformations,
+            transformations, // Used directly
             texture_transformations: None,
-            colors: Some(colors),
+            colors: Some(colors), // Used directly
         };
 
         let mut mat = PhysicalMaterial::default();
@@ -234,25 +310,14 @@ impl Scene {
         mat.metallic = 0.0;
         mat.roughness = 1.0;
 
-        let sphere_template = resources.sphere_template.as_ref().expect("Sphere template not loaded");
-        let sphere_mesh = Gm::new(
-            InstancedMesh::new(context, &instances, &sphere_template.cpu_mesh), 
-            mat
-        );
+        // This section is slightly modified to use the passed-in template (cpu_mesh_template)
+        let instanced_mesh = InstancedMesh::new(context, &instances, cpu_mesh_template); 
+        
+        // The final result
+        Gm::new(instanced_mesh, mat)
 
-        let mut objects: Vec<&dyn three_d::Object> = Vec::new();
-        if let Some(simbox) = &resources.simbox {
-            objects.push(simbox);
-        }
-        objects.push(&sphere_mesh);
-
-        let lights: Vec<&dyn three_d::Light> = vec![
-            resources.ambient_light.as_ref().expect("Error creating ambient light"),
-            resources.directional_light.as_ref().expect("Error creating directional light")
-        ];
-
-        target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
-        target.render(&self.camera, objects, &lights);
-        Ok(())
     }
 }
+
+
+

@@ -7,14 +7,15 @@ use winit::event_loop::EventLoop;
 
 // Import everything from your md_viz library
 use md_viz::scene::{Scene, SceneSetup};
-use md_viz::objects::{Perspective, CameraSettings};
-use md_viz::shapes::SimBox;
+use md_viz::camera::{Perspective, CameraSettings};
+use md_viz::objects::SimBox;
 use md_viz::video::assemble_pngs_to_mp4;
 use md_sim::Simulation;
 use md_sim::simulation::SimulationSettings;
 
 // Import the Particle and Simulation from your simulation crate
 use md_core::particle::Particle;
+use md_viz::draw_particles::Draw;
 
 
 

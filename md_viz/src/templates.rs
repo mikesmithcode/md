@@ -4,6 +4,17 @@ use three_d::core::Mat4;
 // Import the Particle and Simulation from your simulation crate
 use md_core::particle::Particle;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Geometry{
+    Sphere,
+}
+
+pub struct ParticleInstanceData{
+    pub template: Geometry,
+    pub transformation: Mat4,
+    pub color:Srgba, 
+}
+
 ///--------------------------------------------------------------------------------------
 /// There are 3 basic primitives from which we draw everything else
 /// Spheres, Triangles, Cuboids
@@ -83,4 +94,58 @@ impl SphereTemplate{
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0)); // Clear the screen first
         target.render(camera, &[&instanced_mesh], &[light]);
     }
+}
+
+
+//-----------------------------------------------------------------------------------
+// Triangle
+//-----------------------------------------------------------------------------------
+
+/// Creates a triangle mesh
+pub fn create_triangle(context: &Context) -> Gm<Mesh, ColorMaterial> {
+    // Create a CPU-side mesh consisting of a single colored triangle
+    let positions = vec![
+        vec3(0.5, -0.5, 0.0),  // bottom right
+        vec3(-0.5, -0.5, 0.0), // bottom left
+        vec3(0.0, 0.5, 0.0),   // top
+    ];
+    let colors = vec![
+        Srgba::RED,   // bottom right
+        Srgba::GREEN, // bottom left
+        Srgba::BLUE,  // top
+    ];
+    let cpu_mesh = CpuMesh {
+        positions: Positions::F32(positions),
+        colors: Some(colors),
+        ..Default::default()
+    };
+
+    Gm::new(Mesh::new(&context, &cpu_mesh), ColorMaterial::default())
+}
+
+
+//-----------------------------------------------------------------------------------
+// Box
+//-----------------------------------------------------------------------------------
+
+/// Creates a box
+pub fn create_box(context: &Context) -> Gm<Mesh, ColorMaterial> {
+    // Create a CPU-side mesh consisting of a single colored triangle
+    let positions = vec![
+        vec3(0.5, -0.5, 0.0),  // bottom right
+        vec3(-0.5, -0.5, 0.0), // bottom left
+        vec3(0.0, 0.5, 0.0),   // top
+    ];
+    let colors = vec![
+        Srgba::RED,   // bottom right
+        Srgba::GREEN, // bottom left
+        Srgba::BLUE,  // top
+    ];
+    let cpu_mesh = CpuMesh {
+        positions: Positions::F32(positions),
+        colors: Some(colors),
+        ..Default::default()
+    };
+
+    Gm::new(Mesh::new(&context, &cpu_mesh), ColorMaterial::default())
 }

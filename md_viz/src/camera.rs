@@ -1,6 +1,78 @@
 use three_d::{Camera, Vector3};
 use three_d::InnerSpace;
+use three_d::*;
+
 use winit::event::{WindowEvent, MouseButton, ElementState, MouseScrollDelta};
+use crate::scene::SceneSetup;
+
+
+
+/// Enum used to switch between different camera perspectives.
+#[derive(Debug, Clone, Copy)]
+pub enum Perspective {
+    Perspective,
+    Orthographic,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct CameraSettings {
+    pub perspective: Perspective, // or Perspective::Orthographic
+    pub window_dt: f64,
+    pub headless_dt: f64,
+}
+
+/// Creates and returns a `Camera` instance.
+pub fn create_camera(viewport: Viewport, scene_settings: SceneSetup) -> Camera {
+
+    match scene_settings.camera.perspective {
+        Perspective::Perspective => create_perspective_camera(viewport, scene_settings.sim_box_setup.sim_box_size),
+        Perspective::Orthographic => create_orthographic_camera(viewport, scene_settings.sim_box_setup.sim_box_size),
+    }
+
+    
+}
+
+///Create a camera that has perspective. 
+/// 
+/// This is useful for viewing and rotating around a 3D scene
+fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Camera {
+    
+    Camera::new_perspective(
+        viewport, 
+        vec3(0.0, 0.0, sim_box_size[2]*5.0), // Camera position adjusted for a larger box
+        vec3(0.0, 0.0, 0.0), // Look at the center of the simulation box
+        vec3(0.0, 1.0, 0.0), // Up direction
+        degrees(45.0),
+        0.1,
+        100000.0,
+    )
+}
+
+///Create a camera with orthographic view point
+/// 
+/// This has no perspective. Can be useful if you want to view a 2D simulation or
+/// 3D with no changes in apparent size with depth.
+fn create_orthographic_camera(viewport: Viewport, sim_box_size: [f32;3]) -> Camera {
+    
+    let sim_box_max = sim_box_size.iter().cloned().fold(0.0, f32::max);
+    let camera_height_units = 2.*sim_box_max; // Adjust height to
+    
+    Camera::new_orthographic(
+        viewport,
+        vec3(0.0, 0.0, sim_box_size[2]*0.25), // Eye position
+        vec3(0.0, 0.0, 0.0), // Target position
+        vec3(0.0, 1.0, 0.0), // Up direction
+        camera_height_units,
+        -1000.0,
+        1000.0,
+    )
+}
+  
+
+/// Creates and returns an `OrbitControl` for camera manipulation.
+pub fn create_control(camera: &Camera) -> OrbitControl {
+    OrbitControl::new(camera.target(), 1.0, 1000.0) // Adjusted max_distance
+}
 
 pub struct CameraControl {
     pub distance: f32,

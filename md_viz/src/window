@@ -1,0 +1,9 @@
+/// Creates and returns a `Window` instance with specified settings.
+pub fn create_window(window_size:(u32,u32)) -> Window {
+    Window::new(WindowSettings {
+        title: "MD Visualization".to_string(), // More descriptive title
+        max_size: Some(window_size),
+        ..Default::default()
+    })
+    .unwrap()
+}
