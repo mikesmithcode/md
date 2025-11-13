@@ -11,7 +11,8 @@ use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::event::{Event as WinitEvent, WindowEvent, ElementState, MouseButton};
 
 use crate::objects::{create_camera, create_ambient_light, create_directional_light};
-use crate::shapes::{SphereTemplate, SimBox, create_simbox};
+use crate::primitives::SphereTemplate;
+use crate::shapes::{SimBox, create_simbox};
 use crate::camera::CameraControl;
 use md_core::particle::Particle;
 use crate::objects::CameraSettings;
