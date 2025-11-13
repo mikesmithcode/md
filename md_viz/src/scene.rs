@@ -251,13 +251,14 @@ impl Scene {
                 Geometry::Sphere => &resources.sphere_template.as_ref().ok_or("Sphere template missing")?.cpu_mesh,           
             };
 
-            
+        
             let mesh = self.create_instanced_mesh(
                 context,
                 cpu_mesh,
                 transforms, // Note: The Vecs are moved out of the HashMap here
                 colors,
             );
+        
 
             particle_geometries.push(mesh);
         }

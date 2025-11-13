@@ -121,7 +121,7 @@ pub fn main() {
 
         scene.camera_control.update_camera(&mut scene.camera);
             scene.display(&simulation.get_particles()).expect("Error updating display");
-            sleep(Duration::from_millis(100));
+            //sleep(Duration::from_millis(100));
         }
         
     }
