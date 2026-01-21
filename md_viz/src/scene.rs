@@ -1,5 +1,5 @@
-use std::io::ErrorKind;
 use std::collections::HashMap;
+use std::path::Path;
 
 use three_d::*;  
 use three_d::window::HeadlessContext;
@@ -15,7 +15,7 @@ use crate::objects::{create_ambient_light, create_directional_light};
 use crate::templates::{Geometry,SphereTemplate};
 use crate::objects::{SimBox, create_simbox};
 use crate::camera::{create_camera, CameraControl, CameraSettings};
-use md_core::particle::{self, Particle};
+use md_core::particle::Particle;
 use image::{ImageBuffer, Rgba};
 use crate::Draw;
 
@@ -33,7 +33,6 @@ pub struct SceneSetup {
     pub camera: CameraSettings,
     pub window_size: (u32, u32),
     pub sim_box_setup: SimBox,
-    pub img_filepath: String,
 }
 
 struct GpuResources {
@@ -41,6 +40,7 @@ struct GpuResources {
     directional_light: Option<DirectionalLight>,
     simbox: Option<Gm<BoundingBox, PhysicalMaterial>>,
     sphere_template: Option<SphereTemplate>,
+pub instanced_meshes: HashMap<Geometry, RenderableGeometry>,
 }
 
 pub struct Scene {
@@ -94,6 +94,7 @@ impl Scene {
             directional_light: Some(create_directional_light(context)), 
             simbox: create_simbox(context, sim_box_settings), 
             sphere_template: Some(SphereTemplate::new(context)),
+            instanced_meshes: HashMap::new(),
         };
         Ok(resources)
     }   
@@ -167,14 +168,15 @@ impl Scene {
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
 
         let resources = self.windowed_resources.as_ref().expect("Windowed gpu resources fail");
-        self.render_particles_to_target(&context, &resources, &mut target, particles)?;
+        self.render_particles_to_target(&context, resources, &mut target, particles)?;
+
         context.swap_buffers()?;
         Ok(())
     }
 
     /// Save a headless image
-    pub fn save_img(&mut self, particles: &[Particle], filestub: &str, index: usize) -> Result<(), Box<dyn std::error::Error>> {
-        let filename = format!("{}{:04}.png", filestub, index);
+    pub fn save_img(&mut self, particles: &[Particle], output_path: &'static str, index: usize) -> Result<(), Box<dyn std::error::Error>> {
+        let filename = Path::new(output_path).join("imgs").join( format!("img{:010}.png", index));
 
         let frame_width = self.settings.window_size.0;
         let frame_height = self.settings.window_size.1;
@@ -203,12 +205,12 @@ impl Scene {
         let image_buffer: ImageBuffer<Rgba<u8>, _> = ImageBuffer::from_raw(frame_width, frame_height, pixels)
             .expect("Failed to create ImageBuffer");
 
-        if let Some(parent) = std::path::Path::new(&filename).parent() {
+        if let Some(parent) = filename.parent() {
             std::fs::create_dir_all(parent).ok();
         }
 
         image_buffer.save(&filename)?;
-        println!("Saved image to {:?}", std::fs::canonicalize(&filename)?);
+        println!("Saved image to {}", std::path::absolute(&filename)?.display());
         Ok(())
     }
 

@@ -2,7 +2,6 @@ use three_d::*;
 use three_d::core::Mat4;
 
 use three_d::Srgba;
-use crate::scene::SceneSetup;
 
 /*-----------------------------------------------------------------------------------
 Fns to create objects

@@ -1,8 +1,22 @@
+# MD simulation in Rust
+
+This is a simple molecular dynamics simulation written in Rust. It is intended as a learning project to explore Rust and scientific computing. 
+
+Since the code is a workspace there are several crates:
+- md_sim: the main simulation crate
+- md_viz: the visualization crate
+- md_utils: utility functions and types shared between crates
+
+Different simulations are setup in the examples folder. To run a particular simulation use 
+```bash
+    cargo run --example <example_name>
+```
+
 ## Graphics
 
 Visualization is handled by md_viz crate.
 
-My idea is that you should create a Scene struct which will control the graphics.
+My idea is that you should create a Scene struct which will control the graphics. This takes read only references to particles etc at intervals defined by the simulation loop. It then renders these.
 
 ```rust
     let mut scene: Scene = Scene::new(scene_settings.clone());
@@ -37,5 +51,12 @@ render_particles_to_target().
 
 4. The scene is rendered using the three_d crate.
 
+## Data input / output
 
+Eventually, I want to have a compiled program that takes a config file and an initial state file as input. The config file will define the simulation parameters. The initial state file will define the starting positions and velocities of the particles.
 
+Periodically the simulation should write output files containing the current state of the system. These files can then be used for analysis or visualization. The same file should also be usable as an input file to restart a simulation. The state file needs to store the current timestep as well as the positions and velocities of all particles. I'd like to use polars for this. 
+
+## Simulation loop
+
+sim.update()

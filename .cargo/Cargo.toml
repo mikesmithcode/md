@@ -1,0 +1,3 @@
+[build]
+# Redirects the 'target' directory to a local, non-synced folder
+target-dir = "C:/temp/rust-builds/md"

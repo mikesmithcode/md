@@ -9,23 +9,20 @@ three-d = { workspace = true }
 glam = { workspace = true } 
 image = {workspace = true} 
 winit = {workspace = true}
+tempfile = {workspace = true}
 md_core = { path = "../md_core" }
 md_sim = { path = "../md_sim" }
 
 
-# --- Examples ---
-[[example]]
-name = "view_sphere" 
-path = "../examples/view_sphere.rs"
 
 [[example]]
-name = "triangle" 
-path = "../examples/triangle.rs"
+name = "develop"
+path = "../examples/develop.rs"
 
 [[example]]
-name = "setup" 
+name = "setup"
 path = "../examples/setup.rs"
 
 [[example]]
-name = "window" 
-path = "../examples/window.rs"
+name = "create_video"
+path = "../examples/create_video.rs"

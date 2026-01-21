@@ -1,59 +1,171 @@
-use crate::simulation::*;
+use crate::{Particle, simulation::SimulationSettings};
 use serde_json;
-use std::{fs, io::Error};
+use std::{fs, io::Error, path::Path};
 use polars::prelude::*;
+use glam::DVec3;
+use three_d::core::Srgba;
 
-///Used to save the SimulationSettings struct to a metadata file.
-pub fn save_metadata(filename: String, sim_settings: SimulationSettings)-> Result<(), Error>{
-    let json = serde_json::to_string_pretty(&sim_settings).expect("Error serializing SimulationSettings");
-    fs::write(filename, json);
+/// Save simulation metadata to JSON
+pub fn save_simsettings(sim_settings: &SimulationSettings) -> Result<(), Error> {
+    let filename = format!("sim_config_{:010}.json", sim_settings.start);
+    let full_filename = Path::new(sim_settings.sim_path).join(filename);
+    let json = serde_json::to_string_pretty(sim_settings)
+        .expect("Error serializing metadata");
+    fs::write(full_filename, json)?;
     Ok(())
 }
 
-/*
-pub fn save_particledata(filename: String, particles: Vec<Particle>){
+//pub fn load_simsettings()
+
+/// Save particle snapshot to Parquet file
+/// 
+/// # Arguments
+/// * `dir_path` - Directory to save snapshots in
+/// * `timestep` - Timestep number (for filename)
+/// * `particles` - Vector of particles to save
+/// * `time` - Simulation time (stored as metadata)
+pub fn save_snapshot(
+    dir_path: &Path,
+    step: usize,
+    particles: &[Particle],
+    time: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Create directory if it doesn't exist
+    fs::create_dir_all(dir_path)?;
+
+    // Extract data from particles
+    let t: Vec<f64> = vec![time;particles.len()];
+    let ids: Vec<u64> = particles.iter().map(|p| p.id as u64).collect();
+    let x: Vec<f64> = particles.iter().map(|p| p.position.x).collect();
+    let y: Vec<f64> = particles.iter().map(|p| p.position.y).collect();
+    let z: Vec<f64> = particles.iter().map(|p| p.position.z).collect();
+    let vx: Vec<f64> = particles.iter().map(|p| p.velocity.x).collect();
+    let vy: Vec<f64> = particles.iter().map(|p| p.velocity.y).collect();
+    let vz: Vec<f64> = particles.iter().map(|p| p.velocity.z).collect();
+    let radius: Vec<f64> = particles.iter().map(|p| p.radius).collect();
+    let r: Vec<f64> = particles.iter().map(|p| p.color.r as f64).collect();
+    let g: Vec<f64> = particles.iter().map(|p| p.color.g as f64).collect();
+    let b: Vec<f64> = particles.iter().map(|p| p.color.b as f64).collect();
+
+    // Create DataFrame
     let mut df = df!(
-    "foo" => &[1, 2, 3],
-    "bar" => &[None, Some("bak"), Some("baz")],
-    )
-    .unwrap();
+        "t" => &t,
+        "id" => &ids,
+        "x" => &x,
+        "y" => &y,
+        "z" => &z,
+        "vx" => &vx,
+        "vy" => &vy,
+        "vz" => &vz,
+        "radius" => &radius,
+        "r" => &r,
+        "g" => &g,
+        "b" => &b,
+    )?;
 
-    let mut file = std::fs::File::create("docs/assets/data/path.parquet").expect();
-    ParquetWriter::new(&mut file).finish(&mut df).unwrap();
-}
+    // Write to Parquet (with temp file for safety)
+    let filename = format!("snapshot_{:010}.parquet", step);
+    let temp_filename = format!("snapshot_{:010}.parquet.tmp", step);
 
-fn save_immutable_part(df: &mut DataFrame, dir_path: &Path, step_id: u32) -> PolarsResult<PathBuf> {
-    // 1. Define paths: Use sequential naming for the final file
-    let final_name = format!("part_{:05}.parquet", step_id);
-    let temp_name = format!("part_{:05}.parquet.tmp", step_id);
-    
-    let temp_path = dir_path.join(&temp_name);
-    let final_path = dir_path.join(&final_name);
+    let temp_path = dir_path.join(&temp_filename);
+    let final_path = dir_path.join(&filename);
 
-    // 2. Write to Temp
+    // Write to temporary file first with metadata
     {
-        let mut temp_file = File::create(&temp_path)?;
-        ParquetWriter::new(&mut temp_file).finish(df)?;
-    } 
+        let file = std::fs::File::create(&temp_path)?;
+        ParquetWriter::new(file).finish(&mut df)?;
+    }
 
-    // 3. Rename/Commit
+    // Atomic rename
     fs::rename(&temp_path, &final_path)?;
-    
-    Ok(final_path)
+
+    Ok(())
 }
-  *
 
+/// Load particle snapshot from Parquet file
+/// 
+/// # Arguments
+/// * `file_path` - Path to the snapshot file
+/// 
+/// # Returns
+/// * `(particles, time)` - Vector of particles and simulation time
+pub fn load_snapshot(
+    file_path: &Path,
+) -> Result<(Vec<Particle>, f64), Box<dyn std::error::Error>> {
+    let file = std::fs::File::open(file_path)?;
+    let df = ParquetReader::new(file).finish()?;
 
+    // Extract columns
+    let time = df.column("t")?.f64()?.into_iter().collect::<Vec<_>>();
+    let ids = df.column("id")?.u64()?.into_iter().collect::<Vec<_>>();
+    let x = df.column("x")?.f64()?.into_iter().collect::<Vec<_>>();
+    let y = df.column("y")?.f64()?.into_iter().collect::<Vec<_>>();
+    let z = df.column("z")?.f64()?.into_iter().collect::<Vec<_>>();
+    let vx = df.column("vx")?.f64()?.into_iter().collect::<Vec<_>>();
+    let vy = df.column("vy")?.f64()?.into_iter().collect::<Vec<_>>();
+    let vz = df.column("vz")?.f64()?.into_iter().collect::<Vec<_>>();
+    let radius = df.column("radius")?.f64()?.into_iter().collect::<Vec<_>>();
+    let r = df.column("r")?.f64()?.into_iter().collect::<Vec<_>>();
+    let g = df.column("g")?.f64()?.into_iter().collect::<Vec<_>>();
+    let b = df.column("b")?.f64()?.into_iter().collect::<Vec<_>>();
 
-    
-pub fn load_from_file<P: AsRef<Path>>(path: P) -> Result<Self, Box<dyn std::error::Error>> {
-    let json = fs::read_to_string(path)?;
-    let snapshot: SimulationSnapshot = serde_json::from_str(&json)?;
-    Ok(snapshot)
+    // Reconstruct particles
+    let particles = ids
+        .into_iter()
+        .zip(x.into_iter().zip(y.into_iter().zip(z.into_iter())))
+        .zip(vx.into_iter().zip(vy.into_iter().zip(vz.into_iter())))
+        .zip(radius.into_iter().zip(r.into_iter().zip(g.into_iter().zip(b.into_iter()))))
+        .map(|(((id, (x, (y, z))), (vx, (vy, vz))), (radius, (r, (g, b))))| {
+            Particle {
+                id: id.unwrap_or(0) as usize,
+                position: DVec3::new(
+                    x.unwrap_or(0.0),
+                    y.unwrap_or(0.0),
+                    z.unwrap_or(0.0),
+                ),
+                velocity: DVec3::new(
+                    vx.unwrap_or(0.0),
+                    vy.unwrap_or(0.0),
+                    vz.unwrap_or(0.0),
+                ),
+                radius: radius.unwrap_or(0.0),
+                color: Srgba::new(
+                    r.unwrap_or(0.0) as u8,
+                    g.unwrap_or(0.0) as u8,
+                    b.unwrap_or(0.0) as u8,
+                    255,
+                ),
+            }
+        })
+        .collect();
+
+    // For now, return time as 0.0 (could add to DataFrame metadata if needed)
+    Ok((particles, time[0].unwrap()))
 }
-    
-pub fn generate_filename(behavior_name: &str, time: f64, step: usize) -> String {
-    let clean_name = behavior_name.replace(" ", "_").to_lowercase();
-    format!("{}_{:010.3}s_step_{:06}.json", clean_name, time, step)
-}*/ 
 
+
+/// Load the latest snapshot from a directory
+/// 
+/// # Arguments
+/// * `dir_path` - Directory containing snapshot files
+/// 
+/// # Returns
+/// * `(particles, step, time)` - Vector of particles, step number, and simulation time
+pub fn load_latest_snapshot(
+    dir_path: &Path,
+) -> Result<(Vec<Particle>, usize, f64), Box<dyn std::error::Error>> {
+    let (latest_path, latest_step) = fs::read_dir(dir_path)?
+        .flatten() // Ignore entries we can't read
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            let step = name.strip_prefix("snapshot_")?
+                           .strip_suffix(".parquet")?
+                           .parse::<usize>().ok()?;
+            Some((entry.path(), step))
+        })
+        .max_by_key(|&(_, step)| step) // Find the entry with the highest step
+        .ok_or("No snapshot files found")?;
+
+    let (particles, time) = load_snapshot(&latest_path)?;
+    Ok((particles, latest_step, time))
+}

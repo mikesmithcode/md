@@ -19,18 +19,23 @@ const DEFAULT_FRAMERATE: &str = "25";
 /// Returns:
 /// A `Result` indicating success or an `io::Error`.
 pub fn assemble_pngs_to_mp4(dir_path: &Path) -> Result<(), io::Error> {
-    
-    println!("Starting video assembly process for directory: {:?}", dir_path);
+    println!("Searching for images in: {:?}", dir_path);
+
+    let dir_path = dir_path.join("imgs");
+
+    println!("Starting video assembly process for directory: {:?}", &dir_path);
 
     // Find and sort all PNG files.
-    let png_files = find_and_sort_pngs(dir_path)?;
+    let png_files = find_and_sort_pngs(&dir_path)?;
+    println!("{:?}", png_files);
 
     // Determine the output path based on the first file.
     let first_file_name = png_files[0].file_stem()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Could not determine file name."))?;
         
     let output_file = dir_path.join(format!("{}.mp4", first_file_name.to_string_lossy()));
-    
+    println!("{:?}", output_file);
+
     // Create the temporary list file for FFmpeg's concat demuxer.
     let list_file_path = dir_path.join("ffmpeg_list.txt");
     create_ffmpeg_list_file(&list_file_path, &png_files)?;
@@ -85,15 +90,23 @@ fn find_and_sort_pngs(dir_path: &Path) -> Result<Vec<PathBuf>, io::Error> {
 fn create_ffmpeg_list_file(list_path: &Path, png_files: &[PathBuf]) -> Result<(), io::Error> {
     let mut file = fs::File::create(list_path)?;
     
+    // Calculate duration based on your 25fps (1.0 / 25.0)
+    let duration = 1.0 / DEFAULT_FRAMERATE.parse::<f64>().unwrap_or(25.0);
+
     for path in png_files {
-        // Use file_name() and to_string_lossy() to get the string representation 
-        // of the filename, ensuring paths are correctly quoted for FFmpeg.
         let file_name = path.file_name()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid file name encountered."))?
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "Invalid file name"))?
             .to_string_lossy();
             
-        // FFmpeg concat demuxer format: file 'filename'
         writeln!(file, "file '{}'", file_name)?;
+        writeln!(file, "duration {}", duration)?; // Tell FFmpeg how long to show the frame
+    }
+
+    // Due to a quirk in FFmpeg concat, the last file should be repeated 
+    // without a duration or specified again to ensure the last frame renders.
+    if let Some(last_path) = png_files.last() {
+        let last_name = last_path.file_name().unwrap().to_string_lossy();
+        writeln!(file, "file '{}'", last_name)?;
     }
     
     Ok(())
@@ -102,13 +115,19 @@ fn create_ffmpeg_list_file(list_path: &Path, png_files: &[PathBuf]) -> Result<()
 /// Executes the FFmpeg command to combine the images listed in the input file.
 fn execute_ffmpeg(list_file_path: &Path, output_file_path: &Path) -> Result<(), io::Error> {
     
+    let work_dir = list_file_path.parent()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Could not find image directory"))?;
+    let list_name = list_file_path.file_name().unwrap();
+    let output_name = output_file_path.file_name().unwrap();
+
     let status = Command::new("ffmpeg")
+        .current_dir(work_dir)
         // -f concat: Use the concat demuxer
         .arg("-f").arg("concat")
         // -safe 0: Allows relative paths in the list file (necessary for files in the same dir)
         .arg("-safe").arg("0")
         // -i: Input file (the list file we created)
-        .arg("-i").arg(list_file_path)
+        .arg("-i").arg(list_name)
         // -r: Set the framerate (e.g., 25 frames per second)
         .arg("-r").arg(DEFAULT_FRAMERATE)
         // -c:v: Video codec (H.264, standard for mp4)
@@ -116,7 +135,7 @@ fn execute_ffmpeg(list_file_path: &Path, output_file_path: &Path) -> Result<(), 
         // -pix_fmt yuv420p: Ensure compatibility with all media players (required for MP4/H.264)
         .arg("-pix_fmt").arg("yuv420p")
         // Output file
-        .arg(output_file_path)
+        .arg(output_name)
         // Execute command and capture status
         .status()?;
 
@@ -127,5 +146,47 @@ fn execute_ffmpeg(list_file_path: &Path, output_file_path: &Path) -> Result<(), 
             io::ErrorKind::Other,
             format!("FFmpeg failed with exit code: {:?}", status.code())
         ))
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_find_and_sort_pngs() -> Result<(), Box<dyn std::error::Error>> {
+        // 1. Create a temporary directory that is deleted when 'dir' goes out of scope
+        let dir = tempdir()?;
+        let dir_path = dir.path();
+
+        // 2. Create files in a jumbled order to test the sorting logic
+        // We use different lengths/names to ensure the lexicographical sort works
+        let filenames = [
+            "img_0002.png",
+            "img_0001.png",
+            "not_a_png.txt",
+            "img_0010.png",
+        ];
+
+        for name in filenames {
+            File::create(dir_path.join(name))?;
+        }
+
+        // 3. Run the function
+        let sorted_files = find_and_sort_pngs(dir_path)?;
+
+        // 4. Assertions
+        // We expect only 3 files (the .txt should be filtered out)
+        assert_eq!(sorted_files.len(), 3);
+
+        // Check that they are in the correct lexicographical order
+        assert!(sorted_files[0].to_string_lossy().ends_with("img_0001.png"));
+        assert!(sorted_files[1].to_string_lossy().ends_with("img_0002.png"));
+        assert!(sorted_files[2].to_string_lossy().ends_with("img_0010.png"));
+
+        Ok(())
     }
 }

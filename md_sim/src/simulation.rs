@@ -1,5 +1,5 @@
 use md_core::particle::Particle;
-use crate::file_io::*;
+use crate::file_io::save_simsettings;
 
 //use glam::DVec3;
 //use three_d::core::Srgba;
@@ -14,8 +14,9 @@ pub struct SimulationSettings{
     pub dt: f64,
     pub sim_box_size: [f64; 3], 
     pub start: usize,
-    pub stop: usize,
-    pub sim_filename: String,
+    pub num_steps: usize,
+    pub sim_path: &'static str,
+    pub dump: usize,
 }
 
 impl SimulationSettings{
@@ -38,16 +39,27 @@ pub struct Simulation {
 impl Simulation {
     /// creates initial position of particles.
     pub fn new(particles: Vec<Particle>, settings: SimulationSettings)-> Self {
-        ///Simulation takes ownership or particles and a cloned copy of simulation settings
-        save_metadata(settings.sim_filename.clone(), settings.clone());
+        //Simulation takes ownership of particles and a cloned copy of simulation settings
+        save_simsettings(&settings);
         Self { particles, settings}
         
     }
 
     ///advance the simulation one step
     pub fn update(&mut self) {
-        for particle in self.particles.iter_mut() {
+        /*for particle in self.particles.iter_mut() {
             // Update position
+            if particle.type == 0{
+            particle.set_force_zero()
+            particle.predict(timestep);
+            }else{
+                particle.boundary_conditions(timestep, time);
+            }
+        }
+        make_forces();
+
+            */
+        for particle in self.particles.iter_mut(){
             particle.update(self.settings.dt);
         }
     }
