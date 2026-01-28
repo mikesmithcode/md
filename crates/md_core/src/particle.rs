@@ -16,9 +16,6 @@ impl Particle {
     pub fn new(id: usize, position: DVec3, velocity: DVec3, color: Srgba, radius: f64) -> Self {
         Particle { id, position, velocity, color, radius }
     }
-
-    pub fn update(&mut self, dt:f64){
-        self.position += self.velocity * dt;
-
 }
-}
+
+

@@ -1,29 +1,104 @@
+//! input and output of simulation states and config.
+//!
+//! This module handles two primary formats:
+//!
+//! 1. **Metadata (JSON)**: Handled by [`save_simsettings`], this stores / loads the 
+//!    parameters of the experiment (e.g., simulation path, start time).
+//! 2. **State Snapshots (Parquet)**: Handled by [`save_snapshot`] and [`load_snapshot`], 
+//!    this uses the **Polars** library to efficiently store particle positions, 
+//!    velocities, and properties.
+//!
+//! ### Data Workflow
+//! The simulation periodically saves snapshots. These files can be reloaded 
+//! using [`load_latest_snapshot`] to resume a previously stopped experiment.
+
+
 use crate::{Particle, simulation::SimulationSettings};
+use serde::{Serialize, Deserialize, de::DeserializeOwned};
 use serde_json;
 use std::{fs, io::Error, path::Path};
+use std::io::BufReader;
 use polars::prelude::*;
 use glam::DVec3;
 use three_d::core::Srgba;
 
-/// Save simulation metadata to JSON
-pub fn save_simsettings(sim_settings: &SimulationSettings) -> Result<(), Error> {
+
+/// saves a json representation of the current [`SimulationSettings`]. 
+/// 
+/// The info is serialised and saved as json.
+///
+/// # File Naming
+/// The filename is automatically generated using the `start` timestamp to ensure 
+/// uniqueness (e.g., `sim_config_0000000001.json`).
+///
+/// # Errors
+/// This function will return an [`Error`] if:
+/// * The `sim_path` directory does not exist or is not writable.
+/// * There is an underlying I/O issue when writing to the disk.
+///
+/// # Panics
+/// Panics if the `SimulationSettings` cannot be converted to JSON.
+pub fn save_simsettings<T: Serialize>(sim_settings: &SimulationSettings<T>, snapshot_path: &Path) -> Result<(), Error> 
+{
     let filename = format!("sim_config_{:010}.json", sim_settings.start);
-    let full_filename = Path::new(sim_settings.sim_path).join(filename);
+    let full_filename = Path::new(&snapshot_path).join(filename);
     let json = serde_json::to_string_pretty(sim_settings)
         .expect("Error serializing metadata");
     fs::write(full_filename, json)?;
     Ok(())
 }
 
-//pub fn load_simsettings()
+/// Unit struct to be passed to load_simsettings if nothing beyond default params in file.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct NoExtraParams;
 
-/// Save particle snapshot to Parquet file
+/// loads a json config file into a SimulationSettings struct
+/// 
+/// SimulationSettings has standard fields and a catch all which would require 
+/// writing a new struct type in you example and :
+/// pub struct SimulationSettings<T>{
+///    pub dt: f64,
+///    pub sim_box_size: [f64; 3], 
+///    pub start: usize,
+///    pub num_steps: usize,
+///    pub sim_path: String,
+///    pub dump: usize,
+///    // Special values
+///    #[serde(flatten)]
+///    pub extra: T,
+///}
+/// 
+/// If there are no extra parameters in the file
+/// 
+/// We update the start field to match index the initial value of the loop. Thus if you restart
+/// simulation start will be at the correct value.
+pub fn load_simsettings<T>(input_filepath: &Path, output_path: &Path, index: usize) -> Result<SimulationSettings<T>, Box<dyn std::error::Error>>
+where
+    T: DeserializeOwned + Serialize,
+{   
+
+    let file = fs::File::open(input_filepath)?;
+    let reader = BufReader::new(file);
+    
+    let mut sim_settings: SimulationSettings<T> = serde_json::from_reader(reader)?;
+    sim_settings.start = index;
+
+    //Save a copy of config to output with simulation index as suffix.
+    save_simsettings::<T>(&sim_settings, output_path)?;
+    
+    Ok(sim_settings)
+}
+
+/// saves particle snapshot to Parquet file
+/// 
+/// Its taking a Vec<Particle> and storing each field as an individual
+/// column in a Parquet file in output/snapshots.
 /// 
 /// # Arguments
 /// * `dir_path` - Directory to save snapshots in
-/// * `timestep` - Timestep number (for filename)
+/// * `step` - the index of the simulation loop
 /// * `particles` - Vector of particles to save
-/// * `time` - Simulation time (stored as metadata)
+/// * `time` - Simulation time
 pub fn save_snapshot(
     dir_path: &Path,
     step: usize,
@@ -83,6 +158,9 @@ pub fn save_snapshot(
 }
 
 /// Load particle snapshot from Parquet file
+/// 
+/// Each row in file represents a particle. Each column is a field
+/// to be added the Particle struct. These are combined in a Vec.
 /// 
 /// # Arguments
 /// * `file_path` - Path to the snapshot file
@@ -146,6 +224,10 @@ pub fn load_snapshot(
 
 /// Load the latest snapshot from a directory
 /// 
+/// Searches files in output/snapshots for the latest
+/// set of particle positions and then uses load_snapshot to
+/// generate Vec<Particle>, simulation index and simulation time.
+/// 
 /// # Arguments
 /// * `dir_path` - Directory containing snapshot files
 /// 
@@ -168,4 +250,69 @@ pub fn load_latest_snapshot(
 
     let (particles, time) = load_snapshot(&latest_path)?;
     Ok((particles, latest_step, time))
+}
+
+
+
+
+// Tests for file_io
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn test_save_and_load_snapshot() -> Result<(), Box<dyn std::error::Error>> {
+        // 1. Setup temporary workspace
+        let dir = tempdir()?;
+        let dir_path = dir.path();
+        
+        // 2. Create dummy particle data
+        let particles = vec![
+            Particle {
+                id: 1,
+                position: DVec3::new(1.0, 2.0, 3.0),
+                velocity: DVec3::new(0.1, 0.2, 0.3),
+                radius: 0.5,
+                color: Srgba::new(255, 0, 0, 255),
+            }
+        ];
+        let step = 42;
+        let time = 0.5;
+
+        // 3. Test saving
+        save_snapshot(dir_path, step, &particles, time)?;
+
+        // 4. Test loading specific file
+        let file_name = format!("snapshot_{:010}.parquet", step);
+        let file_path = dir_path.join(file_name);
+        let (loaded_particles, loaded_time) = load_snapshot(&file_path)?;
+
+        // 5. Assertions (Round-trip check)
+        assert_eq!(loaded_particles.len(), 1);
+        assert_eq!(loaded_particles[0].id, 1);
+        assert_eq!(loaded_time, 0.5);
+        // Using approximate equality for floats is safer in complex sims
+        assert!((loaded_particles[0].position.x - 1.0).abs() < f64::EPSILON);
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_load_latest_snapshot() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let dir_path = dir.path();
+        
+        // Save two snapshots with different steps
+        let particles = vec![]; 
+        save_snapshot(dir_path, 1, &particles, 0.1)?;
+        save_snapshot(dir_path, 10, &particles, 1.0)?; // This is the "latest"
+
+        let (_, latest_step, latest_time) = load_latest_snapshot(dir_path)?;
+
+        assert_eq!(latest_step, 10);
+        assert_eq!(latest_time, 1.0);
+        
+        Ok(())
+    }
 }

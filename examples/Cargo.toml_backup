@@ -6,3 +6,5 @@ edition = "2021"
 # This is the key part!
 [dependencies]
 md_sim = { path = "../md_sim" }
+md_viz = { path = "../md_viz" }
+serde = {workspace=true, features= ["derive"]}

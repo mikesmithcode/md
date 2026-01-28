@@ -10,6 +10,7 @@ glam = { workspace = true }
 image = {workspace = true} 
 winit = {workspace = true}
 tempfile = {workspace = true}
+serde = { workspace = true, features = ["derive"] }
 md_core = { path = "../md_core" }
 md_sim = { path = "../md_sim" }
 
@@ -17,12 +18,20 @@ md_sim = { path = "../md_sim" }
 
 [[example]]
 name = "develop"
-path = "../examples/develop.rs"
+path = "../../examples/develop.rs"
+
+[[example]]
+name = "cleanup"
+path = "../../examples/cleanup.rs"
+
+[[example]]
+name = "bubbles"
+path = "../../examples/bubbles.rs"
 
 [[example]]
 name = "setup"
-path = "../examples/setup.rs"
+path = "../../examples/setup.rs"
 
 [[example]]
 name = "create_video"
-path = "../examples/create_video.rs"
+path = "../../examples/create_video.rs"

@@ -1,8 +1,9 @@
 # your_md_project/Cargo.toml
 [workspace]
-members = [ "md_core",
-    "md_sim",
-    "md_viz",
+members = [ 
+    "crates/md_sim",
+    "crates/md_core",
+    "crates/md_viz",
 ]
 resolver = "2"
 

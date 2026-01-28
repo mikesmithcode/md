@@ -59,17 +59,17 @@ Coordinates are written (x,y,z,w)
 
 1. Orthographic - Directly maps coords to 2d coords
 
-![alt text](image-1.png)
+![alt text](imgs/image-1.png)
 
 2. Perspective - Things further away look smaller. Once the coordinates are transformed to clip space they are in the range -w to w (anything outside this range is clipped).
 
-![alt text](image.png)
+![alt text](imgs/image.png)
 
 #### axes
 
 Opengl is a RH coord system, where z is out of the page.
 
-![alt text](image-2.png)
+![alt text](imgs/image-2.png)
 
 ### Camera
 

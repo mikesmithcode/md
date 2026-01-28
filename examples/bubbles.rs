@@ -1,4 +1,6 @@
 use std::path::Path;
+use glam::DVec3;
+use serde::{Serialize, Deserialize};
 use winit::event_loop::EventLoop;
 
 
@@ -7,12 +9,20 @@ use md_viz::scene::{Scene, SceneSetup};
 use md_viz::camera::{Perspective, CameraSettings};
 use md_viz::objects::SimBox;
 
-use md_sim::Simulation;
 use md_sim::simulation::SimulationSettings;
 use md_sim::file_io::{self, load_simsettings, NoExtraParams};
 
+use md_core::particle::Particle;
 
 
+
+fn update(particles: &mut Vec<Particle>, dt: f64){
+    for particle in particles.iter_mut(){
+        particle.position += particle.velocity * dt;
+        particle.radius *= 1.00001;
+        println!("{:?} {:?}", particle.position, particle.velocity);
+    }
+}
 
 
 pub fn main() {    
@@ -24,29 +34,24 @@ pub fn main() {
     //----------------------------------------------------------------
     // Define simulation
     //---------------------------------------------------------------
-    let config_filepath = Path::new(INPUT_PATH).join("sim_config.json");
+    let config_filepath = Path::new(INPUT_PATH).join("bubbles_config.json");
     let snapshot_path = Path::new(OUTPUT_PATH).join("snapshots");
     
-    /*
-    let sim_settings = SimulationSettings{
-        dt: 0.01,
-        sim_box_size: [5.0, 5.0, 5.0],
-        start: start_step,
-        num_steps: 15000,
-        dump:100,
-    };
-    */
+    #[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+    pub struct ExtraParams{
+        pub density:f64,
+        pub viscosity:f64,
+    }
     
-
+  
     //------------------------------------------------------------
     // Initialise simulation with bunch of particles from a snapshot file and config file. Takes latest snapshot in output
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
-    let sim_settings = load_simsettings::<NoExtraParams>(&config_filepath, &snapshot_path, start_step).expect("sim settings not loaded correctly");
+    let (mut particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let sim_settings = load_simsettings::<ExtraParams>(&config_filepath, &snapshot_path, start_step).expect("sim settings not loaded correctly");
     
-
     //----------------------------------------------------------------
     //  Define graphics
     //----------------------------------------------------------------
@@ -65,14 +70,6 @@ pub fn main() {
             }, 
     };
 
-
-  
-
-
-    //-------------------------------------------------------------
-    //  Create simulation
-    //--------------------------------------------------------------
-    let mut simulation = Simulation::new(particles, sim_settings.clone());
 
     //--------------------------------------------------------------
     //  Initialise all graphics
@@ -100,7 +97,7 @@ pub fn main() {
     
     // Run simulation loop for num_steps
     for step in sim_settings.start..=(sim_settings.start+sim_settings.num_steps) {
-        simulation.update();
+        update(&mut particles, sim_settings.dt);
 
         // update scene every dump timesteps
         if step % sim_settings.dump == 0 {
@@ -109,13 +106,13 @@ pub fn main() {
             //    break; 
             //}
             
-            scene.save_img(&simulation.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
+            scene.save_img(&particles, &OUTPUT_PATH, step).expect("Error saving img"); 
             //scene.camera_control.update_camera(&mut scene.camera);
             //scene.display(&simulation.get_particles()).expect("Error updating display");
             //sleep(Duration::from_millis(100));
 
             //save a snapshot
-            file_io::save_snapshot(&snapshot_path, step, &simulation.get_particles(), time).expect("Error saving simulation snapshot");
+            file_io::save_snapshot(&snapshot_path, step, &particles, time).expect("Error saving simulation snapshot");
             time += sim_settings.dt;
         }
         

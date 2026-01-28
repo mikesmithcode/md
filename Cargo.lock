@@ -1529,6 +1529,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "tempfile",
  "three-d",
 ]
 
@@ -1540,6 +1541,7 @@ dependencies = [
  "image",
  "md_core",
  "md_sim",
+ "serde",
  "tempfile",
  "three-d",
  "winit 0.28.7",
