@@ -1,3 +1,12 @@
+//! camera.rs
+//!
+//! This module defines the functionality of cameras for viewing the scene.
+//! You have two choices: orthographic (distance doesn't matter, perfect for 2D in 3D scene) and perspective (things further away look smaller) accessed as options on an enum. You can interact with
+//! the view using your mouse: zoom in and out with the wheel, rotate by holding down left button and dragging. This live camera only works on the live window not on the headless images. For these the view is set at compile time. You'd need to update the config. Changes in the live window print details to the terminal so you can use this to figure out what you want.
+//! 
+
+
+
 use three_d::{Camera, Vector3};
 use three_d::InnerSpace;
 use three_d::*;

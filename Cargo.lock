@@ -1080,6 +1080,9 @@ name = "glam"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e05e7e6723e3455f4818c7b26e855439f7546cf617ef669d1adedb8669e5cb9"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "glob"
@@ -1517,6 +1520,24 @@ version = "0.1.0"
 dependencies = [
  "glam",
  "three-d",
+]
+
+[[package]]
+name = "md_doc"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "image",
+ "md_core",
+ "md_sim",
+ "md_viz",
+ "polars",
+ "rand",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "three-d",
+ "winit 0.28.7",
 ]
 
 [[package]]

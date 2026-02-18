@@ -1,0 +1,39 @@
+[package]
+name = "md_doc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+md_core = { path = "../md_core" }
+md_sim = { path = "../md_sim" }
+md_viz = { path = "../md_viz" }
+glam = { workspace = true }
+winit = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+image = { workspace = true }
+three-d = { workspace = true }
+polars = { workspace = true, features = ["parquet"] }
+tempfile = { workspace = true }
+rand = { workspace = true }
+
+
+[[example]]
+name = "develop"
+path = "../../examples/develop.rs"
+
+[[example]]
+name = "cleanup"
+path = "../../examples/cleanup.rs"
+
+[[example]]
+name = "bubbles"
+path = "../../examples/bubbles.rs"
+
+[[example]]
+name = "setup"
+path = "../../examples/setup.rs"
+
+[[example]]
+name = "create_video"
+path = "../../examples/create_video.rs"

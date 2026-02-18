@@ -263,11 +263,11 @@ mod tests {
 
     #[test]
     fn test_save_and_load_snapshot() -> Result<(), Box<dyn std::error::Error>> {
-        // 1. Setup temporary workspace
+        // Setup temporary workspace
         let dir = tempdir()?;
         let dir_path = dir.path();
         
-        // 2. Create dummy particle data
+        // Create dummy particle data
         let particles = vec![
             Particle {
                 id: 1,
@@ -280,19 +280,18 @@ mod tests {
         let step = 42;
         let time = 0.5;
 
-        // 3. Test saving
+        // Test saving
         save_snapshot(dir_path, step, &particles, time)?;
 
-        // 4. Test loading specific file
+        // Test loading specific file
         let file_name = format!("snapshot_{:010}.parquet", step);
         let file_path = dir_path.join(file_name);
         let (loaded_particles, loaded_time) = load_snapshot(&file_path)?;
 
-        // 5. Assertions (Round-trip check)
+        // Checks
         assert_eq!(loaded_particles.len(), 1);
         assert_eq!(loaded_particles[0].id, 1);
         assert_eq!(loaded_time, 0.5);
-        // Using approximate equality for floats is safer in complex sims
         assert!((loaded_particles[0].position.x - 1.0).abs() < f64::EPSILON);
         
         Ok(())
@@ -306,10 +305,11 @@ mod tests {
         // Save two snapshots with different steps
         let particles = vec![]; 
         save_snapshot(dir_path, 1, &particles, 0.1)?;
-        save_snapshot(dir_path, 10, &particles, 1.0)?; // This is the "latest"
+        save_snapshot(dir_path, 10, &particles, 1.0)?; 
 
         let (_, latest_step, latest_time) = load_latest_snapshot(dir_path)?;
 
+        //Check loads latest
         assert_eq!(latest_step, 10);
         assert_eq!(latest_time, 1.0);
         

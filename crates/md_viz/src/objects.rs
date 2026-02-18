@@ -1,3 +1,8 @@
+//! objects.rs
+//!
+//! This module handles creation of all things in a scene other than a camera: Lights, axes, simulation box, 
+//! 
+
 use three_d::*;
 use three_d::core::Mat4;
 
@@ -58,11 +63,9 @@ pub fn create_simbox(context: &Context, sim_box: SimBox) -> Option<Gm<BoundingBo
     let mut cube_mesh = CpuMesh::cube();
     let sim_box_size = sim_box.sim_box_size;
     // Scale the mesh to the desired simulation box size
-    let _ = cube_mesh.transform(Mat4::from_nonuniform_scale(
-        sim_box_size[0] / 2.0, 
-        sim_box_size[1] / 2.0, 
-        sim_box_size[2] / 2.0,
-    ));
+    let transformation = Mat4::from_translation(vec3(sim_box_size[0]/2.0, sim_box_size[1]/2.0, sim_box_size[2]/2.0)) 
+                       * Mat4::from_nonuniform_scale(sim_box_size[0]/2.0, sim_box_size[1]/2.0, sim_box_size[2]/2.0);
+    let _ = cube_mesh.transform(transformation);
     let thickness:f32 = sim_box.thickness;
 
     if sim_box.on{

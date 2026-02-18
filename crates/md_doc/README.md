@@ -5,7 +5,7 @@ This is a molecular dynamics simulation written in Rust. It is intended as a lea
 Since the code is in a workspace there are several crates:
 - [`md_sim`]: the main simulation crate
 - [`md_viz`]: the visualization crate
-- [`md_utils`]: utility functions and types shared between crates
+- [`md_core`]: utility functions and types shared between crates
 
 ## Examples
 
@@ -65,7 +65,7 @@ Then in your simulation loop you can call either `scene.display()` to update the
     scene.save_img(&simulation.get_particles(),  &OUTPUT_PATH, step).expect("Error saving image");
 ```
 
-scene.save_img will create a folder called output/imgs and save all imgs numbered by the simulation step. You can run the example create_video.rs to convert these to a video using ffmpeg.
+scene.save_img will create a folder called output/imgs and save all imgs numbered by the simulation step. You can run the example [`create_video`] to convert these to a video using ffmpeg.
 
 ## Data input / output
 

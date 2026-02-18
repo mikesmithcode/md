@@ -7,11 +7,9 @@ use md_viz::scene::{Scene, SceneSetup};
 use md_viz::camera::{Perspective, CameraSettings};
 use md_viz::objects::SimBox;
 
-use md_sim::Simulation;
+use md_sim::simulation::Simulation;
 use md_sim::simulation::SimulationSettings;
 use md_sim::file_io::{self, load_simsettings, NoExtraParams};
-
-
 
 
 
@@ -24,29 +22,18 @@ pub fn main() {
     //----------------------------------------------------------------
     // Define simulation
     //---------------------------------------------------------------
-    let config_filepath = Path::new(INPUT_PATH).join("sim_config.json");
+    let config_filepath = Path::new(INPUT_PATH).join("develop_config.json");
     let snapshot_path = Path::new(OUTPUT_PATH).join("snapshots");
-    
-    /*
-    let sim_settings = SimulationSettings{
-        dt: 0.01,
-        sim_box_size: [5.0, 5.0, 5.0],
-        start: start_step,
-        num_steps: 15000,
-        dump:100,
-    };
-    */
     
 
     //------------------------------------------------------------
-    // Initialise simulation with bunch of particles from a snapshot file and config file. Takes latest snapshot in output
+    // Initialise simulation with bunch of particles from a snapshot file and define simulation parameters with a config file. Takes latest snapshot in output
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
     let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
-    let sim_settings = load_simsettings::<NoExtraParams>(&config_filepath, &snapshot_path, start_step).expect("sim settings not loaded correctly");
+    let sim_settings = SimulationSettings::<NoExtraParams>::new(&config_filepath).expect("sim settings not loaded correctly");
     
-
     //----------------------------------------------------------------
     //  Define graphics
     //----------------------------------------------------------------
@@ -64,15 +51,12 @@ pub fn main() {
                 sim_box_size: sim_settings.sim_box_size_f32(),
             }, 
     };
-
-
-  
-
+ 
 
     //-------------------------------------------------------------
     //  Create simulation
     //--------------------------------------------------------------
-    let mut simulation = Simulation::new(particles, sim_settings.clone());
+    let mut sim = Simulation::new(particles, sim_settings.clone());
 
     //--------------------------------------------------------------
     //  Initialise all graphics
@@ -80,11 +64,9 @@ pub fn main() {
     //  event_loop and scene.init_window(&event_loop) for live display
     //  scene.init_headless() for images saved to file
     //  Can run either or none as required. Can't seem to get both to run at present
-    //--------------------------------------------------------------
-      
+    //--------------------------------------------------------------   
     
     let mut scene: Scene = Scene::new(scene_settings.clone());
-    
     let _ = scene.init_headless();
     //let mut event_loop = EventLoop::new(); 
     //let _ = scene.init_window(&event_loop);
@@ -99,24 +81,25 @@ pub fn main() {
     println!("Simulation started...");
     
     // Run simulation loop for num_steps
-    for step in sim_settings.start..=(sim_settings.start+sim_settings.num_steps) {
-        simulation.update();
+    for step in start_step..=(start_step+sim.settings.num_steps) {
+        sim.update_pos();
 
         // update scene every dump timesteps
-        if step % sim_settings.dump == 0 {
+        if step % sim.settings.dump == 0 {
             // exit if window close requested
             //if scene.poll_events(&mut event_loop) {
             //    break; 
             //}
             
-            scene.save_img(&simulation.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
+            //Handle graphics
+            scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
             //scene.camera_control.update_camera(&mut scene.camera);
-            //scene.display(&simulation.get_particles()).expect("Error updating display");
+            //scene.display(&sim.get_particles()).expect("Error updating display");
             //sleep(Duration::from_millis(100));
 
-            //save a snapshot
-            file_io::save_snapshot(&snapshot_path, step, &simulation.get_particles(), time).expect("Error saving simulation snapshot");
-            time += sim_settings.dt;
+            //save a snapshot of particle positions etc
+            file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), time).expect("Error saving simulation snapshot");
+            time += sim.settings.dt;
         }
         
     }

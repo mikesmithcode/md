@@ -7,7 +7,7 @@
 //! ### How are things drawn?
 //! 
 //! 1. An **immutable reference** to a `Vec<Particle>` is passed to `scene.display()` or `scene.save_img()`.
-//!    Internally, this is handed off to `self.render_particles_to_target()`.
+//!    Internally, this is handed off to `self.render_particles()`.
 //! 
 //! 2. Each **Particle struct** has the `Draw` trait implemented.
 //!    - The `.draw()` method takes a **mutable reference** to the objects vector in the `Scene`.

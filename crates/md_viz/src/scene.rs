@@ -1,3 +1,26 @@
+//! scene.rs
+//!
+//! This module is responsible for drawing everything either to a live window (WindowedContext) or to a saved png file (HeadlessContext).
+//! 
+//! ## Setup
+//! 
+//! The WindowedContext is supplied externally from an winit EventLoop. Create the event_loop and pass a reference to initialise the window.
+//! 
+//! let mut event_loop = EventLoop::new(); 
+//! let _ = scene.init_window(&event_loop);
+//! 
+//! The HeadlessContext is started without an event loop
+//! 
+//! let _ = scene.init_headless();
+//! 
+//! Create a Scene::new() by passing a clone of the scene_settings. 
+//! 
+//! ## Internal logic
+//! 
+//! render_particles() is called internally by display() or save_img() to draw particles.
+//! poll_events() in live mode looks for changes by the user to the camera view and updates the display.
+
+
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -168,7 +191,7 @@ impl Scene {
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
 
         let resources = self.windowed_resources.as_ref().expect("Windowed gpu resources fail");
-        self.render_particles_to_target(&context, resources, &mut target, particles)?;
+        self.render_particles(&context, resources, &mut target, particles)?;
 
         context.swap_buffers()?;
         Ok(())
@@ -199,7 +222,7 @@ impl Scene {
         );
 
         let resources = self.headless_resources.as_ref().expect("Headless gpu resources fail");
-        self.render_particles_to_target(headless_context, &resources, &mut img_target, particles)?;
+        self.render_particles(headless_context, &resources, &mut img_target, particles)?;
 
         let pixels: Vec<u8> = img_target.read_color::<[u8;4]>().into_iter().flatten().collect();
         let image_buffer: ImageBuffer<Rgba<u8>, _> = ImageBuffer::from_raw(frame_width, frame_height, pixels)
@@ -215,7 +238,9 @@ impl Scene {
     }
 
     /// Shared rendering logic
-    fn render_particles_to_target(
+    /// 
+    /// draw_particles uses the templates defined in template.rs and transforms / translates them.
+    fn render_particles(
         &self, 
         context: &Context,
         resources: &GpuResources,

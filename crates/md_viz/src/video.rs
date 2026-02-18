@@ -1,3 +1,7 @@
+//! video.rs
+//! 
+//! handles all interactions with ffmpeg. It is used to take png output from simulation and assemble into an mp4.
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::io::{self, Write};
@@ -158,11 +162,11 @@ mod tests {
 
     #[test]
     fn test_find_and_sort_pngs() -> Result<(), Box<dyn std::error::Error>> {
-        // 1. Create a temporary directory that is deleted when 'dir' goes out of scope
+        // Create a temporary directory that is deleted when 'dir' goes out of scope
         let dir = tempdir()?;
         let dir_path = dir.path();
 
-        // 2. Create files in a jumbled order to test the sorting logic
+        // Create files in a jumbled order to test the sorting logic
         // We use different lengths/names to ensure the lexicographical sort works
         let filenames = [
             "img_0002.png",
@@ -175,10 +179,10 @@ mod tests {
             File::create(dir_path.join(name))?;
         }
 
-        // 3. Run the function
+        // Run the function
         let sorted_files = find_and_sort_pngs(dir_path)?;
 
-        // 4. Assertions
+        // Checks
         // We expect only 3 files (the .txt should be filtered out)
         assert_eq!(sorted_files.len(), 3);
 
@@ -186,6 +190,97 @@ mod tests {
         assert!(sorted_files[0].to_string_lossy().ends_with("img_0001.png"));
         assert!(sorted_files[1].to_string_lossy().ends_with("img_0002.png"));
         assert!(sorted_files[2].to_string_lossy().ends_with("img_0010.png"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_ffmpeg_list_file() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let list_path = dir.path().join("test_list.txt");
+
+        let png_files = vec![
+            PathBuf::from("frame_001.png"),
+            PathBuf::from("frame_002.png"),
+            PathBuf::from("frame_003.png"),
+        ];
+
+        create_ffmpeg_list_file(&list_path, &png_files)?;
+
+        // Verify file was created
+        assert!(list_path.exists());
+
+        // Verify content
+        let content = std::fs::read_to_string(&list_path)?;
+        assert!(content.contains("file 'frame_001.png'"));
+        assert!(content.contains("file 'frame_002.png'"));
+        assert!(content.contains("file 'frame_003.png'"));
+        assert!(content.contains("duration"));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_create_ffmpeg_list_file_empty() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let list_path = dir.path().join("empty_list.txt");
+        let png_files: Vec<PathBuf> = vec![];
+
+        create_ffmpeg_list_file(&list_path, &png_files)?;
+
+        assert!(list_path.exists());
+        let content = std::fs::read_to_string(&list_path)?;
+        // Should be empty or contain minimal content
+        assert!(content.is_empty() || content.trim().is_empty());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_and_sort_pngs_empty_directory() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let result = find_and_sort_pngs(dir.path());
+
+        // Should succeed but return empty vector
+        assert!(result.is_ok());
+        assert_eq!(result?.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_and_sort_pngs_no_pngs() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let dir_path = dir.path();
+
+        File::create(dir_path.join("file1.txt"))?;
+        File::create(dir_path.join("file2.jpg"))?;
+
+        let sorted_files = find_and_sort_pngs(dir_path)?;
+
+        assert_eq!(sorted_files.len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_find_and_sort_pngs_numeric_sorting() -> Result<(), Box<dyn std::error::Error>> {
+        let dir = tempdir()?;
+        let dir_path = dir.path();
+
+        // Test that lexicographical sort handles numbers correctly
+        let filenames = ["frame_9.png", "frame_10.png", "frame_100.png"];
+        for name in filenames {
+            File::create(dir_path.join(name))?;
+        }
+
+        let sorted_files = find_and_sort_pngs(dir_path)?;
+
+        assert_eq!(sorted_files.len(), 3);
+        // Lexicographical sort: "frame_10" < "frame_100" < "frame_9"
+        assert!(sorted_files[0].to_string_lossy().ends_with("frame_10.png"));
+        assert!(sorted_files[1].to_string_lossy().ends_with("frame_100.png"));
+        assert!(sorted_files[2].to_string_lossy().ends_with("frame_9.png"));
 
         Ok(())
     }
