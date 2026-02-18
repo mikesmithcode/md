@@ -20,15 +20,18 @@ use three_d::*;
 pub struct Particle {
     pub id: usize,
     pub position: DVec3,  
-    pub velocity: DVec3, 
-    pub color: Srgba,          
-    pub radius: f64,           
+    pub velocity: DVec3,          
+    pub radius: f64, 
+    pub inv_mass: f64,  
+    pub color: Srgba,        
 }
 
 impl Particle {
     ///Create a new particle
-    pub fn new(id: usize, position: DVec3, velocity: DVec3, color: Srgba, radius: f64) -> Self {
-        Particle { id, position, velocity, color, radius }
+    pub fn new(id: usize, position: DVec3, velocity: DVec3, radius: f64, density: f64, color: Srgba) -> Self {
+        let inv_mass = 1.0/((4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density);
+
+        Particle { id, position, velocity, radius, inv_mass,color}
     }
 }
 
@@ -41,18 +44,22 @@ mod tests {
 
     #[test]
     fn test_particle_new() {
+
         let id = 1;
         let position = DVec3::new(1.0, 2.0, 3.0);
         let velocity = DVec3::new(0.1, 0.2, 0.3);
         let color = Srgba::new(255, 0, 0, 255);
-        let radius = 0.5;
-
-        let particle = Particle::new(id, position, velocity, color, radius);
+        let radius: f64 = 0.5;
+        let density: f64=1.0;
+        
+        let inv_mass = 1.0/((4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density);
+        let particle = Particle::new(id, position, velocity, radius, density, color);
 
         assert_eq!(particle.id, id);
         assert_eq!(particle.position, position);
         assert_eq!(particle.velocity, velocity);
         assert_eq!(particle.color, color);
         assert_eq!(particle.radius, radius);
+        assert_eq!(particle.inv_mass, inv_mass);
     }
 }

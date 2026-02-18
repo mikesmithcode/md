@@ -12,23 +12,26 @@ let particles = vec![
         Particle::new(
             0,
             DVec3::new(1.5, 1.5, 1.5),
-            DVec3::new(0.0, 5.0, 0.0),
-            Srgba::new(255, 0, 0, 255), // Red
+            DVec3::new(0.0, 0.0, 0.0),
             0.2,
+            -100.0,
+            Srgba::new(255, 0, 0, 255), 
         ),
         Particle::new(
             1,
             DVec3::new(1.5, -1.5, -1.5),
-            DVec3::new(5.0, 0.0, 0.0),
-            Srgba::new(0, 255, 0, 255), // Green
+            DVec3::new(0.0, 0.0, 0.0),
             0.3,
+            -100.0,
+            Srgba::new(0, 255, 0, 255), // Green
         ),
         Particle::new(
             2,
             DVec3::new(1.5, -1.5, 1.5),
             DVec3::new(0.0, 0.0, 5.0),
-            Srgba::new(0, 0, 255, 255), // Blue
             0.4,
+            -100.0,
+            Srgba::new(0, 0, 255, 255), // Blue
         ),
     ];
 

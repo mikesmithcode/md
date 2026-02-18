@@ -21,6 +21,7 @@ use std::io::BufReader;
 use polars::prelude::*;
 use glam::DVec3;
 use three_d::core::Srgba;
+use itertools::izip;
 
 
 /// saves a json representation of the current [`SimulationSettings`]. 
@@ -48,9 +49,6 @@ pub fn save_simsettings<T: Serialize>(sim_settings: &SimulationSettings<T>, snap
     Ok(())
 }
 
-/// Unit struct to be passed to load_simsettings if nothing beyond default params in file.
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct NoExtraParams;
 
 /// loads a json config file into a SimulationSettings struct
 /// 
@@ -118,6 +116,7 @@ pub fn save_snapshot(
     let vy: Vec<f64> = particles.iter().map(|p| p.velocity.y).collect();
     let vz: Vec<f64> = particles.iter().map(|p| p.velocity.z).collect();
     let radius: Vec<f64> = particles.iter().map(|p| p.radius).collect();
+    let inv_mass: Vec<f64> = particles.iter().map(|p| p.inv_mass).collect();
     let r: Vec<f64> = particles.iter().map(|p| p.color.r as f64).collect();
     let g: Vec<f64> = particles.iter().map(|p| p.color.g as f64).collect();
     let b: Vec<f64> = particles.iter().map(|p| p.color.b as f64).collect();
@@ -133,6 +132,7 @@ pub fn save_snapshot(
         "vy" => &vy,
         "vz" => &vz,
         "radius" => &radius,
+        "inv_mass" => &inv_mass,
         "r" => &r,
         "g" => &g,
         "b" => &b,
@@ -183,17 +183,14 @@ pub fn load_snapshot(
     let vy = df.column("vy")?.f64()?.into_iter().collect::<Vec<_>>();
     let vz = df.column("vz")?.f64()?.into_iter().collect::<Vec<_>>();
     let radius = df.column("radius")?.f64()?.into_iter().collect::<Vec<_>>();
+    let inv_mass: Vec<Option<f64>> = df.column("inv_mass")?.f64()?.into_iter().collect::<Vec<_>>();
     let r = df.column("r")?.f64()?.into_iter().collect::<Vec<_>>();
     let g = df.column("g")?.f64()?.into_iter().collect::<Vec<_>>();
     let b = df.column("b")?.f64()?.into_iter().collect::<Vec<_>>();
 
     // Reconstruct particles
-    let particles = ids
-        .into_iter()
-        .zip(x.into_iter().zip(y.into_iter().zip(z.into_iter())))
-        .zip(vx.into_iter().zip(vy.into_iter().zip(vz.into_iter())))
-        .zip(radius.into_iter().zip(r.into_iter().zip(g.into_iter().zip(b.into_iter()))))
-        .map(|(((id, (x, (y, z))), (vx, (vy, vz))), (radius, (r, (g, b))))| {
+    let particles = izip!(ids,x,y,z,vx,vy,vz,radius,inv_mass,r,g,b)
+        .map(|(id,x,y,z,vx,vy,vz,radius,inv_mass,r,g,b)| {
             Particle {
                 id: id.unwrap_or(0) as usize,
                 position: DVec3::new(
@@ -207,12 +204,14 @@ pub fn load_snapshot(
                     vz.unwrap_or(0.0),
                 ),
                 radius: radius.unwrap_or(0.0),
+                inv_mass: inv_mass.unwrap_or(0.0),
                 color: Srgba::new(
                     r.unwrap_or(0.0) as u8,
                     g.unwrap_or(0.0) as u8,
                     b.unwrap_or(0.0) as u8,
                     255,
                 ),
+                
             }
         })
         .collect();

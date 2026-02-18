@@ -9,7 +9,8 @@ use md_viz::objects::SimBox;
 
 use md_sim::simulation::Simulation;
 use md_sim::simulation::SimulationSettings;
-use md_sim::file_io::{self, load_simsettings, NoExtraParams};
+use md_sim::file_io::{self, load_simsettings};
+use md_sim::simulation::{NoExtraParams, FluidParams};
 
 
 
@@ -32,7 +33,7 @@ pub fn main() {
     // -----------------------------------------------------------
     
     let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
-    let sim_settings = SimulationSettings::<NoExtraParams>::new(&config_filepath).expect("sim settings not loaded correctly");
+    let sim_settings: SimulationSettings<FluidParams> = SimulationSettings::new(&config_filepath).expect("sim settings not loaded correctly");
     
     //----------------------------------------------------------------
     //  Define graphics
@@ -56,7 +57,7 @@ pub fn main() {
     //-------------------------------------------------------------
     //  Create simulation
     //--------------------------------------------------------------
-    let mut sim = Simulation::new(particles, sim_settings.clone());
+    let mut sim: Simulation<FluidParams>= Simulation::new(particles, sim_settings.clone());
 
     //--------------------------------------------------------------
     //  Initialise all graphics
@@ -82,7 +83,7 @@ pub fn main() {
     
     // Run simulation loop for num_steps
     for step in start_step..=(start_step+sim.settings.num_steps) {
-        sim.update_pos();
+        sim.update();
 
         // update scene every dump timesteps
         if step % sim.settings.dump == 0 {

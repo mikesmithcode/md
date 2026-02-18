@@ -13,5 +13,6 @@ serde_json = {workspace = true }
 md_core = { path = "../md_core" }
 polars = { workspace = true, features = ["parquet"] }
 tempfile = { workspace = true }
+itertools = { workspace = true}
 
 

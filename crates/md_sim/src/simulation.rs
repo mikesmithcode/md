@@ -1,5 +1,7 @@
 use md_core::particle::Particle;
 use serde_json::Error;
+use std::collections::HashMap;
+use serde_json::Value;
 use glam::DVec3;
 //use crate::file_io::{load_simsettings, save_simsettings};
 
@@ -9,6 +11,9 @@ use serde::{Serialize, Deserialize, de::DeserializeOwned};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+
+use crate::forces::{Forces, calc_drag, calc_gravity};
+
 ///---------------------------------------------------------
 ///Simulation settings 
 /// 
@@ -25,7 +30,8 @@ pub struct SimulationSettings<T>{
     pub extra: T,
 }
 
-impl<T> SimulationSettings<T>{
+impl<T> SimulationSettings<T>
+    {
     /// loads both sim config and initial state from file
     /// 
     /// Path
@@ -48,6 +54,31 @@ impl<T> SimulationSettings<T>{
 }
 
 
+///Types of simulation_settings
+/// Unit struct to be passed to load_simsettings if nothing beyond default params in file.
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct NoExtraParams;
+
+pub trait Fluid{
+    fn viscosity(&self) -> f64;
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct FluidParams {
+    pub viscosity: f64,
+}
+
+impl Fluid for FluidParams{
+    fn viscosity(&self)-> f64{
+        self.viscosity
+    }
+}
+
+
+
+
+
+
 
 /// The main simulation engine
 #[derive(Clone, Debug)]
@@ -57,7 +88,10 @@ pub struct Simulation<T> {
     pub current_step: usize,
 }
 
-impl<T: Clone> Simulation<T> {
+impl<T> Simulation<T> 
+    where 
+        T: Clone + Forces
+    {
     /// Create a new simulation
     pub fn new(particles: Vec<Particle>, settings: SimulationSettings<T>) -> Self {
         Self {
@@ -67,18 +101,20 @@ impl<T: Clone> Simulation<T> {
         }
     }
 
-    pub fn update_force(&mut self){
-        println!("forces");
+    pub fn update(&mut self){
+        let mut forces = vec![DVec3::ZERO; self.particles.len()];
+        self.settings.extra.update_forces(&self.particles, &mut forces);
+        self.update_motion(&forces);
     }
 
-    /// Run one simulation step
-    pub fn update_pos(&mut self) {
-        // Your simulation logic here
-        
-        for particle in self.particles.iter_mut(){
-            println!("{:?}", particle.position);
-            particle.position.x += 0.012;
-            particle.position.y += 0.002;
+    /// Update motion of particles by applying forces and stepping forward one dt
+    pub fn update_motion(&mut self, forces: &[DVec3]) {
+        let dt = self.settings.dt;
+        for (idx,particle) in self.particles.iter_mut().enumerate(){
+            particle.velocity += forces[idx]*particle.inv_mass * dt;
+            particle.position += particle.velocity * dt;
+            
+            //Apply periodic boundaries
             check_periodic(&mut particle.position, self.settings.sim_box_size);
         }
     }
@@ -92,6 +128,27 @@ impl<T: Clone> Simulation<T> {
         &self.particles
     }
 }
+
+/// Simulation<NoExtraParams> When the simulation has no extra params
+impl Simulation<NoExtraParams> {
+    pub fn update_forces(&mut self, forces: &mut [DVec3]) {
+        // Only gravity is available here
+        calc_gravity(&self.particles, forces);
+    }
+}
+
+///Simlation<FluidParams> When the simulation has fluid params
+impl Simulation<FluidParams> {
+    pub fn update_forces(&mut self, forces: &mut [DVec3]) {
+        // Gravity + Drag
+        calc_gravity(&self.particles, forces);
+        calc_drag(&self.particles, forces, &self.settings.extra);
+    }
+}
+
+
+
+
 
 
 pub fn check_periodic(pos: &mut DVec3, sim_box_size: DVec3){
