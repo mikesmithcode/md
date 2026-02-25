@@ -14,5 +14,6 @@ md_core = { path = "../md_core" }
 polars = { workspace = true, features = ["parquet"] }
 tempfile = { workspace = true }
 itertools = { workspace = true}
+soa_derive = {workspace = true}
 
 

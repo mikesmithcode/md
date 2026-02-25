@@ -13,7 +13,7 @@
 //! using [`load_latest_snapshot`] to resume a previously stopped experiment.
 
 
-use crate::{Particle, simulation::SimulationSettings};
+use crate::{Particle, ParticleVec, simulation::SimulationSettings};
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 use serde_json;
 use std::{fs, io::Error, path::Path};
@@ -39,7 +39,7 @@ use itertools::izip;
 ///
 /// # Panics
 /// Panics if the `SimulationSettings` cannot be converted to JSON.
-pub fn save_simsettings<T: Serialize>(sim_settings: &SimulationSettings<T>, snapshot_path: &Path) -> Result<(), Error> 
+pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path) -> Result<(), Error> 
 {
     let filename = format!("sim_config_{:010}.json", sim_settings.start);
     let full_filename = Path::new(&snapshot_path).join(filename);
@@ -62,27 +62,22 @@ pub fn save_simsettings<T: Serialize>(sim_settings: &SimulationSettings<T>, snap
 ///    pub sim_path: String,
 ///    pub dump: usize,
 ///    // Special values
-///    #[serde(flatten)]
-///    pub extra: T,
 ///}
 /// 
 /// If there are no extra parameters in the file
 /// 
 /// We update the start field to match index the initial value of the loop. Thus if you restart
 /// simulation start will be at the correct value.
-pub fn load_simsettings<T>(input_filepath: &Path, output_path: &Path, index: usize) -> Result<SimulationSettings<T>, Box<dyn std::error::Error>>
-where
-    T: DeserializeOwned + Serialize,
+pub fn load_simsettings(input_filepath: &Path, output_path: &Path, index: usize) -> Result<SimulationSettings, Box<dyn std::error::Error>>
 {   
-
     let file = fs::File::open(input_filepath)?;
     let reader = BufReader::new(file);
     
-    let mut sim_settings: SimulationSettings<T> = serde_json::from_reader(reader)?;
+    let mut sim_settings: SimulationSettings = serde_json::from_reader(reader)?;
     sim_settings.start = index;
 
     //Save a copy of config to output with simulation index as suffix.
-    save_simsettings::<T>(&sim_settings, output_path)?;
+    save_simsettings(&sim_settings, output_path)?;
     
     Ok(sim_settings)
 }
@@ -100,42 +95,30 @@ where
 pub fn save_snapshot(
     dir_path: &Path,
     step: usize,
-    particles: &[Particle],
+    particles: &ParticleVec,
     time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Create directory if it doesn't exist
     fs::create_dir_all(dir_path)?;
 
-    // Extract data from particles
-    let t: Vec<f64> = vec![time;particles.len()];
-    let ids: Vec<u64> = particles.iter().map(|p| p.id as u64).collect();
-    let x: Vec<f64> = particles.iter().map(|p| p.position.x).collect();
-    let y: Vec<f64> = particles.iter().map(|p| p.position.y).collect();
-    let z: Vec<f64> = particles.iter().map(|p| p.position.z).collect();
-    let vx: Vec<f64> = particles.iter().map(|p| p.velocity.x).collect();
-    let vy: Vec<f64> = particles.iter().map(|p| p.velocity.y).collect();
-    let vz: Vec<f64> = particles.iter().map(|p| p.velocity.z).collect();
-    let radius: Vec<f64> = particles.iter().map(|p| p.radius).collect();
-    let inv_mass: Vec<f64> = particles.iter().map(|p| p.inv_mass).collect();
-    let r: Vec<f64> = particles.iter().map(|p| p.color.r as f64).collect();
-    let g: Vec<f64> = particles.iter().map(|p| p.color.g as f64).collect();
-    let b: Vec<f64> = particles.iter().map(|p| p.color.b as f64).collect();
 
-    // Create DataFrame
+    let t: Vec<f64> = vec![time;particles.len()];
+    let ids: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
+
     let mut df = df!(
         "t" => &t,
         "id" => &ids,
-        "x" => &x,
-        "y" => &y,
-        "z" => &z,
-        "vx" => &vx,
-        "vy" => &vy,
-        "vz" => &vz,
-        "radius" => &radius,
-        "inv_mass" => &inv_mass,
-        "r" => &r,
-        "g" => &g,
-        "b" => &b,
+        "x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
+        "y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
+        "z" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "vx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
+        "vy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
+        "vz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
+        "radius" => &particles.radius,
+        "inv_mass" => &particles.inv_mass,
+        "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
+        "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
+        "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
     )?;
 
     // Write to Parquet (with temp file for safety)
@@ -151,7 +134,6 @@ pub fn save_snapshot(
         ParquetWriter::new(file).finish(&mut df)?;
     }
 
-    // Atomic rename
     fs::rename(&temp_path, &final_path)?;
 
     Ok(())
@@ -167,59 +149,75 @@ pub fn save_snapshot(
 /// 
 /// # Returns
 /// * `(particles, time)` - Vector of particles and simulation time
+/// Load particle snapshot from Parquet file into a ParticleVec
 pub fn load_snapshot(
     file_path: &Path,
-) -> Result<(Vec<Particle>, f64), Box<dyn std::error::Error>> {
+) -> Result<(ParticleVec, f64), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(file_path)?;
     let df = ParquetReader::new(file).finish()?;
 
-    // Extract columns
-    let time = df.column("t")?.f64()?.into_iter().collect::<Vec<_>>();
-    let ids = df.column("id")?.u64()?.into_iter().collect::<Vec<_>>();
-    let x = df.column("x")?.f64()?.into_iter().collect::<Vec<_>>();
-    let y = df.column("y")?.f64()?.into_iter().collect::<Vec<_>>();
-    let z = df.column("z")?.f64()?.into_iter().collect::<Vec<_>>();
-    let vx = df.column("vx")?.f64()?.into_iter().collect::<Vec<_>>();
-    let vy = df.column("vy")?.f64()?.into_iter().collect::<Vec<_>>();
-    let vz = df.column("vz")?.f64()?.into_iter().collect::<Vec<_>>();
-    let radius = df.column("radius")?.f64()?.into_iter().collect::<Vec<_>>();
-    let inv_mass: Vec<Option<f64>> = df.column("inv_mass")?.f64()?.into_iter().collect::<Vec<_>>();
-    let r = df.column("r")?.f64()?.into_iter().collect::<Vec<_>>();
-    let g = df.column("g")?.f64()?.into_iter().collect::<Vec<_>>();
-    let b = df.column("b")?.f64()?.into_iter().collect::<Vec<_>>();
+    let count = df.height();
+    let mut particles = ParticleVec::with_capacity(count);
 
-    // Reconstruct particles
-    let particles = izip!(ids,x,y,z,vx,vy,vz,radius,inv_mass,r,g,b)
-        .map(|(id,x,y,z,vx,vy,vz,radius,inv_mass,r,g,b)| {
-            Particle {
-                id: id.unwrap_or(0) as usize,
-                position: DVec3::new(
-                    x.unwrap_or(0.0),
-                    y.unwrap_or(0.0),
-                    z.unwrap_or(0.0),
-                ),
-                velocity: DVec3::new(
-                    vx.unwrap_or(0.0),
-                    vy.unwrap_or(0.0),
-                    vz.unwrap_or(0.0),
-                ),
-                radius: radius.unwrap_or(0.0),
-                inv_mass: inv_mass.unwrap_or(0.0),
-                color: Srgba::new(
-                    r.unwrap_or(0.0) as u8,
-                    g.unwrap_or(0.0) as u8,
-                    b.unwrap_or(0.0) as u8,
-                    255,
-                ),
-                
-            }
-        })
-        .collect();
+    let t_col = df.column("t")?.f64()?;
+    let id_col = df.column("id")?.u64()?;
+    let x_col = df.column("x")?.f64()?;
+    let y_col = df.column("y")?.f64()?;
+    let z_col = df.column("z")?.f64()?;
+    let vx_col = df.column("vx")?.f64()?;
+    let vy_col = df.column("vy")?.f64()?;
+    let vz_col = df.column("vz")?.f64()?;
+    let r_col = df.column("radius")?.f64()?;
+    let m_col = df.column("inv_mass")?.f64()?;
+    let col_r = df.column("r")?.f64()?;
+    let col_g = df.column("g")?.f64()?;
+    let col_b = df.column("b")?.f64()?;
 
-    // For now, return time as 0.0 (could add to DataFrame metadata if needed)
-    Ok((particles, time[0].unwrap()))
+    
+    let t = t_col.get(0).unwrap_or(0.0);
+
+    // 4. Efficiently populate the ParticleVec
+    // We use izip! to iterate through all columns simultaneously
+    for (id, x, y, z, vx, vy, vz, rad, inv_m, r, g, b) in izip!(
+        id_col.into_iter(),
+        x_col.into_iter(),
+        y_col.into_iter(),
+        z_col.into_iter(),
+        vx_col.into_iter(),
+        vy_col.into_iter(),
+        vz_col.into_iter(),
+        r_col.into_iter(),
+        m_col.into_iter(),
+        col_r.into_iter(),
+        col_g.into_iter(),
+        col_b.into_iter()
+    ) {
+        // We use .unwrap_or because Polars columns are technically nullable
+        particles.push(Particle {
+            id: id.unwrap_or(0) as usize,
+            position: DVec3::new(
+                x.unwrap_or(0.0),
+                y.unwrap_or(0.0),
+                z.unwrap_or(0.0),
+            ),
+            velocity: DVec3::new(
+                vx.unwrap_or(0.0),
+                vy.unwrap_or(0.0),
+                vz.unwrap_or(0.0),
+            ),
+            radius: rad.unwrap_or(0.0),
+            inv_mass: inv_m.unwrap_or(0.0),
+            color: Srgba::new(
+                r.unwrap_or(0.0) as u8,
+                g.unwrap_or(0.0) as u8,
+                b.unwrap_or(0.0) as u8,
+                255, // Full opacity
+            ),
+        });
+    }
+
+    Ok((particles, t))
 }
-
 
 /// Load the latest snapshot from a directory
 /// 
@@ -234,7 +232,7 @@ pub fn load_snapshot(
 /// * `(particles, step, time)` - Vector of particles, step number, and simulation time
 pub fn load_latest_snapshot(
     dir_path: &Path,
-) -> Result<(Vec<Particle>, usize, f64), Box<dyn std::error::Error>> {
+) -> Result<(ParticleVec, usize, f64), Box<dyn std::error::Error>> {
     let (latest_path, latest_step) = fs::read_dir(dir_path)?
         .flatten() // Ignore entries we can't read
         .filter_map(|entry| {
@@ -267,15 +265,16 @@ mod tests {
         let dir_path = dir.path();
         
         // Create dummy particle data
-        let particles = vec![
+        let mut particles = ParticleVec::new();
+        particles.push(
             Particle {
                 id: 1,
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(0.1, 0.2, 0.3),
                 radius: 0.5,
+                inv_mass: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
-            }
-        ];
+            });
         let step = 42;
         let time = 0.5;
 
@@ -289,9 +288,9 @@ mod tests {
 
         // Checks
         assert_eq!(loaded_particles.len(), 1);
-        assert_eq!(loaded_particles[0].id, 1);
+        assert_eq!(loaded_particles.id[0], 1);
         assert_eq!(loaded_time, 0.5);
-        assert!((loaded_particles[0].position.x - 1.0).abs() < f64::EPSILON);
+        assert!((loaded_particles.position[0].x - 1.0).abs() < f64::EPSILON);
         
         Ok(())
     }
@@ -302,7 +301,7 @@ mod tests {
         let dir_path = dir.path();
         
         // Save two snapshots with different steps
-        let particles = vec![]; 
+        let particles = ParticleVec::new(); 
         save_snapshot(dir_path, 1, &particles, 0.1)?;
         save_snapshot(dir_path, 10, &particles, 1.0)?; 
 

@@ -14,9 +14,11 @@
 // md_sim/src/lib.rs
 use glam::f64::DVec3;
 use three_d::*;
+use soa_derive::StructOfArray;
 
 ///Particle defines a particle object which defines key properties: position, velocity etc
-#[derive(Debug, Clone, PartialEq)] 
+#[derive(Debug, Clone, PartialEq, StructOfArray)]
+#[soa_derive(Debug, PartialEq)]
 pub struct Particle {
     pub id: usize,
     pub position: DVec3,  
@@ -29,9 +31,9 @@ pub struct Particle {
 impl Particle {
     ///Create a new particle
     pub fn new(id: usize, position: DVec3, velocity: DVec3, radius: f64, density: f64, color: Srgba) -> Self {
-        let inv_mass = 1.0/((4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density);
+        let inv_mass = 1.0/((4.0 / 3.0) * std::f64::consts::PI * radius.powi(3) * density);
 
-        Particle { id, position, velocity, radius, inv_mass,color}
+        Particle { id, position, velocity, radius, inv_mass, color}
     }
 }
 

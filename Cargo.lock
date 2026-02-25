@@ -1528,6 +1528,7 @@ name = "md_core"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "soa_derive",
  "three-d",
 ]
 
@@ -1560,6 +1561,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "soa_derive",
  "tempfile",
  "three-d",
 ]
@@ -1573,6 +1575,7 @@ dependencies = [
  "md_core",
  "md_sim",
  "serde",
+ "soa_derive",
  "tempfile",
  "three-d",
  "winit 0.28.7",
@@ -1963,6 +1966,12 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "permutation"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df202b0b0f5b8e389955afd5f27b007b00fb948162953f1db9c70d2c7e3157d7"
 
 [[package]]
 name = "phf"
@@ -2822,6 +2831,27 @@ name = "snap"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b6b67fb9a61334225b5b790716f609cd58395f895b3fe8b328786812a40bc3b"
+
+[[package]]
+name = "soa_derive"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe62159e5b5e7d6baa8674deaccce633e3d57c3196287530af1908e1e429ba57"
+dependencies = [
+ "permutation",
+ "soa_derive_internal",
+]
+
+[[package]]
+name = "soa_derive_internal"
+version = "0.13.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cbe8bf515bf9a1859c43f2479276c78789598d7e1e69878b23f5a110983c7be6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
 
 [[package]]
 name = "socket2"

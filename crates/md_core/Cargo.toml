@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 glam = { workspace = true } 
 three-d = {workspace = true} 
+soa_derive = {workspace = true}

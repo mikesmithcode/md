@@ -1,49 +1,48 @@
-use md_core::particle::Particle;
-use serde_json::Error;
-use std::collections::HashMap;
-use serde_json::Value;
+use itertools::izip;
+use md_core::particle::{ParticleVec};
 use glam::DVec3;
 //use crate::file_io::{load_simsettings, save_simsettings};
 
 //use glam::DVec3;
 //use three_d::core::Srgba;
-use serde::{Serialize, Deserialize, de::DeserializeOwned};
+use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use crate::forces::{Forces, calc_drag, calc_gravity};
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum SimulationModel{
+    Default,
+}
 
 ///---------------------------------------------------------
 ///Simulation settings 
 /// 
 /// These are parameters that affect the running of the simulation such as time step.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SimulationSettings<T>{
+pub struct SimulationSettings{
     pub dt: f64,
     pub sim_box_size: DVec3, 
     pub start: usize,
     pub num_steps: usize,
     pub dump: usize,
-    // Special values
-    #[serde(flatten)]
-    pub extra: T,
+    pub model: SimulationModel,
 }
 
-impl<T> SimulationSettings<T>
+impl SimulationSettings
     {
     /// loads both sim config and initial state from file
     /// 
     /// Path
-    pub fn new(path: &Path)-> Result<SimulationSettings<T>, Box<dyn std::error::Error>>
-        where T: DeserializeOwned + Serialize,
+    pub fn new(path: &Path)-> Result<SimulationSettings, Box<dyn std::error::Error>>
     {
         let file = File::open(path).unwrap_or_else(|_err| {
             panic!("\n==========================================\nError: Couldn't find file at {}\n==========================================\n", path.display());
         });
         let reader = BufReader::new(file);
 
-        let sim_settings = serde_json::from_reader::<_, SimulationSettings<T>>(reader)?;
+        let sim_settings = serde_json::from_reader::<_, SimulationSettings>(reader)?;
 
         Ok(sim_settings)
     }
@@ -54,46 +53,18 @@ impl<T> SimulationSettings<T>
 }
 
 
-///Types of simulation_settings
-/// Unit struct to be passed to load_simsettings if nothing beyond default params in file.
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct NoExtraParams;
-
-pub trait Fluid{
-    fn viscosity(&self) -> f64;
-}
-
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct FluidParams {
-    pub viscosity: f64,
-}
-
-impl Fluid for FluidParams{
-    fn viscosity(&self)-> f64{
-        self.viscosity
-    }
-}
-
-
-
-
-
-
-
 /// The main simulation engine
-#[derive(Clone, Debug)]
-pub struct Simulation<T> {
-    pub particles: Vec<Particle>,
-    pub settings: SimulationSettings<T>,
+#[derive(Debug)]
+pub struct Simulation {
+    pub particles: ParticleVec,
+    pub settings: SimulationSettings,
     pub current_step: usize,
 }
 
-impl<T> Simulation<T> 
-    where 
-        T: Clone + Forces
+impl Simulation 
     {
     /// Create a new simulation
-    pub fn new(particles: Vec<Particle>, settings: SimulationSettings<T>) -> Self {
+    pub fn new(particles: ParticleVec, settings: SimulationSettings) -> Self {
         Self {
             particles,
             settings: settings.clone(),
@@ -103,49 +74,35 @@ impl<T> Simulation<T>
 
     pub fn update(&mut self){
         let mut forces = vec![DVec3::ZERO; self.particles.len()];
-        self.settings.extra.update_forces(&self.particles, &mut forces);
         self.update_motion(&forces);
     }
 
     /// Update motion of particles by applying forces and stepping forward one dt
     pub fn update_motion(&mut self, forces: &[DVec3]) {
         let dt = self.settings.dt;
-        for (idx,particle) in self.particles.iter_mut().enumerate(){
-            particle.velocity += forces[idx]*particle.inv_mass * dt;
-            particle.position += particle.velocity * dt;
+        let box_size = self.settings.sim_box_size;
+
+        // We zip the columns of the ParticleVec along with the external forces slice
+        for (pos, vel, inv_mass, force) in izip!(
+            &mut self.particles.position,
+            &mut self.particles.velocity,
+            &self.particles.inv_mass,
+            forces
+        ) {
+            let acceleration = *force * (*inv_mass);
+            *vel += acceleration * dt;
+            *pos += *vel * dt;
             
-            //Apply periodic boundaries
-            check_periodic(&mut particle.position, self.settings.sim_box_size);
+            // Apply periodic boundaries
+            check_periodic(pos, box_size);
         }
     }
 
-
-    pub fn update_rad(&mut self){
-        println!("radius");
-    }
-
-    pub fn get_particles(&self)-> &[Particle]{
+    //Return read only reference to particles
+    pub fn get_particles(&self)-> &ParticleVec{
         &self.particles
     }
 }
-
-/// Simulation<NoExtraParams> When the simulation has no extra params
-impl Simulation<NoExtraParams> {
-    pub fn update_forces(&mut self, forces: &mut [DVec3]) {
-        // Only gravity is available here
-        calc_gravity(&self.particles, forces);
-    }
-}
-
-///Simlation<FluidParams> When the simulation has fluid params
-impl Simulation<FluidParams> {
-    pub fn update_forces(&mut self, forces: &mut [DVec3]) {
-        // Gravity + Drag
-        calc_gravity(&self.particles, forces);
-        calc_drag(&self.particles, forces, &self.settings.extra);
-    }
-}
-
 
 
 

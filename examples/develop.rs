@@ -1,4 +1,6 @@
 use std::path::Path;
+use std::thread::sleep;
+use std::time::Duration;
 use winit::event_loop::EventLoop;
 
 
@@ -10,7 +12,6 @@ use md_viz::objects::SimBox;
 use md_sim::simulation::Simulation;
 use md_sim::simulation::SimulationSettings;
 use md_sim::file_io::{self, load_simsettings};
-use md_sim::simulation::{NoExtraParams, FluidParams};
 
 
 
@@ -33,7 +34,7 @@ pub fn main() {
     // -----------------------------------------------------------
     
     let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
-    let sim_settings: SimulationSettings<FluidParams> = SimulationSettings::new(&config_filepath).expect("sim settings not loaded correctly");
+    let sim_settings: SimulationSettings = SimulationSettings::new(&config_filepath).expect("sim settings not loaded correctly");
     
     //----------------------------------------------------------------
     //  Define graphics
@@ -41,7 +42,7 @@ pub fn main() {
 
     let scene_settings = SceneSetup {
             camera: CameraSettings{
-                perspective: Perspective::Orthographic, // Default Perspective::Perspective or Perspective::Orthographic
+                perspective: Perspective::Perspective, // Default Perspective::Perspective or Perspective::Orthographic
                 window_dt: 0.01,
                 headless_dt: 0.01,
                 },
@@ -57,7 +58,7 @@ pub fn main() {
     //-------------------------------------------------------------
     //  Create simulation
     //--------------------------------------------------------------
-    let mut sim: Simulation<FluidParams>= Simulation::new(particles, sim_settings.clone());
+    let mut sim: Simulation= Simulation::new(particles, sim_settings.clone());
 
     //--------------------------------------------------------------
     //  Initialise all graphics
@@ -68,9 +69,9 @@ pub fn main() {
     //--------------------------------------------------------------   
     
     let mut scene: Scene = Scene::new(scene_settings.clone());
-    let _ = scene.init_headless();
-    //let mut event_loop = EventLoop::new(); 
-    //let _ = scene.init_window(&event_loop);
+    //let _ = scene.init_headless();
+    let mut event_loop = EventLoop::new(); 
+    let _ = scene.init_window(&event_loop);
 
     //--------------------------------------------------------------
     // Start simulation loop
@@ -88,15 +89,14 @@ pub fn main() {
         // update scene every dump timesteps
         if step % sim.settings.dump == 0 {
             // exit if window close requested
-            //if scene.poll_events(&mut event_loop) {
-            //    break; 
-            //}
+            if scene.poll_events(&mut event_loop) {
+                break; 
+            }
             
             //Handle graphics
-            scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
-            //scene.camera_control.update_camera(&mut scene.camera);
-            //scene.display(&sim.get_particles()).expect("Error updating display");
-            //sleep(Duration::from_millis(100));
+            //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
+            scene.display(&sim.get_particles()).expect("Error updating display");
+            sleep(Duration::from_millis(100));
 
             //save a snapshot of particle positions etc
             file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), time).expect("Error saving simulation snapshot");

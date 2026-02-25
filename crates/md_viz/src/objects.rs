@@ -30,23 +30,6 @@ pub fn create_ambient_light(context: &Context)->AmbientLight{
 }
 
 
-/// Creates and returns `Axes` for visualization.
-pub fn create_axes(context: &Context, sim_box_max: f32) -> Axes {
-
-    let mut axes = Axes::new(context, 0.1, 1.0); // size, length
-    let axes_offset = sim_box_max / 2.0;
-        let padding = 0.5; // Small offset from the edge
-
-        axes.set_transformation(
-            Mat4::from_translation(vec3(
-                axes_offset - padding,  // X position
-                axes_offset - padding,  // Y position
-                axes_offset - padding,  // Z position
-            ))
-        );
-    axes
-}
-
 //------------------------------------------------------------------------------
 // Simulation box
 //------------------------------------------------------------------------------

@@ -45,15 +45,25 @@ pub fn create_camera(viewport: Viewport, scene_settings: SceneSetup) -> Camera {
 /// 
 /// This is useful for viewing and rotating around a 3D scene
 fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Camera {
+    let centre = vec3(
+        sim_box_size[0] * 0.5, 
+        sim_box_size[1] * 0.5, 
+        sim_box_size[2] * 0.5
+    );
     
+    // Calculate a distance that ensures the whole box is visible.
+    // 2.0x the largest dimension is usually a safe "sweet spot".
+    let max_dim = sim_box_size[0].max(sim_box_size[1]).max(sim_box_size[2]);
+    let eye_pos = centre + vec3(0.0, 0.0, max_dim * 2.0);
+
     Camera::new_perspective(
         viewport, 
-        vec3(0.0, 0.0, sim_box_size[2]*5.0), // Camera position adjusted for a larger box
-        vec3(0.0, 0.0, 0.0), // Look at the center of the simulation box
+        eye_pos,
+        centre,              // Look at the centre of the box
         vec3(0.0, 1.0, 0.0), // Up direction
-        degrees(45.0),
-        0.1,
-        100000.0,
+        degrees(45.0),       // Field of view
+        0.1,                 // Near plane
+        max_dim * 20.0,      // Far plane
     )
 }
 
@@ -61,19 +71,27 @@ fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Came
 /// 
 /// This has no perspective. Can be useful if you want to view a 2D simulation or
 /// 3D with no changes in apparent size with depth.
-fn create_orthographic_camera(viewport: Viewport, sim_box_size: [f32;3]) -> Camera {
+fn create_orthographic_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Camera {
+    let x_mid = sim_box_size[0] * 0.5;
+    let y_mid = sim_box_size[1] * 0.5;
+    let z_mid = sim_box_size[2] * 0.5;
+    let centre = vec3(x_mid, y_mid, z_mid);
     
-    let sim_box_max = sim_box_size.iter().cloned().fold(0.0, f32::max);
-    let camera_height_units = 2.*sim_box_max; // Adjust height to
+    // Find the largest dimension to set the initial zoom level
+    let max_dim = sim_box_size[0].max(sim_box_size[1]).max(sim_box_size[2]);
+    
+    // Initial height: 1.5x the largest dimension ensures the box fits
+    let camera_height_units = max_dim * 1.5; 
     
     Camera::new_orthographic(
         viewport,
-        vec3(0.0, 0.0, sim_box_size[2]*0.25), // Eye position
-        vec3(0.0, 0.0, 0.0), // Target position
+        // Place the eye directly in front of the centre along the Z-axis
+        vec3(x_mid, y_mid, max_dim * 2.5), 
+        centre,              // Look at the centre of the box
         vec3(0.0, 1.0, 0.0), // Up direction
         camera_height_units,
-        -1000.0,
-        1000.0,
+        -max_dim * 10.0,     // Near plane
+        max_dim * 10.0,      // Far plane
     )
 }
   
@@ -87,87 +105,144 @@ pub struct CameraControl {
     pub distance: f32,
     pub zoom: f32,
     pub dragging: bool,
+    pub panning: bool,
     pub last_cursor: (f32, f32),
     pub rotation_delta: (f32,f32),
+    pub pan_delta: (f32, f32),
+    pub update: bool,
+    pub sync_needed: bool,
 }
 
 impl CameraControl {
     pub fn new(camera: &Camera, target: Vector3<f32>) -> Self {
         let camera_to_target = camera.position() - target;
         let distance = camera_to_target.magnitude();
-        let zoom: f32 = 1.0;
+        let zoom: f32 = camera.zoom_factor();
         Self { 
             distance, 
             zoom, 
             dragging: false,
+            panning: false,
             last_cursor: (0.0, 0.0),
             rotation_delta: (0.0, 0.0), 
+            pan_delta: (0.0,0.0),
+            update: false,
+            sync_needed: false,
         }
     }
 
 
     /// Handle a winit event
-    pub fn handle_event(&mut self, event: &WindowEvent) {
-        match event {
-            // Left click
-            WindowEvent::MouseInput { state, button, .. } => {
-                if *button == MouseButton::Left {
-                    self.dragging = *state == ElementState::Pressed;
-                }
-            }   
+pub fn handle_event(&mut self, event: &WindowEvent) {
+    match event {
+        
+        WindowEvent::MouseInput { state, button, .. } => {
+            let is_pressed = *state == ElementState::Pressed;
 
-            // Track cursor movement
-            WindowEvent::CursorMoved { position, .. } => {
-                if self.dragging {
-                    let (x, y) = (position.x as f32, position.y as f32);
-                    let dx = x - self.last_cursor.0;
-                    let dy = y - self.last_cursor.1;
-
-                    // Apply rotation to camera in update_camera
-                    self.last_cursor = (x, y);
-
-                    // Store the delta for update step
-                    self.rotation_delta = (dx, dy);
-                } else {
-                    self.last_cursor = (position.x as f32, position.y as f32);
-                }
+            if *button == MouseButton::Left { 
+                self.dragging = is_pressed; 
+            }
+            if *button == MouseButton::Right { 
+                self.panning = is_pressed; 
             }
 
-            // Mouse wheel for zoom
-            WindowEvent::MouseWheel { delta, .. } => {
-                let scroll_amount = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => *y,
-                    MouseScrollDelta::PixelDelta(pos) => pos.y as f32,
-                };
-                
-                //Adjust zoom
-                self.zoom += scroll_amount *0.025;
-                self.zoom = self.zoom.clamp(0.1, 3.0);
-                println!("{}",self.zoom);
-                
+            // Every time a button is pressed down, we MUST reset the cursor baseline
+            // to prevent the camera from "jumping" to a stale coordinate.
+            if is_pressed {
+                self.sync_needed = true;
             }
-
-            _ => {}
         }
-    }
 
-    /// Apply zoom to a three_d Camera
-    pub fn update_camera(&mut self, camera: &mut Camera) {
-        // Zoom towards the origin
+        WindowEvent::CursorMoved { position, .. } => {
+            let (x, y) = (position.x as f32, position.y as f32);
+
+            // If a click just happened, we ignore the distance calculation
+            // and simply record the current mouse position as the new starting point.
+            if self.sync_needed || (self.last_cursor.0 == 0.0 && self.last_cursor.1 == 0.0) {
+                self.last_cursor = (x, y);
+                self.sync_needed = false;
+                return; 
+            }
+
+            // Only calculate and apply deltas if the user is holding a button
+            if self.dragging || self.panning {
+                let dx = x - self.last_cursor.0;
+                let dy = y - self.last_cursor.1;
+                
+                // Update the baseline for the next frame
+                self.last_cursor = (x, y);
+
+                if self.dragging {
+                    self.rotation_delta = (dx, dy);
+                } 
+                if self.panning {
+                    self.pan_delta = (dx, dy);
+                }
+                
+                // Signal to the Scene that it needs to call update_camera()
+                self.update = true;
+            } else {
+                // If not dragging, just keep track of where the mouse is 
+                // so we are ready for the next click.
+                self.last_cursor = (x, y);
+            }
+        }
+
+        // --- MOUSE WHEEL (ZOOM) ---
+        WindowEvent::MouseWheel { delta, .. } => {
+            let scroll_amount = match delta {
+                MouseScrollDelta::LineDelta(_, y) => *y,
+                MouseScrollDelta::PixelDelta(pos) => (pos.y as f32) * 0.1, 
+            };
+
+            // 1. Multiplicative zoom (the "Factor" method)
+            // This makes zoom feel the same speed whether you are at 0.1 or 10.0
+            let factor = 1.25f32; 
+            if scroll_amount > 0.0 {
+                self.zoom *= factor;
+            } else {
+                self.zoom /= factor;
+            }
+
+            // 2. Clamp to sensible British proportions
+            self.zoom = self.zoom.clamp(0.01, 100.0);
+            
+            // 3. Mark as updated for the renderer
+            self.update = true;
+        }
+
+        _ => {}
+    }
+}
+
+    pub fn update_camera(&mut self, camera: &mut Camera, target: Vector3<f32>) {
         camera.set_zoom_factor(self.zoom);
 
-        // Apply rotation if dragging
         if self.dragging {
             let (dx, dy) = self.rotation_delta;
             let sensitivity = 0.005;
+            
+            // Use the 'target' passed from the scene so rotation stays centred
             camera.rotate_around_with_fixed_up(
-                Vector3::new(0.0,0.0,0.0),
-                -dx * sensitivity,
-                -dy * sensitivity,
+                target,
+                dx * sensitivity,
+                dy * sensitivity,
             );
 
-            // reset delta after applying
             self.rotation_delta = (0.0, 0.0);
+        }
+
+        if self.panning {
+            let (dx, dy) = self.pan_delta;
+            let sensitivity = 0.001 * (1.0/self.zoom); 
+
+            let right = camera.right_direction();
+            let up = camera.up();
+            
+            let translation = right * (-dx * sensitivity) + up * (dy * sensitivity);
+            camera.translate(translation);
+            
+            self.pan_delta = (0.0, 0.0);
         }
     }
 }
