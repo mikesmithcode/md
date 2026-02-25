@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
+use md_sim::force::add_viscous_drag;
+use md_sim::motion::check_periodic;
 use winit::event_loop::EventLoop;
 
 
@@ -12,7 +14,14 @@ use md_viz::objects::SimBox;
 use md_sim::simulation::Simulation;
 use md_sim::simulation::SimulationSettings;
 use md_sim::file_io::{self, load_simsettings};
+use md_sim::force::Force;
+use md_sim::motion::Move;
+use md_core::particle::{Particle, ParticleVec};
 
+fn update(particles: &ParticleVec){
+    //
+
+}
 
 
 pub fn main() {    
@@ -84,6 +93,7 @@ pub fn main() {
     
     // Run simulation loop for num_steps
     for step in start_step..=(start_step+sim.settings.num_steps) {
+
         sim.update();
 
         // update scene every dump timesteps

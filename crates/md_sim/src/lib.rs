@@ -6,9 +6,11 @@
 
 pub mod simulation;
 pub mod file_io;
-pub mod forces;
+pub mod force;
+pub mod motion;
 
 pub use md_core::particle::*;
+
 
 
 
