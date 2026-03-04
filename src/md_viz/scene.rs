@@ -20,8 +20,6 @@
     //! render_particles() is called internally by display() or save_img() to draw particles.
     //! poll_events() in live mode looks for changes by the user to the camera view and updates the display.
 
-
-    use std::collections::HashMap;
     use std::path::Path;
 
     use three_d::*;  
@@ -36,11 +34,11 @@
     use winit::platform::run_return::EventLoopExtRunReturn;
     use winit::event::{Event as WinitEvent, WindowEvent};
 
-    use crate::objects::{create_ambient_light, create_directional_light};
-    use crate::templates::SphereTemplate;
-    use crate::objects::{SimBox, create_simbox};
-    use crate::camera::{create_camera, CameraControl, CameraSettings};
-    use md_core::particle::ParticleVec; 
+    use crate::md_viz::objects::{create_ambient_light, create_directional_light};
+    use crate::md_viz::templates::SphereTemplate;
+    use crate::md_viz::objects::{SimBox, create_simbox};
+    use crate::md_viz::camera::{create_camera, CameraControl, CameraSettings};
+    use crate::md_sim::particle::ParticleVec; 
 
     use image::{ImageBuffer, Rgba};
 

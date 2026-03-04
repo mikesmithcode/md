@@ -1,26 +1,21 @@
-# your_md_project/Cargo.toml
-[workspace]
-members = [ 
-    "crates/md_doc",
-    "crates/md_sim",
-    "crates/md_core",
-    "crates/md_viz",
-]
-resolver = "2"
-default-members=["crates/md_doc"]
+[package]
+name = "md"
+version = "0.1.0"
+edition = "2021"
+# No "resolver" needed here as "2" is the default for edition 2021
 
-[workspace.dependencies]
+[dependencies]
+# Move your workspace dependencies here
 rand = "0.8"
 three-d = { version = "0.18.2", features = ["headless"] }
-glam = {version="0.27", features = ["serde"]}
+glam = { version = "0.27", features = ["serde"] }
 image = "0.24"
 winit = "0.28"
 serde = { version = "1.0", features = ["derive"] } 
 serde_json = "1.0"
-polars = { version = "0.38"} 
+polars = { version = "0.38", features = ["parquet", "lazy"]} 
 tempfile = "3.24.0"
 itertools = "0.13"
 soa_derive = "0.13"
-
 
 

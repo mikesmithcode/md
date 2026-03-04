@@ -1,5 +1,3 @@
-use itertools::izip;
-use md_core::particle::{ParticleVec};
 use glam::DVec3;
 
 use serde::{Serialize, Deserialize};
@@ -7,14 +5,17 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
 
-use crate::force::Force;
-use crate::motion::Move;
+use crate::md_sim::particle::{ParticleVec};
+use crate::md_sim::force::Forces;
+use crate::md_sim::motion::Motion;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SimulationModel{
     Default,
+    Fluid {viscosity: f64},
 }
+
 
 ///---------------------------------------------------------
 ///Simulation settings 
@@ -55,21 +56,46 @@ impl SimulationSettings
 
 /// The main simulation engine
 #[derive(Debug)]
-pub struct Simulation {
+pub struct Simulation<S> 
+    where 
+        S: Forces + Motion,
+{
     pub particles: ParticleVec,
+    pub forces: Vec<DVec3>,
+    pub sim_update: S,
     pub settings: SimulationSettings,
     pub current_step: usize,
 }
 
-impl Simulation 
+impl<S> Simulation<S> 
+    where 
+        S: Forces + Motion,
     {
     /// Create a new simulation
-    pub fn new(particles: ParticleVec, settings: SimulationSettings) -> Self {
+    pub fn new(particles: ParticleVec, sim_update: S, settings: SimulationSettings) -> Self {
+        let n = particles.len();
         Self {
             particles,
+            forces : vec![DVec3::ZERO; n],
+            sim_update,
             settings: settings.clone(),
             current_step: settings.start,
         }
+    }
+
+    pub fn update(&mut self){
+        //Clear the force buffer and check same length as particles
+        if self.forces.len() != self.particles.len(){
+            self.forces.resize(self.particles.len(), DVec3::ZERO);
+        }else{
+            self.forces.fill(DVec3::ZERO);
+        }
+
+        //perform the updates.
+        self.sim_update.update_motion(&self.forces, &mut self.particles, &self.settings);
+        self.sim_update.update_forces(&mut self.forces, &self.particles, &self.settings);
+        self.sim_update.correct_motion(&self.forces, &mut self.particles, &self.settings);
+        
     }
 
     //Return read only reference to particles

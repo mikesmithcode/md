@@ -5,7 +5,7 @@
 //! for high-performance rendering.
 
 use three_d::*;
-use md_core::particle::ParticleVec;
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Geometry {

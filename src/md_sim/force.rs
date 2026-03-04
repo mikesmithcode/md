@@ -1,11 +1,12 @@
-use crate::simulation::SimulationSettings;
-use md_core::particle::{Particle, ParticleVec};
 use glam::DVec3;
 use itertools::izip;
 use std::f64::consts::PI;
 
-pub trait Force{
-    fn update_forces(&self, forces: &mut [DVec3], particles: &ParticleVec);
+use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::SimulationSettings;
+
+pub trait Forces{
+    fn update_forces(&self, forces: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings);
 
 }
 
@@ -17,7 +18,7 @@ pub fn add_weight(forces: &mut [DVec3], particles: &ParticleVec) {
     let gravity = -9.81;
 
     for (force, &inv_mass) in izip!(forces.iter_mut(), particles.inv_mass.iter()) {
-        if inv_mass > 0.0 {
+        if inv_mass*inv_mass > 0.0 {
             let weight = gravity / inv_mass;
             force.z += weight;
         }
@@ -29,7 +30,14 @@ pub fn add_weight(forces: &mut [DVec3], particles: &ParticleVec) {
 /// assumes these are spheres and that drag is proportional to velocity
 pub fn add_viscous_drag(forces: &mut [DVec3], particles: &ParticleVec, viscosity: f64){
     for (force, &vel, &rad) in izip!(forces.iter_mut(), particles.velocity.iter(), particles.radius.iter()) {
-        let drag = -6.0*PI*viscosity * vel;
+        let drag = -6.0*PI*viscosity * rad * vel;
         *force += drag;
     }
+}
+
+
+pub fn elastic_contact(forces: &mut [DVec3], particles: &ParticleVec){
+    
+
+
 }

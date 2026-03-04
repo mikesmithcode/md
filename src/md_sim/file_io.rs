@@ -13,8 +13,8 @@
 //! using [`load_latest_snapshot`] to resume a previously stopped experiment.
 
 
-use crate::{Particle, ParticleVec, simulation::SimulationSettings};
-use serde::{Serialize, Deserialize, de::DeserializeOwned};
+use crate::{Particle, ParticleVec};
+use crate::md_sim::simulation::SimulationSettings;
 use serde_json;
 use std::{fs, io::Error, path::Path};
 use std::io::BufReader;

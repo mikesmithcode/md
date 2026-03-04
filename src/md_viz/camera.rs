@@ -12,7 +12,7 @@ use three_d::InnerSpace;
 use three_d::*;
 
 use winit::event::{WindowEvent, MouseButton, ElementState, MouseScrollDelta};
-use crate::scene::SceneSetup;
+use crate::md_viz::scene::SceneSetup;
 
 
 
@@ -44,6 +44,7 @@ pub fn create_camera(viewport: Viewport, scene_settings: SceneSetup) -> Camera {
 ///Create a camera that has perspective. 
 /// 
 /// This is useful for viewing and rotating around a 3D scene
+/// The default here is that +ve x is to the right, +ve y is into the page, +ve z is upwards on the page.
 fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Camera {
     let centre = vec3(
         sim_box_size[0] * 0.5, 
@@ -54,13 +55,13 @@ fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Came
     // Calculate a distance that ensures the whole box is visible.
     // 2.0x the largest dimension is usually a safe "sweet spot".
     let max_dim = sim_box_size[0].max(sim_box_size[1]).max(sim_box_size[2]);
-    let eye_pos = centre + vec3(0.0, 0.0, max_dim * 2.0);
+    let eye_pos = centre + vec3(0.0,-max_dim * 2.0, 0.0);
 
     Camera::new_perspective(
         viewport, 
         eye_pos,
         centre,              // Look at the centre of the box
-        vec3(0.0, 1.0, 0.0), // Up direction
+        vec3(0.0, 0.0, 1.0), // Up direction
         degrees(45.0),       // Field of view
         0.1,                 // Near plane
         max_dim * 20.0,      // Far plane
@@ -88,7 +89,7 @@ fn create_orthographic_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Cam
         // Place the eye directly in front of the centre along the Z-axis
         vec3(x_mid, y_mid, max_dim * 2.5), 
         centre,              // Look at the centre of the box
-        vec3(0.0, 1.0, 0.0), // Up direction
+        vec3(0.0, 0.0, 1.0), // Up direction
         camera_height_units,
         -max_dim * 10.0,     // Near plane
         max_dim * 10.0,      // Far plane

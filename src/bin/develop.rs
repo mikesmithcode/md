@@ -1,28 +1,46 @@
 use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
-use md_sim::force::add_viscous_drag;
-use md_sim::motion::check_periodic;
 use winit::event_loop::EventLoop;
 
 
 // Import everything from your md_viz library
-use md_viz::scene::{Scene, SceneSetup};
-use md_viz::camera::{Perspective, CameraSettings};
-use md_viz::objects::SimBox;
+use md::md_viz::scene::{Scene, SceneSetup};
+use md::md_viz::camera::{Perspective, CameraSettings};
+use md::md_viz::objects::SimBox;
 
-use md_sim::simulation::Simulation;
-use md_sim::simulation::SimulationSettings;
-use md_sim::file_io::{self, load_simsettings};
-use md_sim::force::Force;
-use md_sim::motion::Move;
-use md_core::particle::{Particle, ParticleVec};
+// Imports from simulation library
+use md::md_sim::simulation::Simulation;
+use md::md_sim::simulation::SimulationSettings;
+use md::md_sim::force::Forces;
+use md::md_sim::motion::Motion;
+use md::md_sim::particle::ParticleVec;
+use md::md_sim::simulation::SimulationModel;
+use md::md_sim::force::{add_viscous_drag, add_weight};
+use md::md_sim::motion::{integrate_euler, integrate_verler};
 
-fn update(particles: &ParticleVec){
-    //
+use md::md_sim::file_io;
 
+
+pub struct SimUpdate;
+
+impl Forces for SimUpdate{
+    fn update_forces(&self, forces: &mut [glam::DVec3], particles: &ParticleVec, settings: &SimulationSettings) {
+        add_weight(forces, particles);
+        if let SimulationModel::Fluid { viscosity } = &settings.model{
+            add_viscous_drag(forces, particles, *viscosity);
+        }
+    }
 }
 
+impl Motion for SimUpdate{
+    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
+        integrate_verler(forces, particles, settings);
+    }
+    fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
+        integrate_verler(forces, particles, settings);
+    }
+}
 
 pub fn main() {    
 
@@ -49,6 +67,7 @@ pub fn main() {
     //  Define graphics
     //----------------------------------------------------------------
 
+
     let scene_settings = SceneSetup {
             camera: CameraSettings{
                 perspective: Perspective::Perspective, // Default Perspective::Perspective or Perspective::Orthographic
@@ -67,7 +86,8 @@ pub fn main() {
     //-------------------------------------------------------------
     //  Create simulation
     //--------------------------------------------------------------
-    let mut sim: Simulation= Simulation::new(particles, sim_settings.clone());
+    
+    let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone());
 
     //--------------------------------------------------------------
     //  Initialise all graphics
