@@ -3,7 +3,6 @@ use std::thread::sleep;
 use std::time::Duration;
 use winit::event_loop::EventLoop;
 
-
 // Import everything from your md_viz library
 use md::md_viz::scene::{Scene, SceneSetup};
 use md::md_viz::camera::{Perspective, CameraSettings};
@@ -12,12 +11,12 @@ use md::md_viz::objects::SimBox;
 // Imports from simulation library
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::Forces;
+use md::md_sim::force::{Forces, inelastic_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::simulation::SimulationModel;
-use md::md_sim::force::{add_viscous_drag, add_weight};
-use md::md_sim::motion::{integrate_euler, integrate_verler};
+use md::md_sim::force::{add_weight, zero_forces_ptype};
+use md::md_sim::motion::{integrate_verler};
 
 use md::md_sim::file_io;
 
@@ -26,10 +25,26 @@ pub struct SimUpdate;
 
 impl Forces for SimUpdate{
     fn update_forces(&self, forces: &mut [glam::DVec3], particles: &ParticleVec, settings: &SimulationSettings) {
+        
+        //Forces which apply to every particle individually
         add_weight(forces, particles);
-        if let SimulationModel::Fluid { viscosity } = &settings.model{
-            add_viscous_drag(forces, particles, *viscosity);
+        //if let SimulationModel::Fluid { viscosity, cutoff } = &settings.model{
+        //    add_viscous_drag(forces, particles, *viscosity);
+        //}
+
+
+        //Forces between particles - starting with checking all pairs.
+        let n=particles.len();
+
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if let SimulationModel::Default(collision_params) = &settings.model{
+                    inelastic_collision(i, j, particles, forces, collision_params);
+                }
+            }
         }
+
+        zero_forces_ptype(forces, particles, 1);
     }
 }
 
@@ -77,7 +92,7 @@ pub fn main() {
             window_size: (640, 480),
             sim_box_setup: SimBox {
                 on: true,
-                thickness: 0.1,
+                thickness: sim_settings.sim_box_size_f32()[0]/5000.0,
                 sim_box_size: sim_settings.sim_box_size_f32(),
             }, 
     };

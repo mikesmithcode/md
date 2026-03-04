@@ -21,6 +21,7 @@ use soa_derive::StructOfArray;
 #[soa_derive(Debug, PartialEq)]
 pub struct Particle {
     pub id: usize,
+    pub ptype: usize,
     pub position: DVec3,  
     pub velocity: DVec3,          
     pub radius: f64, 
@@ -30,10 +31,10 @@ pub struct Particle {
 
 impl Particle {
     ///Create a new particle
-    pub fn new(id: usize, position: DVec3, velocity: DVec3, radius: f64, density: f64, color: Srgba) -> Self {
+    pub fn new(id: usize, ptype: usize, position: DVec3, velocity: DVec3, radius: f64, density: f64, color: Srgba) -> Self {
         let inv_mass = 1.0/((4.0 / 3.0) * std::f64::consts::PI * radius.powi(3) * density);
 
-        Particle { id, position, velocity, radius, inv_mass, color}
+        Particle { id, ptype, position, velocity, radius, inv_mass, color}
     }
 }
 

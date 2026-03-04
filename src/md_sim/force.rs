@@ -1,13 +1,25 @@
 use glam::DVec3;
+
 use itertools::izip;
 use std::f64::consts::PI;
 
+use crate::CollisionParams;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
 
 pub trait Forces{
     fn update_forces(&self, forces: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings);
 
+}
+
+pub fn zero_forces_ptype(forces: &mut [DVec3], particles: &ParticleVec, ptype: usize){
+    let n=particles.len();
+    //set all forces to zero for immobile particles
+    for k in 0..n{
+        if particles.ptype[k] == ptype{
+            forces[k] = DVec3::ZERO;
+        }
+    }
 }
 
 ///Add the weight
@@ -36,8 +48,47 @@ pub fn add_viscous_drag(forces: &mut [DVec3], particles: &ParticleVec, viscosity
 }
 
 
-pub fn elastic_contact(forces: &mut [DVec3], particles: &ParticleVec){
+#[inline(always)]
+pub fn inelastic_collision(
+    i: usize,
+    j: usize,
+    particles: &ParticleVec,
+    forces: &mut [DVec3],
+    params: &CollisionParams,
+) {
+    let stiffness = params.stiffness; 
+    let damping = params.damping;     
+
+    //separation of particle centres
+    let delta = particles.position[i] - particles.position[j];
+    let combined_rad = particles.radius[i] + particles.radius[j];
+    let dist = delta.length();
+
+    // Overlap?
     
+    if combined_rad > dist && dist > 0.0 {
+        let normal = delta / dist;
+        let overlap = combined_rad - dist;
 
+        // Relative Velocity (for Inelastic Damping)
+        let rel_vel = particles.velocity[i] - particles.velocity[j];
+        let normal_vel = rel_vel.dot(normal);
 
+        // Force Calculation - spring
+        let spring_f = stiffness * overlap;
+
+        // Damping only applies when particles are moving towards each other
+        let damping_f = if normal_vel < 0.0 {
+            -damping * normal_vel
+        } else {
+            0.0
+        };
+
+        let total_f = (spring_f + damping_f).max(0.0);
+        let f_vec = normal * total_f;
+
+        // Apply to both (Newton's Third Law)
+        forces[i] += f_vec;
+        forces[j] -= f_vec;
+    }
 }

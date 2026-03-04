@@ -11,27 +11,21 @@ let output_dir = "output/snapshots";
 let mut particles = ParticleVec::new();
 particles.push(Particle::new(
             0,
-            DVec3::new(1.5, 1.5, 1.5),
+            0,
+            DVec3::new(2.5, 0.05, 4.0),
             DVec3::new(0.0, 0.0, 0.0),
-            0.2,
-            -10.0,
+            0.5,
+            3000.0,
             Srgba::new(255, 0, 0, 255), 
         ));
 particles.push(Particle::new(
             1,
-            DVec3::new(1.5, -1.5, -1.5),
+            1,
+            DVec3::new(2.5, 0.05, 0.5),
             DVec3::new(0.0, 0.0, 0.0),
-            0.3,
-            10.0,
+            0.5,
+            3000.0,
             Srgba::new(0, 255, 0, 255), // Green
-        ));
-particles.push(Particle::new(
-            2,
-            DVec3::new(1.5, -1.5, 1.5),
-            DVec3::new(0.0, 0.0, 0.0),
-            0.4,
-            100.0,
-            Srgba::new(0, 0, 255, 255), // Blue
         ));
 
     file_io::save_snapshot(Path::new(output_dir),0,&particles,0.0).expect("Failed to save initial snapshot");

@@ -73,7 +73,7 @@ pub fn load_simsettings(input_filepath: &Path, output_path: &Path, index: usize)
     let file = fs::File::open(input_filepath)?;
     let reader = BufReader::new(file);
     
-    let mut sim_settings: SimulationSettings = serde_json::from_reader(reader)?;
+    let mut sim_settings: SimulationSettings = serde_json::from_reader(reader).expect("Does your config file match an enum variant in simulation.rs?");
     sim_settings.start = index;
 
     //Save a copy of config to output with simulation index as suffix.
@@ -104,10 +104,12 @@ pub fn save_snapshot(
 
     let t: Vec<f64> = vec![time;particles.len()];
     let ids: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
+    let ptype: Vec<u64> = particles.ptype.iter().map(|&ptype| ptype as u64).collect();
 
     let mut df = df!(
         "t" => &t,
         "id" => &ids,
+        "ptype" => &ptype,
         "x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
         "y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
         "z" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
@@ -161,6 +163,7 @@ pub fn load_snapshot(
 
     let t_col = df.column("t")?.f64()?;
     let id_col = df.column("id")?.u64()?;
+    let ptype_col = df.column("ptype")?.u64()?;
     let x_col = df.column("x")?.f64()?;
     let y_col = df.column("y")?.f64()?;
     let z_col = df.column("z")?.f64()?;
@@ -178,8 +181,9 @@ pub fn load_snapshot(
 
     // 4. Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, x, y, z, vx, vy, vz, rad, inv_m, r, g, b) in izip!(
+    for (id, ptype, x, y, z, vx, vy, vz, rad, inv_m, r, g, b) in izip!(
         id_col.into_iter(),
+        ptype_col.into_iter(),
         x_col.into_iter(),
         y_col.into_iter(),
         z_col.into_iter(),
@@ -195,6 +199,7 @@ pub fn load_snapshot(
         // We use .unwrap_or because Polars columns are technically nullable
         particles.push(Particle {
             id: id.unwrap_or(0) as usize,
+            ptype: ptype.unwrap_or(0) as usize,
             position: DVec3::new(
                 x.unwrap_or(0.0),
                 y.unwrap_or(0.0),

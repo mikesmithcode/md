@@ -12,10 +12,16 @@ use crate::md_sim::motion::Motion;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SimulationModel{
-    Default,
-    Fluid {viscosity: f64},
+    Default(CollisionParams),
+    Fluid {viscosity: f64, cutoff: f64},
 }
 
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct CollisionParams {
+    pub stiffness: f64,
+    pub damping: f64,
+}
 
 ///---------------------------------------------------------
 ///Simulation settings 
@@ -84,6 +90,9 @@ impl<S> Simulation<S>
     }
 
     pub fn update(&mut self){
+
+        self.sim_update.update_motion(&self.forces, &mut self.particles, &self.settings);
+
         //Clear the force buffer and check same length as particles
         if self.forces.len() != self.particles.len(){
             self.forces.resize(self.particles.len(), DVec3::ZERO);
@@ -91,8 +100,7 @@ impl<S> Simulation<S>
             self.forces.fill(DVec3::ZERO);
         }
 
-        //perform the updates.
-        self.sim_update.update_motion(&self.forces, &mut self.particles, &self.settings);
+
         self.sim_update.update_forces(&mut self.forces, &self.particles, &self.settings);
         self.sim_update.correct_motion(&self.forces, &mut self.particles, &self.settings);
         
