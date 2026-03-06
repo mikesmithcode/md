@@ -1,4 +1,4 @@
-use crate::{Simulation, SimulationSettings, md_sim::particle::ParticleVec};
+use crate::{SimulationSettings, md_sim::particle::ParticleVec};
 use glam::DVec3;
 use itertools::izip;
 
