@@ -179,7 +179,7 @@ pub fn load_snapshot(
     
     let t = t_col.get(0).unwrap_or(0.0);
 
-    // 4. Efficiently populate the ParticleVec
+    // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
     for (id, ptype, x, y, z, vx, vy, vz, rad, inv_m, r, g, b) in izip!(
         id_col.into_iter(),
@@ -274,6 +274,7 @@ mod tests {
         particles.push(
             Particle {
                 id: 1,
+                ptype: 0,
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(0.1, 0.2, 0.3),
                 radius: 0.5,

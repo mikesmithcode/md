@@ -1,3 +1,10 @@
+//! The simulation is run by calling methods on the Simulation struct
+//! 
+//! The Simulation struct is the centrepiece of the simulation. Define one with the ::new() and then
+//! update it each timestep with update(). You can get mutable or immmutable references to the particles. The immutable
+//! ones can be fed to the visualization.
+//! 
+
 use glam::DVec3;
 
 use serde::{Serialize, Deserialize};
@@ -9,6 +16,10 @@ use crate::md_sim::particle::{ParticleVec};
 use crate::md_sim::force::Forces;
 use crate::md_sim::motion::Motion;
 
+
+/// SimulationModel defines the structure of the file to be read in which may be different in different simulations
+/// 
+/// The json tells serde what variant it should use.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SimulationModel{

@@ -16,7 +16,7 @@ use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::simulation::SimulationModel;
 use md::md_sim::force::{add_weight, zero_forces_ptype};
-use md::md_sim::motion::{integrate_verler};
+use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct, change_rad};
 
 use md::md_sim::file_io;
 
@@ -39,21 +39,23 @@ impl Forces for SimUpdate{
         for i in 0..n {
             for j in (i + 1)..n {
                 if let SimulationModel::Default(collision_params) = &settings.model{
-                    inelastic_collision(i, j, particles, forces, collision_params);
+                    inelastic_collision(i, j, particles, forces, collision_params, &settings.sim_box_size);
                 }
             }
         }
 
         zero_forces_ptype(forces, particles, 1);
+        zero_forces_ptype(forces, particles, 2);
     }
 }
 
 impl Motion for SimUpdate{
     fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
-        integrate_verler(forces, particles, settings);
+        integrate_verlet_update(forces, particles, settings);
+        change_rad(particles, 0)
     }
     fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
-        integrate_verler(forces, particles, settings);
+        integrate_verlet_correct(forces, particles, settings);
     }
 }
 
@@ -66,7 +68,7 @@ pub fn main() {
     //----------------------------------------------------------------
     // Define simulation
     //---------------------------------------------------------------
-    let config_filepath = Path::new(INPUT_PATH).join("develop_config.json");
+    let config_filepath = Path::new(INPUT_PATH).join("silo_config.json");
     let snapshot_path = Path::new(OUTPUT_PATH).join("snapshots");
     
 

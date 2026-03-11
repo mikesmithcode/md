@@ -5,11 +5,13 @@
 //! - velocity
 //! - radius
 //! 
-//! It could in principle be a composite object with nested structures.
+//!  *IMPORTANT*
+//!  It uses the soa_derive macro. This means that we appear to define a Vec of Particle structs
+//! but what actually happens is that a struct of Vecs is created. e.g if my Particle struct had 
+//! See docs for details: <https://docs.rs/soa_derive/latest/soa_derive/>
+//! We do this because iterating over a Vec of positions is really fast compared to taking a whole particle one
+//! at a time into the cache memory. However, its much easier to think about structs. This gives us the best of both worlds.
 //! 
-//! //!
-//! # Design
-//! - Each particle implements the [`Draw`] trait which defines how to render it
 
 // md_sim/src/lib.rs
 use glam::f64::DVec3;

@@ -1,3 +1,9 @@
+//! Force functions for use in the implementation of update_forces()
+//! 
+//! Your simulation should implement the Forces trait on a unit struct. This involves
+//! defining the function update_forces(). You can call the forces functions in this module
+//! inside update_forces or define your own.
+
 use glam::DVec3;
 
 use itertools::izip;
@@ -12,6 +18,7 @@ pub trait Forces{
 
 }
 
+/// Set all forces of particular ptype to zero
 pub fn zero_forces_ptype(forces: &mut [DVec3], particles: &ParticleVec, ptype: usize){
     let n=particles.len();
     //set all forces to zero for immobile particles
@@ -47,7 +54,9 @@ pub fn add_viscous_drag(forces: &mut [DVec3], particles: &ParticleVec, viscosity
     }
 }
 
-
+/// Define inelastic collision between particle i and particle j.
+/// 
+/// This is just worrying about normal forces, no friction
 #[inline(always)]
 pub fn inelastic_collision(
     i: usize,
@@ -55,18 +64,22 @@ pub fn inelastic_collision(
     particles: &ParticleVec,
     forces: &mut [DVec3],
     params: &CollisionParams,
+    sim_box_size: &DVec3,
 ) {
     let stiffness = params.stiffness; 
     let damping = params.damping;     
 
     //separation of particle centres
-    let delta = particles.position[i] - particles.position[j];
+    let mut delta = particles.position[i] - particles.position[j];
+    check_delta(&mut delta, sim_box_size);
+    
+
     let combined_rad = particles.radius[i] + particles.radius[j];
     let dist = delta.length();
 
     // Overlap?
     
-    if combined_rad > dist && dist > 0.0 {
+    if combined_rad > dist && dist > 1e-9 {
         let normal = delta / dist;
         let overlap = combined_rad - dist;
 
@@ -91,4 +104,16 @@ pub fn inelastic_collision(
         forces[i] += f_vec;
         forces[j] -= f_vec;
     }
+}
+
+fn check_delta(delta: &mut DVec3, sim_box_size: &DVec3){
+    if delta.x > sim_box_size.x * 0.5 { delta.x -= sim_box_size.x; }
+    else if delta.x < -sim_box_size.x * 0.5 { delta.x += sim_box_size.x; }
+
+    if delta.y > sim_box_size.y * 0.5 { delta.y -= sim_box_size.y; }
+    else if delta.y < -sim_box_size.y * 0.5 { delta.y += sim_box_size.y; }
+
+    if delta.z > sim_box_size.z * 0.5 { delta.z -= sim_box_size.z; }
+    else if delta.z < -sim_box_size.z * 0.5 { delta.z += sim_box_size.z; }
+
 }
