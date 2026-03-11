@@ -68,7 +68,8 @@ pub fn main() {
     //----------------------------------------------------------------
     // Define simulation
     //---------------------------------------------------------------
-    let config_filepath = Path::new(INPUT_PATH).join("silo_config.json");
+    let simulation_name = file!();
+    let config_filepath = Path::new(INPUT_PATH).join(format!("{}_config.json", simulation_name));
     let snapshot_path = Path::new(OUTPUT_PATH).join("snapshots");
     
 
