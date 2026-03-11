@@ -56,9 +56,10 @@ mod tests {
         let color = Srgba::new(255, 0, 0, 255);
         let radius: f64 = 0.5;
         let density: f64=1.0;
+        let ptype = 1;
         
         let inv_mass = 1.0/((4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density);
-        let particle = Particle::new(id, position, velocity, radius, density, color);
+        let particle = Particle::new(id, ptype, position, velocity, radius, density, color);
 
         assert_eq!(particle.id, id);
         assert_eq!(particle.position, position);

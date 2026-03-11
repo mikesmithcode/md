@@ -1,13 +1,9 @@
-<<<<<<< HEAD
 //! motion of the particles in the broadest sense
 //! 
 //! Each simulation should define a Motion trait which requires you to implement
 //! update_motion() which occurs before forces are calculated and correct_motion() which occurs afterwards.
 
 use crate::{Simulation, SimulationSettings, md_sim::particle::ParticleVec};
-=======
-use crate::{SimulationSettings, md_sim::particle::ParticleVec};
->>>>>>> c7f897b69d295222d408d542e8990bf8058c0e65
 use glam::DVec3;
 use itertools::izip;
 

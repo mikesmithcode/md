@@ -54,6 +54,8 @@ pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path)
 /// 
 /// SimulationSettings has standard fields and a catch all which would require 
 /// writing a new struct type in you example and :
+/// 
+/// ```rust, ignore
 /// pub struct SimulationSettings<T>{
 ///    pub dt: f64,
 ///    pub sim_box_size: [f64; 3], 
@@ -61,9 +63,8 @@ pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path)
 ///    pub num_steps: usize,
 ///    pub sim_path: String,
 ///    pub dump: usize,
-///    // Special values
-///}
-/// 
+/// }
+/// ```
 /// If there are no extra parameters in the file
 /// 
 /// We update the start field to match index the initial value of the loop. Thus if you restart
@@ -84,7 +85,7 @@ pub fn load_simsettings(input_filepath: &Path, output_path: &Path, index: usize)
 
 /// saves particle snapshot to Parquet file
 /// 
-/// Its taking a Vec<Particle> and storing each field as an individual
+/// Its taking a `Vec<Particle>` and storing each field as an individual
 /// column in a Parquet file in output/snapshots.
 /// 
 /// # Arguments
@@ -228,7 +229,7 @@ pub fn load_snapshot(
 /// 
 /// Searches files in output/snapshots for the latest
 /// set of particle positions and then uses load_snapshot to
-/// generate Vec<Particle>, simulation index and simulation time.
+/// generate `Vec<Particle>`, simulation index and simulation time.
 /// 
 /// # Arguments
 /// * `dir_path` - Directory containing snapshot files
@@ -307,7 +308,20 @@ mod tests {
         let dir_path = dir.path();
         
         // Save two snapshots with different steps
-        let particles = ParticleVec::new(); 
+        let mut particles = ParticleVec::new(); 
+
+        particles.push(
+            Particle {
+                id: 1,
+                ptype: 0,
+                position: DVec3::new(1.0, 2.0, 3.0),
+                velocity: DVec3::new(0.1, 0.2, 0.3),
+                radius: 0.5,
+                inv_mass: 1.0,
+                color: Srgba::new(255, 0, 0, 255),
+            });
+
+
         save_snapshot(dir_path, 1, &particles, 0.1)?;
         save_snapshot(dir_path, 10, &particles, 1.0)?; 
 

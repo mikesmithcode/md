@@ -11,12 +11,12 @@ use md::md_viz::objects::SimBox;
 // Imports from simulation library
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::{Forces, inelastic_collision};
+use md::md_sim::force::Forces;
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::simulation::SimulationModel;
-use md::md_sim::force::{add_weight, zero_forces_ptype};
-use md::md_sim::motion::{integrate_verler};
+use md::md_sim::force::{add_weight, zero_forces_ptype, inelastic_collision};
+use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct};
 
 use md::md_sim::file_io;
 
@@ -35,11 +35,12 @@ impl Forces for SimUpdate{
 
         //Forces between particles - starting with checking all pairs.
         let n=particles.len();
+        let sim_box_size = settings.sim_box_size;
 
         for i in 0..n {
             for j in (i + 1)..n {
                 if let SimulationModel::Default(collision_params) = &settings.model{
-                    inelastic_collision(i, j, particles, forces, collision_params);
+                    inelastic_collision(i, j, particles, forces, collision_params, &sim_box_size);
                 }
             }
         }
@@ -50,10 +51,10 @@ impl Forces for SimUpdate{
 
 impl Motion for SimUpdate{
     fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
-        integrate_verler(forces, particles, settings);
+        integrate_verlet_update(forces, particles, settings);
     }
     fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
-        integrate_verler(forces, particles, settings);
+        integrate_verlet_correct(forces, particles, settings);
     }
 }
 

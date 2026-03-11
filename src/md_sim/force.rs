@@ -6,6 +6,7 @@
 
 use glam::DVec3;
 
+
 use itertools::izip;
 use std::f64::consts::PI;
 
@@ -56,7 +57,11 @@ pub fn add_viscous_drag(forces: &mut [DVec3], particles: &ParticleVec, viscosity
 
 /// Define inelastic collision between particle i and particle j.
 /// 
-/// This is just worrying about normal forces, no friction
+/// This is just worrying about normal forces, no friction.
+/// 
+/// N.B. potential issue here. The code does checks to see
+/// if there is a smaller distance to a neighbour in the mirrored periodic box.
+/// Its possible you don't want this if you are using boundaries.
 #[inline(always)]
 pub fn inelastic_collision(
     i: usize,
@@ -72,13 +77,10 @@ pub fn inelastic_collision(
     //separation of particle centres
     let mut delta = particles.position[i] - particles.position[j];
     check_delta(&mut delta, sim_box_size);
-    
 
     let combined_rad = particles.radius[i] + particles.radius[j];
     let dist = delta.length();
 
-    // Overlap?
-    
     if combined_rad > dist && dist > 1e-9 {
         let normal = delta / dist;
         let overlap = combined_rad - dist;
@@ -106,6 +108,9 @@ pub fn inelastic_collision(
     }
 }
 
+///check_delta
+/// 
+/// Is the nearest neighbour actually a result of periodic wrapping?
 fn check_delta(delta: &mut DVec3, sim_box_size: &DVec3){
     if delta.x > sim_box_size.x * 0.5 { delta.x -= sim_box_size.x; }
     else if delta.x < -sim_box_size.x * 0.5 { delta.x += sim_box_size.x; }
@@ -116,4 +121,88 @@ fn check_delta(delta: &mut DVec3, sim_box_size: &DVec3){
     if delta.z > sim_box_size.z * 0.5 { delta.z -= sim_box_size.z; }
     else if delta.z < -sim_box_size.z * 0.5 { delta.z += sim_box_size.z; }
 
+}
+
+
+// Tests for file_io
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use three_d::core::Srgba;
+    use crate::md_sim::particle::Particle;
+
+    fn create_particle_vec()-> ParticleVec{
+        let mut particles = ParticleVec::new();
+        particles.push(
+            Particle {
+                id: 1,
+                ptype: 0,
+                position: DVec3::new(1.0, 2.0, 3.0),
+                velocity: DVec3::new(1.0, 1.0, 1.0),
+                radius: 0.5,
+                inv_mass: 1.0,
+                color: Srgba::new(255, 0, 0, 255),
+            });
+        particles.push(
+            Particle {
+                id: 1,
+                ptype: 1,
+                position: DVec3::new(1.0, 2.0, 3.0),
+                velocity: DVec3::new(0.1, 0.2, 0.3),
+                radius: 0.5,
+                inv_mass: 1.0,
+                color: Srgba::new(255, 0, 0, 255),
+            });
+
+            particles
+    }
+
+    #[test]
+    fn test_check_zero_forces(){
+        // Create dummy particle data
+            let mut particles = create_particle_vec();
+            let mut forces = vec![DVec3::new(1.0,1.0,1.0), DVec3::new(1.0,1.0,1.0)];
+            
+            zero_forces_ptype(&mut forces, &particles, 1);
+
+            assert!(forces[0].x == 1.0);
+            assert!(forces[1].x == 0.0);
+    }
+
+    #[test]
+    fn test_add_weight(){
+        let mut particles = create_particle_vec();
+        let mut forces = vec![DVec3::new(0.0,0.0,0.0), DVec3::new(0.0,0.0,0.0)];
+
+        add_weight(&mut forces, &particles);
+
+        assert!((forces[0].z + 9.81).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_add_drag(){
+        let mut particles = create_particle_vec();
+        let mut forces = vec![DVec3::new(0.0,0.0,0.0), DVec3::new(0.0,0.0,0.0)];
+        let viscosity = 0.1;
+
+        add_viscous_drag(&mut forces, &particles, viscosity);
+        println!("{}", 6.0*PI*viscosity*0.5*1.0);
+        println!("{}", forces[0].x);
+        assert!((forces[0].x + 6.0*PI*viscosity*0.5*1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_check_delta(){
+        let sim_box_size = DVec3::new(1.0,1.0,1.0);
+        let mut delta = DVec3::new(1.2, -0.2, 0.1);
+
+        check_delta(&mut delta, &sim_box_size);
+
+        assert!((delta.x - 0.2).abs() < 0.000001);
+        assert!((delta.y + 0.2).abs() < 0.000001);
+        assert!((delta.z - 0.1).abs() < 0.000001);
+    }
+
+
+    
 }
