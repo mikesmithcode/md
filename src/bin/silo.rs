@@ -9,7 +9,7 @@ use md::md_viz::camera::{Perspective, CameraSettings};
 use md::md_viz::objects::SimBox;
 
 // Imports from simulation library
-use md::md_sim::simulation::Simulation;
+use md::md_sim::simulation::{self, Simulation};
 use md::md_sim::simulation::SimulationSettings;
 use md::md_sim::force::{Forces, inelastic_collision};
 use md::md_sim::motion::Motion;
@@ -28,10 +28,6 @@ impl Forces for SimUpdate{
         
         //Forces which apply to every particle individually
         add_weight(forces, particles);
-        //if let SimulationModel::Fluid { viscosity, cutoff } = &settings.model{
-        //    add_viscous_drag(forces, particles, *viscosity);
-        //}
-
 
         //Forces between particles - starting with checking all pairs.
         let n=particles.len();
@@ -68,7 +64,11 @@ pub fn main() {
     //----------------------------------------------------------------
     // Define simulation
     //---------------------------------------------------------------
-    let simulation_name = file!();
+    let simulation_name = Path::new(file!())
+                                            .file_stem()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap();
+
     let config_filepath = Path::new(INPUT_PATH).join(format!("{}_config.json", simulation_name));
     let snapshot_path = Path::new(OUTPUT_PATH).join("snapshots");
     
