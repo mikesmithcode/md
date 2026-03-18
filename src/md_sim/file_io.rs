@@ -219,6 +219,7 @@ pub fn load_snapshot(
                 b.unwrap_or(0.0) as u8,
                 255, // Full opacity
             ),
+            ref_pos: DVec3::ZERO,
         });
     }
 
@@ -281,6 +282,7 @@ mod tests {
                 radius: 0.5,
                 inv_mass: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
+                ref_pos: DVec3::ZERO,
             });
         let step = 42;
         let time = 0.5;
@@ -319,6 +321,7 @@ mod tests {
                 radius: 0.5,
                 inv_mass: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
+                ref_pos: DVec3::ZERO,
             });
 
 

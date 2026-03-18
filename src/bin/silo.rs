@@ -6,7 +6,7 @@ use glam::DVec3;
 
 // Import everything from your md_viz library
 use md::md_viz::scene::{Scene, SceneSetup};
-use md::md_viz::camera::{Perspective, CameraSettings};
+use md::md_viz::camera::CameraView;
 use md::md_viz::objects::SimBox;
 
 // Imports from simulation library
@@ -93,12 +93,8 @@ pub fn main() {
 
 
     let scene_settings = SceneSetup {
-            camera: CameraSettings{
-                perspective: Perspective::Perspective, // Default Perspective::Perspective or Perspective::Orthographic
-                window_dt: 0.01,
-                headless_dt: 0.01,
-                },
-            window_size: (640, 480),
+            camera: CameraView::Perspective,
+            window_size: (1280, 960),
             sim_box_setup: SimBox {
                 on: true,
                 thickness: sim_settings.sim_box_size_f32()[0]/5000.0,

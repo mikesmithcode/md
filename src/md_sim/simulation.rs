@@ -44,6 +44,7 @@ pub struct SimulationSettings{
     pub dt: f64,
     pub sim_box_size: DVec3, 
     pub cutoff: f64,
+    pub skin: f64,
     pub start: usize,
     pub num_steps: usize,
     pub dump: usize,
@@ -79,6 +80,7 @@ impl Default for SimulationSettings {
             dt: 0.1,
             sim_box_size: DVec3::new(10.0, 0.1, 10.0),
             cutoff: 1.0,
+            skin:0.2,
             start: 0,
             num_steps: 15,
             dump: 1000,
@@ -117,7 +119,7 @@ impl<S> Simulation<S>
             sim_update,
             settings: settings.clone(),
             current_step: settings.start,
-            cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n)
+            cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n, settings.skin)
         }
     }
 
@@ -152,7 +154,10 @@ impl<S> Simulation<S>
         // Grid means you only check particles nearby. Then it calculates all pair forces 
         // between particles i and j.
         if self.sim_update.has_pair_forces(){
-            self.cell_grid.search_and_apply_pair_forces(
+            //Check if grid and verlet lists need recalculating
+            self.cell_grid.check_and_rebuild_neighbours(&mut self.particles, &self.settings);
+            //appy pairwise forces
+            self.cell_grid.apply_pair_forces(
                 &mut self.forces, 
                 &self.particles, 
                 &self.sim_update, 

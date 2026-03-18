@@ -28,7 +28,9 @@ pub struct Particle {
     pub velocity: DVec3,          
     pub radius: f64, 
     pub inv_mass: f64,  
-    pub color: Srgba,        
+    pub color: Srgba,      
+    // Verlet lists tracker fields
+    pub ref_pos: DVec3,
 }
 
 impl Particle {
@@ -65,6 +67,8 @@ impl Particle {
         // Calculate mass: m = volume * density
         let volume = (4.0 / 3.0) * std::f64::consts::PI * radius.powi(3);
         let inv_mass = 1.0 / (volume * density);
+        let ref_pos = DVec3::ZERO;
+
 
         Particle { 
             id, 
@@ -73,7 +77,8 @@ impl Particle {
             velocity, 
             radius, 
             inv_mass, 
-            color 
+            color,
+            ref_pos 
         }
     }
 }

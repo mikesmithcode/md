@@ -37,7 +37,7 @@
     use crate::md_viz::objects::{create_ambient_light, create_directional_light};
     use crate::md_viz::templates::SphereTemplate;
     use crate::md_viz::objects::{SimBox, create_simbox};
-    use crate::md_viz::camera::{create_camera, CameraControl, CameraSettings};
+    use crate::md_viz::camera::{create_camera, CameraControl, CameraView};
     use crate::md_sim::particle::ParticleVec; 
 
     use image::{ImageBuffer, Rgba};
@@ -53,7 +53,7 @@
 
     #[derive(Debug, Clone)]
     pub struct SceneSetup {
-        pub camera: CameraSettings,
+        pub camera: CameraView,
         pub window_size: (u32, u32),
         pub sim_box_setup: SimBox,
     }
@@ -253,7 +253,7 @@
         ) -> Result<(), Box<dyn std::error::Error>> {
         
         
-        // 1. Extract data from SoA directly into Vecs for three-d
+        // Extract data from SoA directly into Vecs for three-d
         // Using with_capacity prevents the Vec from re-allocating as it grows
         let mut transforms = Vec::with_capacity(particles.len());
         let mut colors = Vec::with_capacity(particles.len());
@@ -267,14 +267,14 @@
             colors.push(*col);
         }
 
-        // 2. Create the dynamic mesh from the template
+        // Create the dynamic mesh from the template
         let sphere_cpu = &resources.sphere_template.as_ref()
             .ok_or("Sphere template missing")?.cpu_mesh;
         
         // This mesh lives only for the duration of this function call
         let particle_mesh = self.create_instanced_mesh(context, sphere_cpu, transforms, colors);
 
-        // 3. Collect everything to be drawn
+        // Collect everything to be drawn
         let mut objects: Vec<&dyn Object> = Vec::new();
         objects.push(&particle_mesh);
         
@@ -282,7 +282,7 @@
             objects.push(sb);
         }
 
-        // 4. Render to the target
+        // Render to the target
         let lights: Vec<&dyn Light> = vec![
             resources.ambient_light.as_ref().unwrap(),
             resources.directional_light.as_ref().unwrap()

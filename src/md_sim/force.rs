@@ -299,7 +299,7 @@ pub fn inelastic_collision(i: usize,j: usize,particles: &ParticleVec,forces: &mu
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
 //
-// Private utility functions
+// Utility functions
 //
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
@@ -435,10 +435,12 @@ fn test_inelastic_collision() {
         dt: 0.001,             // Placeholder value
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
         cutoff: 2.0,           // Ensure this is large enough for the overlap
+        skin:0.2,
         start: 0,
         num_steps: 100,
         dump: 10,
         model,                 // Our Solid model
+        
     };
 
     let mut forces = vec![DVec3::ZERO; particles.len()];
