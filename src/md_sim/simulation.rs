@@ -13,6 +13,7 @@ use std::io::BufReader;
 use std::path::Path;
 
 use crate::md_sim::particle::{ParticleVec};
+use crate::md_sim::neighbours::CellGrid;
 use crate::md_sim::force::Forces;
 use crate::md_sim::motion::Motion;
 
@@ -23,7 +24,7 @@ use crate::md_sim::motion::Motion;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SimulationModel{
-    Default(CollisionParams),
+    Solid(CollisionParams),
     Fluid {viscosity: f64, cutoff: f64},
 }
 
@@ -42,6 +43,7 @@ pub struct CollisionParams {
 pub struct SimulationSettings{
     pub dt: f64,
     pub sim_box_size: DVec3, 
+    pub cutoff: f64,
     pub start: usize,
     pub num_steps: usize,
     pub dump: usize,
@@ -70,6 +72,23 @@ impl SimulationSettings
     }
 }
 
+/// Largely used for testing
+impl Default for SimulationSettings {
+    fn default() -> Self {
+        Self {
+            dt: 0.1,
+            sim_box_size: DVec3::new(10.0, 0.1, 10.0),
+            cutoff: 1.0,
+            start: 0,
+            num_steps: 15,
+            dump: 1000,
+            model: SimulationModel::Solid(CollisionParams{
+                stiffness: 1000.0, 
+                damping: 50.0}),
+        }
+    }
+}
+
 
 /// The main simulation engine
 #[derive(Debug)]
@@ -82,6 +101,7 @@ pub struct Simulation<S>
     pub sim_update: S,
     pub settings: SimulationSettings,
     pub current_step: usize,
+    pub cell_grid: CellGrid,
 }
 
 impl<S> Simulation<S> 
@@ -97,22 +117,54 @@ impl<S> Simulation<S>
             sim_update,
             settings: settings.clone(),
             current_step: settings.start,
+            cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n)
         }
     }
 
+    /// Update the simulation
+    /// 
+    /// The positions and velocities are updated in 2 steps
+    /// First we predict the motion based on current values
+    /// Then we calculate the forces
+    /// Then we correct our prediction in light of the new forces.
+    /// Only pairs of particles within the cutoff distance are 
+    /// calculated for the pair forces.
     pub fn update(&mut self){
 
+        // Predict the new positions, velocities etc
         self.sim_update.update_motion(&self.forces, &mut self.particles, &self.settings);
 
-        //Clear the force buffer and check same length as particles
-        if self.forces.len() != self.particles.len(){
-            self.forces.resize(self.particles.len(), DVec3::ZERO);
-        }else{
-            self.forces.fill(DVec3::ZERO);
+
+        // Form the cell_grid, putting particles in
+        if self.sim_update.has_single_forces() || self.sim_update.has_pair_forces(){
+            self.cell_grid.bin(&self.particles);
+            //Clear the force buffer and check same length as particles
+            self.reset_forces();
         }
 
+        if self.sim_update.has_single_forces(){
+            // Single forces apply to individual particles
+            for i in 0..self.particles.len(){
+                self.sim_update.update_single_forces(i, &mut self.forces, &self.particles, &self.settings);
+            }
+        }
 
-        self.sim_update.update_forces(&mut self.forces, &self.particles, &self.settings);
+        // Grid means you only check particles nearby. Then it calculates all pair forces 
+        // between particles i and j.
+        if self.sim_update.has_pair_forces(){
+            self.cell_grid.search_and_apply_pair_forces(
+                &mut self.forces, 
+                &self.particles, 
+                &self.sim_update, 
+                &self.settings
+                );
+        }
+
+        // Prevents some particles from responding to the forces eg walls.
+        self.sim_update.update_ptype_no_forces(&mut self.forces, &self.particles);
+
+
+        // Perform correction to the motion based on the updated forces
         self.sim_update.correct_motion(&self.forces, &mut self.particles, &self.settings);
         
     }
@@ -125,6 +177,18 @@ impl<S> Simulation<S>
     //Return mut reference to particles
     pub fn get_mut_particles(&mut self)-> &mut ParticleVec{
         &mut self.particles
+    }
+
+    /// Reset the force vec to Zeros
+    /// 
+    /// This resets but it also checks if the array has changed size due
+    /// to creation or destruction of particles
+    fn reset_forces(&mut self){
+        if self.forces.len() != self.particles.len(){
+            self.forces.resize(self.particles.len(), DVec3::ZERO);
+        }else{
+            self.forces.fill(DVec3::ZERO);
+        }
     }
 }
 

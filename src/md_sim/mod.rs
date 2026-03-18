@@ -4,6 +4,7 @@ pub mod force;
 pub mod motion;
 pub mod particle;
 pub mod simulation;
+pub mod neighbours;
 
 // Re-export main Structs
 pub use self::particle::Particle;

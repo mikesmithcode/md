@@ -32,11 +32,49 @@ pub struct Particle {
 }
 
 impl Particle {
-    ///Create a new particle
-    pub fn new(id: usize, ptype: usize, position: DVec3, velocity: DVec3, radius: f64, density: f64, color: Srgba) -> Self {
-        let inv_mass = 1.0/((4.0 / 3.0) * std::f64::consts::PI * radius.powi(3) * density);
+    /// Initialises a new spherical particle and calculates its inverse mass.
+    ///
+    /// The mass is derived from the volume of a sphere ($V = \frac{4}{3}\pi r^3$) 
+    /// multiplied by the provided density.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - A unique identifier for the particle.
+    /// * `ptype` - The category ID (used for filtering or specific behaviours).
+    /// * `position` - Initial coordinates in the simulation box.
+    /// * `velocity` - Initial velocity vector.
+    /// * `radius` - The physical radius of the spherical particle.
+    /// * `density` - The mass per unit volume.
+    /// * `color` - The RGBA colour used for rendering.
+    ///
+    /// # Physics Note
+    ///
+    /// This constructor stores the **inverse mass** ($1/m$) to avoid costly 
+    /// division operations during force and motion calculations. A density 
+    /// of 0.0 or a radius of 0.0 will result in an infinite `inv_mass`, which 
+    /// may cause simulation instability.
+    pub fn new(
+        id: usize, 
+        ptype: usize, 
+        position: DVec3, 
+        velocity: DVec3, 
+        radius: f64, 
+        density: f64, 
+        color: Srgba
+    ) -> Self {
+        // Calculate mass: m = volume * density
+        let volume = (4.0 / 3.0) * std::f64::consts::PI * radius.powi(3);
+        let inv_mass = 1.0 / (volume * density);
 
-        Particle { id, ptype, position, velocity, radius, inv_mass, color}
+        Particle { 
+            id, 
+            ptype, 
+            position, 
+            velocity, 
+            radius, 
+            inv_mass, 
+            color 
+        }
     }
 }
 

@@ -8,6 +8,5 @@ target/*
 *.parquet
 *.png
 *.mp4
-*.json
 
 output/*

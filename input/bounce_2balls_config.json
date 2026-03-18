@@ -3,11 +3,10 @@
   "sim_box_size": [10.0, 0.1, 10.0],
   "start": 0,
   "num_steps": 15000,
-  "sim_path": "output",
   "dump": 100,
   "model": {
     "type": "Default",
-    "stiffness":5000000.0,
+    "stiffness": 5000000.0,
     "damping": 25000.0
   }
-} 
+}

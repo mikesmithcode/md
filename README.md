@@ -125,3 +125,22 @@ A json config file defines the simulation parameters and an initial state file  
 Periodically the simulation should write output files containing the current state of the system. These files can then be used for analysis or visualization. The same file can also be used as an input file to restart a simulation. Restarting a simulation looks for the latest file in the output folder and uses that as the input file. This is why the simsettings specifies the number of steps to advance the simulation rather than a start and stop.
 
 
+## Simulation
+
+Simulation has two main methods: new() which creates a new simulation and update() which advances the simulation by one step.
+
+[`Simulation::new`]
+This takes a SimSettings struct as input and creates a new Simulation struct. It reads the initial state from file and creates the cell grid. It also takes a SimUpdate unit struct which contains the details of the simulation. This implements the traits [`Motion`] and [`Forces`]. Each of these traits needs to be implemented for your specific simulation. They define  This is where you would implement your specific simulation details by implementing the Motion and Forces traits on it.
+
+[`Motion`] defines the update_motion() and correct_motion() functions. update_motion() is where you would implement your integration scheme to update the positions and velocities of the particles based on the forces. correct_motion() is where you would implement any correction step of your integration scheme if you are using one. This method is optional and can be left blank.
+
+[`Forces`] defines the update_single_forces() function which is for those forces which act on individual particles. It also defines the update_pair_forces() function which is for forces that act between pairs of particles. The CellGrid structure efficiently searches for particle pairs within a specified cutoff distance defined in your SimSettings, read from a config file.
+
+[`Simulation::update`]
+This works through several steps:
+- update_motion() this provides an initial prediction of the new particle positions and velocities based on the current forces. This is where you would implement your integration scheme.
+- update_forces() this calculates the forces on the particles based on their new positions. This is where you would implement the physics of your system. You can use the pre-built functions in forces.rs or write your own.
+- correct_motion() this corrects the particle positions and velocities based on the new forces. This is where you would implement the correction step of your integration scheme if you are using one. This method is optional and can be left blank.
+
+
+Simulation creates a [`neighbous::CellGrid`] structure. This is a grid of cells based on particle position which bins the particles. Each cells particles are stored as a linked list. This allows for efficient searching of nearby particles which is necessary for calculating forces such as collisions. The cell grid is updated at each step of the simulation.

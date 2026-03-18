@@ -19,7 +19,7 @@ base_particle = {
         "vx" : 0.0,
         "vy" : 0.0,
         "vz" : 0.0,
-        "radius" : 0.1,
+        "radius" : 0.05,
         "inv_mass" : 2.35,#density 1000kgm^-3
         "r": 255.0,
         "g": 0.0,
@@ -34,8 +34,8 @@ df = pl.DataFrame(particle)
 plt.figure()
 #Create a square grid of particles
 particle = base_particle.copy()
-for i in range(10):
-    for j in range(10):
+for i in range(35):
+    for j in range(20):
         particle["x"] = base_particle["x"] + j*d
         particle["z"] = base_particle["z"] + i*d
         plt.plot(particle["x"], particle["z"], 'go')

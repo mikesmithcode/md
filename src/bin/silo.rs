@@ -2,6 +2,7 @@ use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 use winit::event_loop::EventLoop;
+use glam::DVec3;
 
 // Import everything from your md_viz library
 use md::md_viz::scene::{Scene, SceneSetup};
@@ -9,13 +10,12 @@ use md::md_viz::camera::{Perspective, CameraSettings};
 use md::md_viz::objects::SimBox;
 
 // Imports from simulation library
-use md::md_sim::simulation::{self, Simulation};
+use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
 use md::md_sim::force::{Forces, inelastic_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
-use md::md_sim::simulation::SimulationModel;
-use md::md_sim::force::{add_weight, zero_forces_ptype};
+use md::md_sim::force::{add_weight, zero_forces_for_ptypes};
 use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct, change_rad};
 
 use md::md_sim::file_io;
@@ -24,31 +24,37 @@ use md::md_sim::file_io;
 pub struct SimUpdate;
 
 impl Forces for SimUpdate{
-    fn update_forces(&self, forces: &mut [glam::DVec3], particles: &ParticleVec, settings: &SimulationSettings) {
-        
-        //Forces which apply to every particle individually
-        add_weight(forces, particles);
+    // Default implementation is true, set to false if not using
+    fn has_pair_forces(&self)-> bool {
+        true
+    }
+    // Default implementation is true set to false if not using
+    fn has_single_forces(&self)-> bool {
+        true
+    }
 
-        //Forces between particles - starting with checking all pairs.
-        let n=particles.len();
 
-        for i in 0..n {
-            for j in (i + 1)..n {
-                if let SimulationModel::Default(collision_params) = &settings.model{
-                    inelastic_collision(i, j, particles, forces, collision_params, &settings.sim_box_size);
-                }
-            }
-        }
+    //Forces which apply to every particle individually
+    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings) {   
+        add_weight(i, forces, particles);
+    }
 
-        zero_forces_ptype(forces, particles, 1);
-        zero_forces_ptype(forces, particles, 2);
+    // forces that operate between pairs of particles
+    fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3],particles: &ParticleVec,settings: &SimulationSettings){
+        inelastic_collision(i, j, particles, forces, settings);
+    }
+
+    // For particles that shouldn't follow the calculated forces e.g walls etc.
+    fn update_ptype_no_forces(&self, forces: &mut [DVec3], particles: &ParticleVec){
+        let immobile = &[1, 2];
+        zero_forces_for_ptypes(forces, particles, immobile);
     }
 }
 
 impl Motion for SimUpdate{
     fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
         integrate_verlet_update(forces, particles, settings);
-        change_rad(particles, 0)
+        //change_rad(particles, 0)
     }
     fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
         integrate_verlet_correct(forces, particles, settings);
