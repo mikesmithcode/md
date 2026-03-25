@@ -46,13 +46,13 @@ impl Forces for SimUpdate{
 
     // For particles that shouldn't follow the calculated forces e.g walls etc.
     fn update_ptype_no_forces(&self, forces: &mut [DVec3], particles: &ParticleVec){
-        let immobile = &[1, 2];
+        let immobile = &[0]; // Bottom particle is immobile
         zero_forces_for_ptypes(forces, particles, immobile);
     }
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, time:f64) {
+    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, t:f64) {
         integrate_verlet_update(forces, particles, settings);
         //change_rad(particles, 0)
     }
@@ -76,7 +76,7 @@ pub fn main() {
                                             .unwrap();
 
     let config_filepath = Path::new(INPUT_PATH).join(format!("{}_config.json", simulation_name));
-    let snapshot_path = Path::new(OUTPUT_PATH).join("snapshots");
+    let snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("snapshots");
     
 
     //------------------------------------------------------------
@@ -146,10 +146,11 @@ pub fn main() {
             //Handle graphics
             //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
             scene.display(&sim.get_particles()).expect("Error updating display");
-            sleep(Duration::from_millis(100));
+            //sleep(Duration::from_millis(100));
 
             //save a snapshot of particle positions etc
             file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+            
         }
         
     }

@@ -149,24 +149,20 @@ pub fn zero_forces_for_ptypes(forces: &mut [DVec3], particles: &ParticleVec, no_
 ///
 /// # Notes
 ///
-/// * **Buoyancy:** If simulating a fluid environment, the `inv_mass` attribute of the 
+/// * **Buoyancy:** If simulating a fluid environment, the `mass` attribute of the 
 ///   particle should be adjusted to reflect the effective weight (relative density).
-/// * **Infinite Mass:** Particles with an `inv_mass` of **0.0** (representing infinite mass 
-///   or static objects) are skipped to avoid division by zero.
+/// * **Infinite Mass:** Particles with an `mass` of **0.0**  are skipped to avoid division by zero.
 ///
 /// # Panics
 ///
 /// This function will panic if the index `i` is out of bounds for either `forces` 
-/// or `particles.inv_mass`.
+/// or `particles.mass`.
 pub fn add_weight(i: usize, forces: &mut [DVec3], particles: &ParticleVec) {
     let gravity = -9.81;
-    let inv_mass = particles.inv_mass[i];
+    let mass = particles.mass[i];
 
-    // Check that the particle is not infinitely massive
-    if inv_mass > 0.0 {
-        let weight = gravity / inv_mass;
-        forces[i].z += weight;
-    }
+    let weight = gravity * mass;
+    forces[i].z += weight;
 }
 
 /// Calculates and adds the viscous drag force (Stokes' Law) to a specific particle.
@@ -278,13 +274,7 @@ pub fn inelastic_collision(i: usize,j: usize,particles: &ParticleVec,forces: &mu
 
         // Force Calculation (Spring + Damping)
         let spring_f = stiffness * overlap;
-
-        // Damping only applies when particles are compressing (moving toward each other)
-        let damping_f = if normal_vel < 0.0 {
-            -damping * normal_vel
-        } else {
-            0.0
-        };
+        let damping_f = -damping * normal_vel;
 
         // Ensure total force is never attractive (clamping)
         let total_f = (spring_f + damping_f).max(0.0);
@@ -386,7 +376,7 @@ mod tests {
         // Apply weight to the first particle
         add_weight(0, &mut forces, &particles);
 
-        // Assuming gravity is -9.81 and inv_mass is 1.0 (mass = 1.0)
+        // Assuming gravity is -9.81 and mass is 1.0 (mass = 1.0)
         // Force should be exactly -9.81 in the Z direction
         assert!((forces[0].z + 9.81).abs() < 1e-6);
         

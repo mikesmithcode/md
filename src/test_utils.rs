@@ -12,7 +12,7 @@
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(1.0, 1.0, 1.0),
                 radius: 0.5,
-                inv_mass: 1.0,
+                mass: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
             });
@@ -23,7 +23,7 @@
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(0.1, 0.2, 0.3),
                 radius: 0.5,
-                inv_mass: 1.0,
+                mass: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
             });

@@ -118,7 +118,7 @@ pub fn save_snapshot(
         "vy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
         "vz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
         "radius" => &particles.radius,
-        "inv_mass" => &particles.inv_mass,
+        "mass" => &particles.mass,
         "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
         "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
         "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
@@ -172,7 +172,7 @@ pub fn load_snapshot(
     let vy_col = df.column("vy")?.f64()?;
     let vz_col = df.column("vz")?.f64()?;
     let r_col = df.column("radius")?.f64()?;
-    let m_col = df.column("inv_mass")?.f64()?;
+    let m_col = df.column("mass")?.f64()?;
     let col_r = df.column("r")?.f64()?;
     let col_g = df.column("g")?.f64()?;
     let col_b = df.column("b")?.f64()?;
@@ -182,7 +182,7 @@ pub fn load_snapshot(
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, ptype, x, y, z, vx, vy, vz, rad, inv_m, r, g, b) in izip!(
+    for (id, ptype, x, y, z, vx, vy, vz, rad, mass, r, g, b) in izip!(
         id_col.into_iter(),
         ptype_col.into_iter(),
         x_col.into_iter(),
@@ -212,7 +212,7 @@ pub fn load_snapshot(
                 vz.unwrap_or(0.0),
             ),
             radius: rad.unwrap_or(0.0),
-            inv_mass: inv_m.unwrap_or(0.0),
+            mass: mass.unwrap_or(0.0),
             color: Srgba::new(
                 r.unwrap_or(0.0) as u8,
                 g.unwrap_or(0.0) as u8,
@@ -280,7 +280,7 @@ mod tests {
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(0.1, 0.2, 0.3),
                 radius: 0.5,
-                inv_mass: 1.0,
+                mass: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
             });
@@ -319,7 +319,7 @@ mod tests {
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(0.1, 0.2, 0.3),
                 radius: 0.5,
-                inv_mass: 1.0,
+                mass: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
             });

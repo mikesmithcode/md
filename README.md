@@ -2,7 +2,7 @@
 
 This is a molecular dynamics simulation written in Rust. It is intended as a learning project to explore using Rust in scientific computing. 
 
-Since the code is in a workspace there are two top-level folders:
+There are two top-level folders:
 - [`md_sim`]: the main simulation code
 - [`md_viz`]: the visualization code
 
@@ -11,7 +11,7 @@ Since the code is in a workspace there are two top-level folders:
 
 Different simulations are contained in the bin folder.
 
-If you simulation is in new_sim.rs. You can then run it with:
+If your simulation is in new_sim.rs. You can then run it with:
 ```bash, no_run
     cargo run --bin new_sim
 ```
@@ -47,40 +47,49 @@ To handle the details of a simulation you must create a unit struct (I've called
         impl Motion for SimUpdate{
             fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
                 //Integrate the equations of motion.
-                integrate_verler(forces, particles, settings);
+                integrate_verler_update(forces, particles, settings);
 
                 //You can also add anything else that modifies the data in particles eg. change the size of the particles.
             }
 
             fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
-                integrate_verler(forces, particles, settings);
+                integrate_verler_correct(forces, particles, settings);
             }
         }    
 
     }
 
     impl Forces for SimUpdate{
-        fn update_forces(&self, forces: &mut [glam::DVec3], particles: &ParticleVec, settings: &SimulationSettings) {
+        
+        fn has_pair_forces(&self) -> bool { false }
+            // If there are no pair forces then call this method returning false. If you do have pair forces this defaults to true and you 
+            // need not implement it.
+        
+        fn update_pair_forces(&self, i: usize, j: usize, forces: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings); {
+            // In here you define all the functions that require forces to be applied between pairs of particles.
+            // forces.rs has a load of pre-built functions that you can import and use. The Simulation handles finding 
+            // particle pairs according to the cutoff distance and iterates over them. i and j are indices which specify the pair of particles.
+            // You then calculate the interaction between these particles and update the forces on each particle accordingly.
+            inelastic_collision(i, j, particles, forces, collision_params);
+
+        fn has_single_forces(&self) -> bool { false }
+            // If there are no single particle forces then call this method returning false. If you do have single particle forces this defaults to true and you 
+            // need not implement it.
+
+        fn update_single_forces(&self, forces: &mut [glam::DVec3], particles: &ParticleVec, settings: &SimulationSettings) {
             // In here you define all the functions that require forces to be applied to particles.
             // forces.rs has a load of pre-built functions that you can import and use. 
             
-            // If the force acts on all particles then pass the mutable reference to forces and a immutable reference to particles.
+            // If the force acts on all particles then pass the mutable reference to forces and an immutable reference to particles.
             //just call the function like this:
             add_weight(forces, particles);
 
             // If you need to calculate things such as collisions where you need to loop over particle pairs
             //Forces between particles - starting with checking all pairs.
-            let n=particles.len();
-            for i in 0..n {
-                for j in (i + 1)..n {
-                    if let SimulationModel::Default(collision_params) = &settings.model{
-                        inelastic_collision(i, j, particles, forces, collision_params);
-                    }
-                }
-            }
-
-            // If you have particles that shouldn't move or move with a specified motion put these last
-            zero_forces_ptype(forces, particles, 1);
+        }                    
+        
+        // If you have particles that shouldn't move or move with a specified motion put these last
+        zero_forces_ptype(forces, particles, 1);
         }
     }
 
@@ -109,7 +118,7 @@ If you want headless rendering to an image file:
     let _ = scene.init_headless();
 ```
 
-Then in your simulation loop you can call either `scene.display()` to update the window or `scene.save_img()` to save an image to file.
+Then in your simulation loop you can call either [`md_viz::scene::Scene.display()`] to update the window or [`md_viz::scene::Scene.save_img()`] to save an image to file.
 
 ```rust, ignore
     scene.display(&simulation.get_particles(), step).expect("Error updating display");
@@ -129,12 +138,12 @@ Periodically the simulation should write output files containing the current sta
 
 Simulation has two main methods: new() which creates a new simulation and update() which advances the simulation by one step.
 
-[`Simulation::new`]
-This takes a SimSettings struct as input and creates a new Simulation struct. It reads the initial state from file and creates the cell grid. It also takes a SimUpdate unit struct which contains the details of the simulation. This implements the traits [`Motion`] and [`Forces`]. Each of these traits needs to be implemented for your specific simulation. They define  This is where you would implement your specific simulation details by implementing the Motion and Forces traits on it.
+[`md_sim::simulation::Simulation::new`]
+This takes a SimSettings struct as input and creates a new Simulation struct. It reads the initial state from file and creates the cell grid. It also takes a SimUpdate unit struct which contains the details of the simulation. This implements the traits [`md_sim::motion::Motion`] and [`md_sim::force::Forces`]. Each of these traits needs to be implemented for your specific simulation. You can use the pre-built functions in motion.rs and forces.rs or write your own.
 
 [`Motion`] defines the update_motion() and correct_motion() functions. update_motion() is where you would implement your integration scheme to update the positions and velocities of the particles based on the forces. correct_motion() is where you would implement any correction step of your integration scheme if you are using one. This method is optional and can be left blank.
 
-[`Forces`] defines the update_single_forces() function which is for those forces which act on individual particles. It also defines the update_pair_forces() function which is for forces that act between pairs of particles. The CellGrid structure efficiently searches for particle pairs within a specified cutoff distance defined in your SimSettings, read from a config file.
+[`md_sim::force::Forces`] defines the update_single_forces() function which is for those forces which act on individual particles. It also defines the update_pair_forces() function which is for forces that act between pairs of particles. If you don't want to use either you must reimplement [`md_sim::force::has_pair_forces`] or [`md_sim::force::update_single_forces`] returning false to tell the simulation you don't need these. the The CellGrid structure efficiently searches for particle pairs within a specified cutoff distance defined in your SimSettings, read from a config file.
 
 [`Simulation::update`]
 This works through several steps:
@@ -142,5 +151,4 @@ This works through several steps:
 - update_forces() this calculates the forces on the particles based on their new positions. This is where you would implement the physics of your system. You can use the pre-built functions in forces.rs or write your own.
 - correct_motion() this corrects the particle positions and velocities based on the new forces. This is where you would implement the correction step of your integration scheme if you are using one. This method is optional and can be left blank.
 
-
-Simulation creates a [`neighbous::CellGrid`] structure. This is a grid of cells based on particle position which bins the particles. Each cells particles are stored as a linked list. This allows for efficient searching of nearby particles which is necessary for calculating forces such as collisions. The cell grid is updated at each step of the simulation.
+Simulation creates a [`md_sim::neighbours::CellGrid`] structure. This is a grid which bins the particles based on their positions. For each particle we then create a verlet list of particles within some distance cutoff + skin. This is efficient because it is only searching the same cell or neighbouring cells. When any particle has undergone a displacement equal to skin we rebuild the cell grid and verlet lists.

@@ -27,14 +27,14 @@ pub struct Particle {
     pub position: DVec3,  
     pub velocity: DVec3,          
     pub radius: f64, 
-    pub inv_mass: f64,  
+    pub mass: f64,  
     pub color: Srgba,      
     // Verlet lists tracker fields
     pub ref_pos: DVec3,
 }
 
 impl Particle {
-    /// Initialises a new spherical particle and calculates its inverse mass.
+    /// Initialises a new spherical particle and calculates its mass.
     ///
     /// The mass is derived from the volume of a sphere ($V = \frac{4}{3}\pi r^3$) 
     /// multiplied by the provided density.
@@ -49,12 +49,6 @@ impl Particle {
     /// * `density` - The mass per unit volume.
     /// * `color` - The RGBA colour used for rendering.
     ///
-    /// # Physics Note
-    ///
-    /// This constructor stores the **inverse mass** ($1/m$) to avoid costly 
-    /// division operations during force and motion calculations. A density 
-    /// of 0.0 or a radius of 0.0 will result in an infinite `inv_mass`, which 
-    /// may cause simulation instability.
     pub fn new(
         id: usize, 
         ptype: usize, 
@@ -66,7 +60,7 @@ impl Particle {
     ) -> Self {
         // Calculate mass: m = volume * density
         let volume = (4.0 / 3.0) * std::f64::consts::PI * radius.powi(3);
-        let inv_mass = 1.0 / (volume * density);
+        let mass = volume * density;
         let ref_pos = DVec3::ZERO;
 
 
@@ -76,7 +70,7 @@ impl Particle {
             position, 
             velocity, 
             radius, 
-            inv_mass, 
+            mass, 
             color,
             ref_pos 
         }
@@ -101,7 +95,7 @@ mod tests {
         let density: f64=1.0;
         let ptype = 1;
         
-        let inv_mass = 1.0/((4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density);
+        let mass = (4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density;
         let particle = Particle::new(id, ptype, position, velocity, radius, density, color);
 
         assert_eq!(particle.id, id);
@@ -109,6 +103,6 @@ mod tests {
         assert_eq!(particle.velocity, velocity);
         assert_eq!(particle.color, color);
         assert_eq!(particle.radius, radius);
-        assert_eq!(particle.inv_mass, inv_mass);
+        assert_eq!(particle.mass, mass);
     }
 }

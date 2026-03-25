@@ -1,9 +1,11 @@
 use std::fs;
 use std::io;
 use std::path::Path;
+use std::env;
+use std::path::PathBuf;
 
-fn clear_directory(dir_path: &str) -> io::Result<()> {
-    let path = Path::new(dir_path);
+fn clear_directory(path: PathBuf) -> io::Result<()> {
+    
 
     if path.exists() && path.is_dir() {
         for entry in fs::read_dir(path)? {
@@ -17,18 +19,30 @@ fn clear_directory(dir_path: &str) -> io::Result<()> {
                 fs::remove_dir_all(entry_path)?;
             }
         }
-        println!("Cleared: {}", dir_path);
+        
     } else {
-        println!("Directory not found, skipping: {}", dir_path);
+        println!("Directory not found, skipping");
     }
     Ok(())
 }
 
 fn main() -> io::Result<()> {
-    // Paths relative to your workspace root
-    clear_directory("output/imgs")?;
-    clear_directory("output/snapshots")?;
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() == 1{
+        let path = Path::new("output").to_path_buf();
+        clear_directory(path)?;
+        println!("All output cleared");
+    }else if args.len() == 2 {
+        let folder = &args[1];
+        // Paths relative to your workspace root
+        let path = Path::new("output").join(folder);
+        clear_directory(path)?;
+        println!("All output in {:?} has been cleared", folder);
+    }else{
+        panic!("Supply a single folder as argument");
+    }
+
     
-    println!("Clean-up complete.");
     Ok(())
 }

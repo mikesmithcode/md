@@ -3,9 +3,11 @@ from filehandling import BatchProcess
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 
 path_to_snapshots = "output/snapshots/"
 
+os.makedirs(path_to_snapshots, exist_ok=True)
 root_path = Path(__file__).parent.parent
 filepath = root_path.joinpath(path_to_snapshots,  "snapshot_0000000000.parquet")
 
@@ -20,7 +22,7 @@ base_particle = {
         "vy" : 0.0,
         "vz" : 0.0,
         "radius" : 0.04,
-        "inv_mass" : 2.35,#density 1000kgm^-3
+        "mass" : 2.35,#density 1000kgm^-3
         "r": 255.0,
         "g": 0.0,
         "b" : 0.0

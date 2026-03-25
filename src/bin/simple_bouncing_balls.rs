@@ -2,21 +2,21 @@ use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 use winit::event_loop::EventLoop;
+use glam::DVec3;
 
 // Import everything from your md_viz library
 use md::md_viz::scene::{Scene, SceneSetup};
-use md::md_viz::camera::{Perspective, CameraSettings};
+use md::md_viz::camera::CameraView;
 use md::md_viz::objects::SimBox;
 
 // Imports from simulation library
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::Forces;
+use md::md_sim::force::{Forces, inelastic_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
-use md::md_sim::simulation::SimulationModel;
-use md::md_sim::force::{add_weight, zero_forces_ptype, inelastic_collision};
-use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct};
+use md::md_sim::force::{add_weight, zero_forces_for_ptypes};
+use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct, change_rad, move_sinwave, change_colour};
 
 use md::md_sim::file_io;
 
@@ -24,34 +24,39 @@ use md::md_sim::file_io;
 pub struct SimUpdate;
 
 impl Forces for SimUpdate{
-    fn update_forces(&self, forces: &mut [glam::DVec3], particles: &ParticleVec, settings: &SimulationSettings) {
-        
-        //Forces which apply to every particle individually
-        add_weight(forces, particles);
-        //if let SimulationModel::Fluid { viscosity, cutoff } = &settings.model{
-        //    add_viscous_drag(forces, particles, *viscosity);
-        //}
+    // Default implementation is true, set to false if not using
+    fn has_pair_forces(&self)-> bool {
+        true
+    }
+    // Default implementation is true set to false if not using
+    fn has_single_forces(&self)-> bool {
+        true
+    }
 
 
-        //Forces between particles - starting with checking all pairs.
-        let n=particles.len();
-        let sim_box_size = settings.sim_box_size;
+    //Forces which apply to every particle individually
+    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings) {   
+        add_weight(i, forces, particles);
+    }
 
-        for i in 0..n {
-            for j in (i + 1)..n {
-                if let SimulationModel::Default(collision_params) = &settings.model{
-                    inelastic_collision(i, j, particles, forces, collision_params, &sim_box_size);
-                }
-            }
-        }
+    // forces that operate between pairs of particles
+    fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3],particles: &ParticleVec,settings: &SimulationSettings){
+        inelastic_collision(i, j, particles, forces, settings);
+    }
 
-        zero_forces_ptype(forces, particles, 1);
+    // For particles that shouldn't follow the calculated forces e.g walls etc.
+    fn update_ptype_no_forces(&self, forces: &mut [DVec3], particles: &ParticleVec){
+        let immobile = &[1]; // Bottom particle is immobile
+        zero_forces_for_ptypes(forces, particles, immobile);
     }
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
+    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, time:f64) {
         integrate_verlet_update(forces, particles, settings);
+        //change_rad(particles, 0)
+        move_sinwave(particles, settings, time);
+        change_colour(particles, settings);
     }
     fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
         integrate_verlet_correct(forces, particles, settings);
@@ -67,8 +72,13 @@ pub fn main() {
     //----------------------------------------------------------------
     // Define simulation
     //---------------------------------------------------------------
-    let config_filepath = Path::new(INPUT_PATH).join("bounce_2balls_config.json");
-    let snapshot_path = Path::new(OUTPUT_PATH).join("snapshots");
+    let simulation_name = Path::new(file!())
+                                            .file_stem()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap();
+
+    let config_filepath = Path::new(INPUT_PATH).join(format!("{}_config.json", simulation_name));
+    let snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("snapshots");
     
 
     //------------------------------------------------------------
@@ -76,7 +86,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (particles, start_step, time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
     let sim_settings: SimulationSettings = SimulationSettings::new(&config_filepath).expect("sim settings not loaded correctly");
     
     //----------------------------------------------------------------
@@ -85,12 +95,8 @@ pub fn main() {
 
 
     let scene_settings = SceneSetup {
-            camera: CameraSettings{
-                perspective: Perspective::Perspective, // Default Perspective::Perspective or Perspective::Orthographic
-                window_dt: 0.01,
-                headless_dt: 0.01,
-                },
-            window_size: (640, 480),
+            camera: CameraView::Perspective,
+            window_size: (1280, 960),
             sim_box_setup: SimBox {
                 on: true,
                 thickness: sim_settings.sim_box_size_f32()[0]/5000.0,
@@ -103,7 +109,7 @@ pub fn main() {
     //  Create simulation
     //--------------------------------------------------------------
     
-    let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone());
+    let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone(), time);
 
     //--------------------------------------------------------------
     //  Initialise all graphics
@@ -142,11 +148,11 @@ pub fn main() {
             //Handle graphics
             //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
             scene.display(&sim.get_particles()).expect("Error updating display");
-            sleep(Duration::from_millis(100));
+            //sleep(Duration::from_millis(100));
 
             //save a snapshot of particle positions etc
-            file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), time).expect("Error saving simulation snapshot");
-            time += sim.settings.dt;
+            file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+            
         }
         
     }

@@ -104,6 +104,7 @@ pub struct Simulation<S>
     pub settings: SimulationSettings,
     pub current_step: usize,
     pub cell_grid: CellGrid,
+    pub time: f64,
 }
 
 impl<S> Simulation<S> 
@@ -111,7 +112,7 @@ impl<S> Simulation<S>
         S: Forces + Motion,
     {
     /// Create a new simulation
-    pub fn new(particles: ParticleVec, sim_update: S, settings: SimulationSettings) -> Self {
+    pub fn new(particles: ParticleVec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
         let n = particles.len();
         Self {
             particles,
@@ -119,7 +120,8 @@ impl<S> Simulation<S>
             sim_update,
             settings: settings.clone(),
             current_step: settings.start,
-            cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n, settings.skin)
+            cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n, settings.skin),
+            time
         }
     }
 
@@ -134,7 +136,7 @@ impl<S> Simulation<S>
     pub fn update(&mut self){
 
         // Predict the new positions, velocities etc
-        self.sim_update.update_motion(&self.forces, &mut self.particles, &self.settings);
+        self.sim_update.update_motion(&self.forces, &mut self.particles, &self.settings, self.time);
 
 
         // Form the cell_grid, putting particles in
@@ -171,6 +173,9 @@ impl<S> Simulation<S>
 
         // Perform correction to the motion based on the updated forces
         self.sim_update.correct_motion(&self.forces, &mut self.particles, &self.settings);
+
+        // Update simulation time
+        self.time += self.settings.dt;
         
     }
 

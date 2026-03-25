@@ -6,6 +6,7 @@
 use crate::{SimulationSettings, md_sim::particle::ParticleVec};
 use glam::DVec3;
 use itertools::izip;
+use three_d::{Srgba, context::SRGB};
 
 /// Defines the integration scheme and kinematic updates for the simulation.
 ///
@@ -33,7 +34,8 @@ pub trait Motion {
         &self, 
         forces: &[DVec3], 
         particles: &mut ParticleVec, 
-        settings: &SimulationSettings
+        settings: &SimulationSettings,
+        time: f64
     );
 
     /// Finalises particle states at the end of a simulation step (Correction).
@@ -79,13 +81,13 @@ pub fn integrate_verlet_update(
     let half_dt = dt * 0.5;
     let sim_box_size = settings.sim_box_size;
 
-    for (pos, vel, &inv_mass, &force) in izip!(
+    for (pos, vel, &mass, &force) in izip!(
         &mut particles.position,
         &mut particles.velocity,
-        &particles.inv_mass,
+        &particles.mass,
         forces
     ) {
-        let acceleration = force * inv_mass;
+        let acceleration = force / mass;
         
         // Half-step velocity update
         *vel += acceleration * half_dt;
@@ -110,12 +112,12 @@ pub fn integrate_verlet_correct(
 ) {
     let half_dt = settings.dt * 0.5;
 
-    for (vel, &inv_mass, &force) in izip!(
+    for (vel, &mass, &force) in izip!(
         &mut particles.velocity,
-        &particles.inv_mass,
+        &particles.mass,
         forces
     ) {
-        let acceleration = force * inv_mass;
+        let acceleration = force / mass;
         
         // Final half-step velocity update using new forces
         *vel += acceleration * half_dt;
@@ -159,7 +161,7 @@ pub fn check_periodic(pos: &mut DVec3, sim_box_size: DVec3) {
 /// # Notes
 ///
 /// * **Mass Consistency:** Note that this only modifies the `radius` field. 
-///   If your simulation physics depends on `inv_mass`, you may need to 
+///   If your simulation physics depends on `mass`, you may need to 
 ///   recalculate it after calling this function to maintain a constant density.
 /// * **Growth Rate:** The current multiplier is $1.00001$ ($0.001\%$) per call.
 pub fn change_rad(particles: &mut ParticleVec, ptype: usize) {
@@ -167,6 +169,32 @@ pub fn change_rad(particles: &mut ParticleVec, ptype: usize) {
         if p == ptype {
             *radius *= 1.00001;
         }
+    }
+}
+
+pub fn move_sinwave(particles: &mut ParticleVec, settings: &SimulationSettings, time: f64){
+    let amplitude: f64 = 0.1;
+    let frequency: f64= 250.0;
+
+    //move surface particles up and down
+    for (pos, &ptype) in izip!(&mut particles.position, &particles.ptype){
+        if ptype == 1{
+            let velocity_z = amplitude*(2.0*std::f64::consts::PI*frequency*time).cos();
+            pos.z += velocity_z * settings.dt;
+        }
+    }
+
+}
+
+pub fn change_colour(particles: &mut ParticleVec, settings: &SimulationSettings){
+    let threshold: f64 = 0.01;
+    
+    let new_colour = Srgba::new(0, 255, 0, 255);
+    //change colour of particles
+    for (pos, col, &ptype) in izip!(&mut particles.position, &mut particles.color,  &particles.ptype){
+        if (ptype == 0) && (pos.z > threshold){
+                *col = new_colour; 
+            }
     }
 }
 
@@ -184,7 +212,7 @@ mod tests {
         settings.dt = 0.1;
         settings.sim_box_size = DVec3::new(10.0, 10.0, 10.0);
 
-        // Force of 10.0 on Particle 0 (inv_mass is 1.0) -> Accel = 10.0
+        // Force of 10.0 on Particle 0 (mass is 1.0) -> Accel = 10.0
         let mut forces = vec![DVec3::ZERO; particles.len()];
         forces[0] = DVec3::new(10.0, 0.0, 0.0);
 
@@ -203,7 +231,7 @@ mod tests {
         let mut settings = SimulationSettings::default();
         settings.dt = 0.1;
 
-        // Force of 10.0 in X direction. inv_mass is 1.0, so Accel = 10.0
+        // Force of 10.0 in X direction. mass is 1.0, so Accel = 10.0
         let forces = vec![DVec3::new(10.0, 0.0, 0.0); particles.len()];
 
         // Manually set a "pre-predicted" state.

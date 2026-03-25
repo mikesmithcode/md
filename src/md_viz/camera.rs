@@ -40,25 +40,41 @@ pub fn create_camera(viewport: Viewport, scene_settings: SceneSetup) -> Camera {
 /// This is useful for viewing and rotating around a 3D scene
 /// The default here is that +ve x is to the right, +ve y is into the page, +ve z is upwards on the page.
 fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Camera {
-    let centre = vec3(
-        sim_box_size[0] * 0.5, 
-        sim_box_size[1] * 0.5, 
-        sim_box_size[2] * 0.5
-    );
+    let [dim_x, dim_y, dim_z] = sim_box_size;
     
-    // Calculate a distance that ensures the whole box is visible.
-    // 2.0x the largest dimension is usually a safe "sweet spot".
-    let max_dim = sim_box_size[0].max(sim_box_size[1]).max(sim_box_size[2]);
-    let eye_pos = centre + vec3(0.0,-max_dim * 2.0, 0.0);
+    // 1. Add 10% buffer so the edges of the particles aren't cut off
+    let buffered_x = 1.1*dim_x;
+    let buffered_z = 1.1*dim_z;
+    let buffered_y = 1.1*dim_y;
+
+    let centre = vec3(dim_x * 0.5, dim_y * 0.5, dim_z * 0.5);
+    
+    let fov_deg = 45.0;
+    let fov_rad = fov_deg * std::f32::consts::PI / 180.0;
+    let aspect = viewport.width as f32 / viewport.height as f32;
+
+    // 2. Calculate distance for Height (Z) and Width (X)
+    let dist_z = (buffered_z * 0.5) / (fov_rad * 0.5).tan();
+    
+    // Adjust horizontal FOV based on aspect ratio
+    let horizontal_fov_rad = 2.0 * ((fov_rad * 0.5).tan() * aspect).atan();
+    let dist_x = (buffered_x * 0.5) / (horizontal_fov_rad * 0.5).tan();
+
+    // 3. Take the max distance and add half the depth (Y) 
+    // This ensures the camera is back far enough to see the FRONT face
+    let base_distance = dist_z.max(dist_x);
+    let eye_distance = (base_distance + (buffered_y * 0.5)) * 1.1; // 10% extra padding
+
+    let eye_pos = centre + vec3(0.0, -eye_distance, 0.0);
 
     Camera::new_perspective(
-        viewport, 
+        viewport,
         eye_pos,
-        centre,              // Look at the centre of the box
-        vec3(0.0, 0.0, 1.0), // Up direction
-        degrees(45.0),       // Field of view
-        0.1,                 // Near plane
-        max_dim * 20.0,      // Far plane
+        centre,
+        vec3(0.0, 0.0, 1.0), 
+        degrees(fov_deg),
+        0.01,                
+        eye_distance + buffered_y + 10.0, 
     )
 }
 
