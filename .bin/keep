@@ -1,2 +1,34 @@
 #!/bin/bash
-cargo run --quiet --bin keep -- "$@"
+
+# 1. Check if an argument was provided
+if [ -z "$1" ]; then
+    echo "Usage: ./keep <simulation_name>"
+    exit 1
+fi
+
+SIM_NAME=$1
+SOURCE_DIR="output/$SIM_NAME"
+
+# 2. Check if the source folder actually exists
+if [ ! -d "$SOURCE_DIR" ]; then
+    echo "Error: Folder '$SOURCE_DIR' not found."
+    exit 1
+fi
+
+# 3. Generate the timestamp (Format: 20260401_165230)
+TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+NEW_FOLDER_NAME="${SIM_NAME}_${TIMESTAMP}"
+DEST_DIR="output/$NEW_FOLDER_NAME"
+
+# 4. Perform the copy
+echo "Backing up '$SIM_NAME' to '$NEW_FOLDER_NAME'..."
+
+# -r for recursive, -p to preserve file attributes
+cp -rp "$SOURCE_DIR" "$DEST_DIR"
+
+if [ $? -eq 0 ]; then
+    echo "Successfully saved to: $DEST_DIR"
+else
+    echo "Error: Failed to copy folder."
+    exit 1
+fi

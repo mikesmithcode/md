@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# 1. Configuration
+PYTHON_EXEC="/c/Users/mikei/miniconda3/envs/md/python.exe"
+RUN_CLEAN=false
+
+# 2. Process the "-c" flag
+while getopts "c" opt; do
+  case $opt in
+    c)
+      RUN_CLEAN=true
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# 3. Shift arguments ($1 becomes "silo")
+shift $((OPTIND-1))
+
+# 4. Handle Cleanup, Directory Setup, AND Python Prep ONLY if -c is used
+if [ "$RUN_CLEAN" = true ]; then
+    echo "--- Running Cleanup for $1 ---"
+    cargo run --quiet --bin cleanup -- "$1"
+    
+    echo "--- Creating Directories for $1 ---"
+    mkdir -p "output/$1/snapshots"
+    mkdir -p "output/$1/video"
+
+    echo "--- Running Python Setup Script ---"
+    # This now only runs when you type -c
+    "$PYTHON_EXEC" python_scripts/"$1".py || { echo "Python setup failed"; exit 1; }
+fi
+
+# 5. Always run the Rust simulation
+echo "--- Launching Rust Simulation: $1 ---"
+cargo run --bin "$1"

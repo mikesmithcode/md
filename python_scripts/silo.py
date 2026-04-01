@@ -1,11 +1,15 @@
-import polars as pl
+
 from filehandling import BatchProcess
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-path_to_snapshots = "output/snapshots/"
+import sys
+print(f"DEBUG: Using Python at {sys.executable}")
+import polars as pl
+
+path_to_snapshots = "output/silo/snapshots/"
 
 os.makedirs(path_to_snapshots, exist_ok=True)
 root_path = Path(__file__).parent.parent

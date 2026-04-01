@@ -18,9 +18,8 @@ tempfile = "3.24.0"
 itertools = "0.13"
 soa_derive = "0.13"
 chrono = "0.4"
+bytemuck = "1.14"
+
 
 [profile.release]
-lto = true
-codegen-units = 1
-panic = 'abort' # Slight speed boost by removing stack-unwinding logic
-
+debug = false #comment out when not profiling

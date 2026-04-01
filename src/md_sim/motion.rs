@@ -6,7 +6,7 @@
 use crate::{SimulationSettings, md_sim::particle::ParticleVec};
 use glam::DVec3;
 use itertools::izip;
-use three_d::{Srgba, context::SRGB};
+use three_d::Srgba;
 
 /// Defines the integration scheme and kinematic updates for the simulation.
 ///
@@ -186,7 +186,7 @@ pub fn move_sinwave(particles: &mut ParticleVec, settings: &SimulationSettings, 
 
 }
 
-pub fn change_colour(particles: &mut ParticleVec, settings: &SimulationSettings){
+pub fn change_colour(particles: &mut ParticleVec, _settings: &SimulationSettings){
     let threshold: f64 = 0.01;
     
     let new_colour = Srgba::new(0, 255, 0, 255);

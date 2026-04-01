@@ -36,9 +36,12 @@ pub struct CollisionParams {
 }
 
 ///---------------------------------------------------------
-///Simulation settings 
+/// These are general rather than particle specific parameters that affect the running of the simulation
 /// 
-/// These are parameters that affect the running of the simulation such as time step.
+/// 
+/// dt - timestep of the simulation
+/// sim_box_size - x,y,z dimensions of the simulation box
+/// cutoff - range of force or distance within which neighbours are defined by the cell grid / verlet in [`neighbours::CellGrid`]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimulationSettings{
     pub dt: f64,
@@ -48,7 +51,11 @@ pub struct SimulationSettings{
     pub start: usize,
     pub num_steps: usize,
     pub dump: usize,
+    pub active_ptypes: Vec<i32>,
     pub model: SimulationModel,
+    #[serde(skip)]  
+    pub active_map: [bool; 32],
+    
 }
 
 impl SimulationSettings
@@ -63,7 +70,13 @@ impl SimulationSettings
         });
         let reader = BufReader::new(file);
 
-        let sim_settings = serde_json::from_reader::<_, SimulationSettings>(reader)?;
+        let mut sim_settings = serde_json::from_reader::<_, SimulationSettings>(reader)?;
+        sim_settings.active_map = [false; 32];
+        for &ptype in &sim_settings.active_ptypes {
+            if ptype >= 0 && (ptype as usize) < 32 {
+                sim_settings.active_map[ptype as usize] = true;
+            }
+        }
 
         Ok(sim_settings)
     }
@@ -84,10 +97,13 @@ impl Default for SimulationSettings {
             start: 0,
             num_steps: 15,
             dump: 1000,
+            active_ptypes: vec![0],
             model: SimulationModel::Solid(CollisionParams{
                 stiffness: 1000.0, 
                 damping: 50.0}),
+            active_map:[true;32]
         }
+
     }
 }
 
@@ -141,7 +157,6 @@ impl<S> Simulation<S>
 
         // Form the cell_grid, putting particles in
         if self.sim_update.has_single_forces() || self.sim_update.has_pair_forces(){
-            self.cell_grid.bin(&self.particles);
             //Clear the force buffer and check same length as particles
             self.reset_forces();
         }

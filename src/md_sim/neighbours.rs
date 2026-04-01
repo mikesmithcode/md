@@ -4,6 +4,30 @@ use crate::md_sim::simulation::SimulationSettings;
 use crate::md_sim::force::{check_delta,Forces};
 
 
+/// Optimising finding neighbours for calculation of forces
+/// 
+/// Divides particles in simulation up into small cells of size SimulationSettings.cutoff + SimulationSettings.skin
+/// based on position coordinates.
+/// Then for each particle looks at same cell and neighbouring cells and constructs
+/// a verlet list of those particles that are within SimulationSettings.cutoff of the particle
+/// and then the pair interaction forces are calculated using this list. In subsequent timesteps
+/// the displacement of particles relative to the last time is calculated. When any particle has 
+/// travelled > SimulationSettings.skin/2 the cell grid is rebuilt and the verlet lists reconstructed.
+/// Particles.ptype that are not listed under SimulationSettings.active_particles are not added to the
+/// verlet lists of other Particles.ptype not listed under SimulationSettings since these have dynamics
+/// that are not influenced by the calculated force.
+/// 
+/// # Arguments
+/// 
+/// * `num_cells` - number cells in each dimension (calculated)
+/// * `cell_size` - set by SimulationSettings.cutoff
+/// * `heads` - list of the first Some(particle_id) in each cell or None if cell is empty
+/// * `next` - A linked list. particle_id.next[i] stores the id of the next particle in the same cell as particle i
+/// * stride_y, stride z - used to convert 3d to 1d particle coords.
+/// * neighbour_table - relative indices of adjacent cells
+/// * verlet_table - lists of particle ids within cutoff + skin for each particle
+/// * skin - this is just local copy of SimulationSettings.skin
+/// * last_particle_count - number of particles. If this changes we need to rebuild.
 #[derive(Debug, Clone)]
 pub struct CellGrid {
     pub num_cells: [usize; 3],
@@ -70,6 +94,10 @@ impl CellGrid {
         grid
     }
 
+    /// check and rebuild neighbours
+    /// 
+    /// This checks whether any particle has moved more than the skin/2. If so then the cell grid and verlet lists
+    /// are rebuilt. If the number of particles has changed we also rebuild everything.
     pub fn check_and_rebuild_neighbours(&mut self,particles: &mut ParticleVec,settings: &SimulationSettings) {
         let threshold_sq = (settings.skin * 0.5).powi(2);
 
@@ -108,7 +136,8 @@ impl CellGrid {
         self.verlet_table.resize(new_count, Vec::with_capacity(20));
     }
 
-    pub fn bin(&mut self, particles: &ParticleVec) {
+    // Put particles into cells and build linked lists
+    fn bin(&mut self, particles: &ParticleVec) {
         self.heads.fill(None);
         for (i, pos) in particles.position.iter().enumerate() {
             let (ix, iy, iz) = self.get_3d_cell_idx(*pos);
@@ -152,22 +181,32 @@ impl CellGrid {
             }
         }
 
-    fn try_add_pair(&mut self, i: usize, j: usize, r_sq: f64, p: &ParticleVec, s: &SimulationSettings) {
+    // Check if pair should be added to particles verlet list.
+    fn try_add_pair(&mut self, i: usize, j: usize, r_sq: f64, p: &ParticleVec, settings: &SimulationSettings) {
         // This prevents double-counting and self-interaction (i == j)
         if i >= j {
             return;
         }
 
+        // get particle ptypes
+        let ptype_i = p.ptype[i] as usize;
+        let ptype_j = p.ptype[j] as usize;
+
+        // If both are inactive don't add to a verlet list
+        if !settings.active_map[ptype_i] && !settings.active_map[ptype_j] {
+            return;
+        }
+
         // Calculate wrapped distance
         let mut delta = p.position[i] - p.position[j];
-        check_delta(&mut delta, &s.sim_box_size);
+        check_delta(&mut delta, &settings.sim_box_size);
         
         if delta.length_squared() < r_sq {
             self.verlet_table[i].push(j);
         }
     }
 
-    /// The new, fast force loop that uses the verlet_table
+    /// loop that uses the verlet_table
     pub fn apply_pair_forces<F: Forces>(
         &self,
         f_buf: &mut [DVec3],
@@ -296,13 +335,16 @@ mod tests {
         };
 
         // initialise particles
-        let mut particles = create_particle_vec();
+        let mut particles = create_particle_vec();//p1.pos and p2.pos = (1.0,2.0,3.0), p1.vel = (1.0, 1.0, 1.0), p2.vel = (0.1, 0.2, 0.3)
         particles.ref_pos.copy_from_slice(&particles.position);
 
-        let mut grid = CellGrid::new(box_size, 2.0, particles.len(), settings.skin);
+        let mut grid = CellGrid::new(box_size, settings.cutoff + settings.skin, particles.len(), settings.skin);
 
-        // Move particle 0 slightly (0.1 units)
-        // 0.1 < 0.2 threshold -> Should NOT rebuild
+        // PRIME THE GRID: This sets last_particle_count and syncs ref_pos
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+        // Move particle[0].x slightly (0.1 units)
+        // 0.1 < skin/2 threshold -> Should NOT rebuild
         particles.position[0] += DVec3::new(0.1, 0.0, 0.0);
         grid.check_and_rebuild_neighbours(&mut particles, &settings);
         

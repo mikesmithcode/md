@@ -1,0 +1,35 @@
+#!/bin/bash
+
+# 1. Configuration - Set your environment path here once
+PYTHON_EXEC="/c/Users/mikei/miniconda3/envs/md/python.exe"
+
+# 2. Flag Logic
+RUN_CLEAN=false
+while getopts "c" opt; do
+  case $opt in
+    c) RUN_CLEAN=true ;;
+    \?) exit 1 ;;
+  esac
+done
+shift $((OPTIND-1))
+
+# 3. Validation
+SIM_NAME=$1
+if [ -z "$SIM_NAME" ]; then
+    echo "Error: Please provide a simulation name (e.g., ./run -c silo)"
+    exit 1
+fi
+
+if [ "$RUN_CLEAN" = true ]; then
+    echo "--- Cleaning $1 ---"
+    cargo run --quiet --bin cleanup -- "$1"
+    
+    mkdir -p "output/$1/snapshots" "output/$1/video"
+
+    echo "--- Running Data Prep ---"
+    # By using the full path, we bypass the shell's "search" for python
+    "$PYTHON_EXEC" python_scripts/"$1".py || exit 1
+fi
+
+echo "--- Launching Simulation ---"
+cargo run --bin "$1"

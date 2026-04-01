@@ -1,2 +1,10 @@
 #!/bin/bash
-cargo run --quiet --bin cleanup -- "$@"
+
+# Ensure an argument was provided
+if [ -z "$1" ]; then
+    echo "Usage: ./cleanup.sh <folder_name>"
+    exit 1
+fi
+
+# Run the cleanup binary, passing the folder name
+cargo run --quiet --bin cleanup -- "$1"

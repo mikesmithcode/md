@@ -16,12 +16,47 @@
 use crate::{Particle, ParticleVec};
 use crate::md_sim::simulation::SimulationSettings;
 use serde_json;
-use std::{fs, io::Error, path::Path};
+use std::{fs, io::Error, path::Path, path::PathBuf};
+
 use std::io::BufReader;
 use polars::prelude::*;
 use glam::DVec3;
 use three_d::core::Srgba;
 use itertools::izip;
+
+/// Generate all the filepaths
+/// 
+/// use the file!() macro as input. Do this [config, snapshot, video]=filepaths(file!());
+/// This returns three filepaths of type Path
+pub fn filepaths(script_name: &str)-> [PathBuf;3]{
+    //Specify the folder in which all the output will be stored. Assumes in root of workspace.
+    const OUTPUT_PATH: &'static str = "output";
+    const INPUT_PATH: &'static str = "input";
+
+    //----------------------------------------------------------------
+    // Define simulation
+    //---------------------------------------------------------------
+    let simulation_name = Path::new(script_name)
+                                            .file_stem()
+                                            .and_then(|s| s.to_str())
+                                            .unwrap();
+
+    let config_path = Path::new(INPUT_PATH).join(format!("{}_config.json", simulation_name));
+
+    let snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("snapshots");
+    if let Err(_e) = fs::create_dir_all(&snapshot_path){
+        eprintln!("Error creating directory");
+    };
+    let _ = snapshot_path.join("snapshots");
+
+    let video_path = Path::new(OUTPUT_PATH).join(simulation_name).join("video");
+    if let Err(_e) = fs::create_dir_all(&video_path){
+        eprintln!("Error creating directory");
+    };
+    let video_path = video_path.join(simulation_name).with_extension("mp4");
+
+    [config_path, snapshot_path, video_path]
+}
 
 
 /// saves a json representation of the current [`SimulationSettings`]. 

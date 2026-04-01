@@ -1,11 +1,10 @@
+
 use std::path::Path;
-use std::thread::sleep;
-use std::time::Duration;
 use winit::event_loop::EventLoop;
 use glam::DVec3;
 
 // Import everything from your md_viz library
-use md::md_viz::scene::{Scene, SceneSetup};
+use md::md_viz::scene_backup::{Scene, SceneSetup};
 use md::md_viz::camera::CameraView;
 use md::md_viz::objects::SimBox;
 
@@ -16,7 +15,7 @@ use md::md_sim::force::{Forces, inelastic_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::force::{add_weight, zero_forces_for_ptypes};
-use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct, change_rad, move_sinwave, change_colour};
+use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct, move_sinwave, change_colour};
 
 use md::md_sim::file_io;
 
@@ -64,7 +63,6 @@ impl Motion for SimUpdate{
 }
 
 pub fn main() {    
-
     //Specify the folder in which all the output will be stored. Assumes in root of workspace.
     const OUTPUT_PATH: &'static str = "output";
     const INPUT_PATH: &'static str = "input";
@@ -151,8 +149,10 @@ pub fn main() {
             //sleep(Duration::from_millis(100));
 
             //save a snapshot of particle positions etc
-            file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
-            
+            {
+                file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+
+            }
         }
         
     }

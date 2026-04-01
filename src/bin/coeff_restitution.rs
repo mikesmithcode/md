@@ -5,7 +5,7 @@ use winit::event_loop::EventLoop;
 use glam::DVec3;
 
 // Import everything from your md_viz library
-use md::md_viz::scene::{Scene, SceneSetup};
+use md::md_viz::scene_backup::{Scene, SceneSetup};
 use md::md_viz::camera::CameraView;
 use md::md_viz::objects::SimBox;
 
