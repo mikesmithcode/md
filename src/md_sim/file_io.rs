@@ -191,9 +191,7 @@ pub fn save_snapshot(
 /// # Returns
 /// * `(particles, time)` - Vector of particles and simulation time
 /// Load particle snapshot from Parquet file into a ParticleVec
-pub fn load_snapshot(
-    file_path: &Path,
-) -> Result<(ParticleVec, f64), Box<dyn std::error::Error>> {
+pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(file_path)?;
     let df = ParquetReader::new(file).finish()?;
 
@@ -215,7 +213,6 @@ pub fn load_snapshot(
     let col_g = df.column("g")?.f64()?;
     let col_b = df.column("b")?.f64()?;
 
-    
     let t = t_col.get(0).unwrap_or(0.0);
 
     // Efficiently populate the ParticleVec

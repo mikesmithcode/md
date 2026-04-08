@@ -164,7 +164,7 @@ impl<S> Simulation<S>
         if self.sim_update.has_single_forces(){
             // Single forces apply to individual particles
             for i in 0..self.particles.len(){
-                self.sim_update.update_single_forces(i, &mut self.forces, &self.particles, &self.settings);
+                self.sim_update.update_single_forces(i, &mut self.forces, &self.particles, &self.settings, self.time);
             }
         }
 

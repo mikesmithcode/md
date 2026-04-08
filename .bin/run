@@ -31,7 +31,7 @@ if [ "$RUN_CLEAN" = true ]; then
 
     echo "--- Running Python Setup Script ---"
     # This now only runs when you type -c
-    "$PYTHON_EXEC" python_scripts/"$1".py || { echo "Python setup failed"; exit 1; }
+    "$PYTHON_EXEC" python_scripts/"$1".py "$1" || { echo "Python setup failed"; exit 1; }
 fi
 
 # 5. Always run the Rust simulation

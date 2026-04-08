@@ -53,10 +53,6 @@ struct GpuResources {
     instance_colors: Vec<Srgba>,
 }
 
-pub enum ContextOwner {
-    Window(WindowedContext),
-    Headless(HeadlessContext),
-}
 
 pub struct Scene {
     settings: SceneSetup,
@@ -65,18 +61,14 @@ pub struct Scene {
 
     // Unified Graphics State
     context: Option<Context>,
-    owner: Option<ContextOwner>,
+    windowed_context: Option<WindowedContext>, // Replaces ContextOwner enum
     resources: Option<GpuResources>,
     
-    // Window Specific
+    // Window State
     winit_window: Option<WinitWindow>,
     frame_input_generator: Option<FrameInputGenerator>,
     
-    // Headless Specific Persistent Buffers
-    headless_target: Option<(Texture2D, DepthTexture2D)>,
-    
     video_exporter: Option<VideoExporter>,
-    current_frame_pixels: Option<Vec<u8>>,
 }
 
 impl Scene {
@@ -91,20 +83,18 @@ impl Scene {
             camera,
             camera_control,
             context: None,
-            owner: None,
+            windowed_context: None,
             resources: None,
             winit_window: None,
             frame_input_generator: None,
-            headless_target: None,
             video_exporter: None,
-            current_frame_pixels: None,
         }
     }
 
     /// Creates a scene by reading a config file and applying simulation overrides
     pub fn from_config(scene_config_path: PathBuf, sim_settings: &SimulationSettings) -> Self {
         let mut settings = Self::load_json(scene_config_path).unwrap_or_default();
-        
+        println!("Scene Settings \n\n {:?}", settings);
         // Update the sim_box_size with real simulation data
         settings.sim_box_setup.sim_box_size = sim_settings.sim_box_size_f32();
 
@@ -137,13 +127,12 @@ impl Scene {
 
         let w_context = WindowedContext::from_winit_window(&window, SurfaceSettings::default())?;
     
-        // 1. Save the "Owner" immediately into the struct enum
         let context_handle = (*w_context).clone();
         self.context = Some(context_handle.clone());
-        self.owner = Some(ContextOwner::Window(w_context)); 
+        self.windowed_context = Some(w_context);
         self.winit_window = Some(window);
 
-        // 2. NOW initialize resources using the handle that is safely backed by an owner
+        // Initialize resources using the handle that is safely backed by an owner
         let resources = Self::_init_gpu_resources(&context_handle, self.settings.sim_box_setup.clone())?;
         self.resources = Some(resources);
         
@@ -200,9 +189,7 @@ impl Scene {
             colors: Some(colors),
         };
 
-        // SPEED BOOST: Update the existing GPU buffers instead of re-allocating
-        // Note: Since 'resources' is usually shared, you may need a interior mutability 
-        // or just pass the mesh in as &mut Gm<InstancedMesh, ...>
+        // Update the existing GPU buffers
         resources.particle_mesh.set_instances(&instances);
 
         resources.instance_transforms = instances.transformations;
@@ -214,7 +201,7 @@ impl Scene {
         objects.push(&resources.particle_mesh);
 
         if let Some(ref sb) = resources.simbox {
-            objects.push(sb); // Pushing the reference directly
+            objects.push(sb); 
         }
         
         // Render the persistent mesh
@@ -235,13 +222,8 @@ impl Scene {
         let mut target = RenderTarget::screen(context, frame_input.viewport.width, frame_input.viewport.height);
             
         Self::render_to_target(&self.camera,resources,&mut target,particles)?;
-        if self.video_exporter.is_some() {
-            let pixels = target.read_color::<u8>();
-            self.current_frame_pixels = Some(pixels);
-        }
 
-
-        if let Some(ContextOwner::Window(w_ctx)) = &self.owner {
+        if let Some(w_ctx) = &self.windowed_context {
             w_ctx.swap_buffers()?;
         }
 
@@ -284,11 +266,6 @@ impl Scene {
 
 
     pub fn start_recording(&mut self, path: &PathBuf, step: usize) -> Result<(), Box<dyn std::error::Error>> {
-        if self.context.is_none() {
-            println!("--- No active window detected. Initialising headless context... ---");
-            self.init_headless()?; 
-        }
-
         //Format the step with 10-digit padding
         let step_suffix = format!("_{:010}", step);
 
@@ -317,12 +294,7 @@ impl Scene {
             let context = self.context.as_ref().ok_or("No context")?;
             let resources = self.resources.as_mut().ok_or("No resources")?;
 
-            let mut target = if self.winit_window.is_some() {
-                RenderTarget::screen(context, w, h)
-            } else {
-                let (color, depth) = self.headless_target.as_mut().ok_or("Headless buffer missing")?;
-                RenderTarget::new(color.as_color_target(None), depth.as_depth_target())
-            };
+          let mut target = RenderTarget::screen(context, w, h);
 
             Self::render_to_target(&self.camera,resources,&mut target, particles)?;
 

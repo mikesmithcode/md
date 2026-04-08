@@ -45,7 +45,8 @@ pub trait Forces {
         i: usize, 
         forces: &mut [DVec3], 
         particles: &ParticleVec, 
-        settings: &SimulationSettings
+        settings: &SimulationSettings,
+        time: f64
     );
 
     /// Calculates binary forces between two particles within the cutoff distance.
@@ -164,6 +165,11 @@ pub fn add_weight(i: usize, forces: &mut [DVec3], particles: &ParticleVec) {
     let weight = gravity * mass;
     forces[i].z += weight;
 }
+
+
+
+
+
 
 /// Calculates and adds the viscous drag force (Stokes' Law) to a specific particle.
 ///
