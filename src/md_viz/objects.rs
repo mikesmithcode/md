@@ -7,6 +7,7 @@ use three_d::*;
 use three_d::core::Mat4;
 
 use three_d::Srgba;
+use serde::{Serialize, Deserialize};
 
 /*-----------------------------------------------------------------------------------
 Fns to create objects
@@ -34,11 +35,21 @@ pub fn create_ambient_light(context: &Context)->AmbientLight{
 // Simulation box
 //------------------------------------------------------------------------------
 ///Define simulation box
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct SimBox{
     pub on: bool, // turn simulation box on or off
     pub thickness: f32,
+    #[serde(skip)]
     pub sim_box_size: [f32; 3], // dimensions [x, y, z]
+}
+
+impl Default for SimBox{
+    fn default() -> Self {
+        Self{ on: true,
+                thickness: 0.1,
+                sim_box_size: [10.0, 0.1, 10.0],
+            }
+    }
 }
 
 /// Creates and returns a `Gm<BoundingBox, PhysicalMaterial>` representing the simulation box.

@@ -2,7 +2,7 @@
 name = "md"
 version = "0.1.0"
 edition = "2021"
-# No "resolver" needed here as "2" is the default for edition 2021
+resolver = "2"
 
 [dependencies]
 # Move your workspace dependencies here
@@ -11,9 +11,9 @@ three-d = { version = "0.18.2", features = ["headless"] }
 glam = { version = "0.27", features = ["serde"] }
 image = "0.24"
 winit = "0.28"
-serde = { version = "1.0", features = ["derive"] } 
-serde_json = "1.0"
-polars = { version = "0.38", features = ["parquet", "lazy"]} 
+serde = "1.0.228"
+serde_json = "1.0.138" # Update this to match as well
+polars = { version = "0.38", features = ["parquet", "lazy"] }
 tempfile = "3.24.0"
 itertools = "0.13"
 soa_derive = "0.13"

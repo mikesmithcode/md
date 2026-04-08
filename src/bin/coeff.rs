@@ -5,7 +5,7 @@ use winit::event_loop::EventLoop;
 use glam::DVec3;
 
 // Import everything from your md_viz library
-use md::md_viz::scene_backup::{Scene, SceneSetup};
+use md::md_viz::scene::{Scene, SceneSetup};
 use md::md_viz::camera::CameraView;
 use md::md_viz::objects::SimBox;
 
@@ -63,20 +63,8 @@ impl Motion for SimUpdate{
 
 pub fn main() {    
 
-    //Specify the folder in which all the output will be stored. Assumes in root of workspace.
-    const OUTPUT_PATH: &'static str = "output";
-    const INPUT_PATH: &'static str = "input";
-
-    //----------------------------------------------------------------
-    // Define simulation
-    //---------------------------------------------------------------
-    let simulation_name = Path::new(file!())
-                                            .file_stem()
-                                            .and_then(|s| s.to_str())
-                                            .unwrap();
-
-    let config_filepath = Path::new(INPUT_PATH).join(format!("{}_config.json", simulation_name));
-    let snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("snapshots");
+    // Construct filepaths
+    let [sim_config_path, scene_config_path, snapshot_path, video_path] = file_io::filepaths(file!());
     
 
     //------------------------------------------------------------
@@ -85,49 +73,36 @@ pub fn main() {
     // -----------------------------------------------------------
     
     let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
-    let sim_settings: SimulationSettings = SimulationSettings::new(&config_filepath).expect("sim settings not loaded correctly");
+
+    // load settings
+    let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
+
+    //----------------------------------------------------------------
+    //  Graphics
+    //
+    //  event_loop and scene.init_window(&event_loop) for live display. Optional video output.
+    //  scene.init_headless() for headless video 
+    //  Call scene.display() to update window, scene.save_img() to write
+    //--------------------------------------------------------------   
+
+    let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);   
     
-    //----------------------------------------------------------------
-    //  Define graphics
-    //----------------------------------------------------------------
-
-
-    let scene_settings = SceneSetup {
-            camera: CameraView::Perspective,
-            window_size: (1280, 960),
-            sim_box_setup: SimBox {
-                on: true,
-                thickness: sim_settings.sim_box_size_f32()[0]/5000.0,
-                sim_box_size: sim_settings.sim_box_size_f32(),
-            }, 
-    };
- 
+    let mut event_loop = EventLoop::new(); 
+    let _ = scene.view(&event_loop);
+    let _ = scene.start_recording(&video_path, start_step);
 
     //-------------------------------------------------------------
-    //  Create simulation
+    // Create simulation
+    //
+    // Initialise simulation with bunch of particles from a snapshot file. Takes latest snapshot in output
+    // copies the config file in input folder to the output folder appending sim index.
+    // Simulation::new() creates the simulation
+    // sim.update() to advance the simulation by one step
+    // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
     //--------------------------------------------------------------
-    
+  
+    let (particles, start_step, time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
     let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone(), time);
-
-    //--------------------------------------------------------------
-    //  Initialise all graphics
-    //
-    //  event_loop and scene.init_window(&event_loop) for live display
-    //  scene.init_headless() for images saved to file
-    //  Can run either or none as required. Can't seem to get both to run at present
-    //--------------------------------------------------------------   
-    
-    let mut scene: Scene = Scene::new(scene_settings.clone());
-    //let _ = scene.init_headless();
-    let mut event_loop = EventLoop::new(); 
-    let _ = scene.init_window(&event_loop);
-
-    //--------------------------------------------------------------
-    // Start simulation loop
-    //
-    // Call scene.display() to update window, scene.save_img() to write
-    // img to file. simulation.update() to advance the simulation by one step
-    //--------------------------------------------------------------
     
     println!("Simulation started...");
     
@@ -146,6 +121,7 @@ pub fn main() {
             //Handle graphics
             //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
             scene.display(&sim.get_particles()).expect("Error updating display");
+            let _ = scene.save_frame(&sim.get_particles());
             //sleep(Duration::from_millis(100));
 
             //save a snapshot of particle positions etc

@@ -429,8 +429,9 @@ fn test_inelastic_collision() {
         start: 0,
         num_steps: 100,
         dump: 10,
+        active_ptypes:vec![0],
         model,                 // Our Solid model
-        
+        active_map: [true; 32]
     };
 
     let mut forces = vec![DVec3::ZERO; particles.len()];

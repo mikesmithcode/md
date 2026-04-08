@@ -1,11 +1,9 @@
 //! video.rs
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio, Child};
 use std::io::Write;
 use std::fs;
 use crate::md_viz::scene::SceneSetup;
-
-use crate::md_viz::scene;
 
 pub struct VideoExporter {
     process: Child,

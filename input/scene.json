@@ -1,0 +1,7 @@
+{
+  "camera": "Perspective",
+  "window_size": [1280, 960],
+  "vid_fps": 30,
+  "sim_box_on": true,
+  "sim_box_thickness": 0.005
+}

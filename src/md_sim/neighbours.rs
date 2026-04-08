@@ -273,27 +273,6 @@ mod tests {
     use super::*;
     use crate::test_utils::create_particle_vec;
 
-
-    struct MockForces {
-        pub call_count: std::sync::atomic::AtomicUsize,
-    }
-
-    impl Forces for MockForces {
-        fn update_pair_forces(
-            &self,
-            _i: usize,
-            _j: usize,
-            _f_buf: &mut [DVec3],
-            _particles: &ParticleVec,
-            _settings: &SimulationSettings,
-        ) {
-            self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        }
-
-        fn update_single_forces(&self,_i: usize, _forces:&mut [DVec3], _particles:&ParticleVec,_settings: &SimulationSettings){}
-        
-    }
-
     #[test]
     fn test_first_frame_rebuild() {
         let box_size = DVec3::splat(10.0);

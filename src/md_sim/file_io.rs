@@ -24,11 +24,13 @@ use glam::DVec3;
 use three_d::core::Srgba;
 use itertools::izip;
 
+use crate::md_viz::scene::SceneSetup;
+
 /// Generate all the filepaths
 /// 
-/// use the file!() macro as input. Do this [config, snapshot, video]=filepaths(file!());
+/// use the file!() macro as input. Do this [sim_config,scene_config, snapshot, video]=filepaths(file!());
 /// This returns three filepaths of type Path
-pub fn filepaths(script_name: &str)-> [PathBuf;3]{
+pub fn filepaths(script_name: &str)-> [PathBuf;4]{
     //Specify the folder in which all the output will be stored. Assumes in root of workspace.
     const OUTPUT_PATH: &'static str = "output";
     const INPUT_PATH: &'static str = "input";
@@ -41,7 +43,8 @@ pub fn filepaths(script_name: &str)-> [PathBuf;3]{
                                             .and_then(|s| s.to_str())
                                             .unwrap();
 
-    let config_path = Path::new(INPUT_PATH).join(format!("{}_config.json", simulation_name));
+    let sim_config_path = Path::new(INPUT_PATH).join(format!("{}.json", simulation_name));
+    let scene_config_path = Path::new(INPUT_PATH).join("scene.json");
 
     let snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("snapshots");
     if let Err(_e) = fs::create_dir_all(&snapshot_path){
@@ -55,7 +58,7 @@ pub fn filepaths(script_name: &str)-> [PathBuf;3]{
     };
     let video_path = video_path.join(simulation_name).with_extension("mp4");
 
-    [config_path, snapshot_path, video_path]
+    [sim_config_path, scene_config_path, snapshot_path, video_path]
 }
 
 
@@ -291,7 +294,16 @@ pub fn load_latest_snapshot(
     Ok((particles, latest_step, time))
 }
 
+pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSetup, Box<dyn std::error::Error>> {
+    // Open the file in read-only mode
+    let file = fs::File::open(path)?;
+    let reader = BufReader::new(file);
 
+    // Deserialise the JSON into the struct
+    let settings = serde_json::from_reader(reader)?;
+
+    Ok(settings)
+}
 
 
 // Tests for file_io

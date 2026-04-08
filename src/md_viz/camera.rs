@@ -13,11 +13,12 @@ use three_d::*;
 
 use winit::event::{WindowEvent, MouseButton, ElementState, MouseScrollDelta};
 use crate::md_viz::scene::SceneSetup;
+use serde::{Serialize, Deserialize};
 
 
 
 /// Enum used to switch between different camera perspectives.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum CameraView {
     Perspective,
     Orthographic,

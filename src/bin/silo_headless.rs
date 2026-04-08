@@ -1,23 +1,18 @@
-
-use std::path::Path;
 use winit::event_loop::EventLoop;
 use glam::DVec3;
 
-// Import everything from your md_viz library
-use md::md_viz::scene::{Scene, SceneSetup};
-use md::md_viz::camera::CameraView;
-use md::md_viz::objects::SimBox;
 
 // Imports from simulation library
+use md::md_sim::file_io;
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
 use md::md_sim::force::{Forces, inelastic_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::force::{add_weight, zero_forces_for_ptypes};
-use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct, move_sinwave, change_colour};
+use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct};
 
-use md::md_sim::file_io;
+use md::md_viz::scene::Scene;
 
 
 pub struct SimUpdate;
@@ -45,17 +40,14 @@ impl Forces for SimUpdate{
 
     // For particles that shouldn't follow the calculated forces e.g walls etc.
     fn update_ptype_no_forces(&self, forces: &mut [DVec3], particles: &ParticleVec){
-        let immobile = &[1]; // Bottom particle is immobile
+        let immobile = &[1, 2];
         zero_forces_for_ptypes(forces, particles, immobile);
     }
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, time:f64) {
+    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _time:f64) {
         integrate_verlet_update(forces, particles, settings);
-        //change_rad(particles, 0)
-        move_sinwave(particles, settings, time);
-        change_colour(particles, settings);
     }
     fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
         integrate_verlet_correct(forces, particles, settings);
@@ -63,7 +55,9 @@ impl Motion for SimUpdate{
 }
 
 
+
 pub fn main() {    
+
     // Construct filepaths
     let [sim_config_path, scene_config_path, snapshot_path, video_path] = file_io::filepaths(file!());
     
@@ -88,7 +82,7 @@ pub fn main() {
 
     let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);   
     let mut event_loop = EventLoop::new(); 
-    let _ = scene.view(&event_loop);
+    let _ = scene.background(&event_loop);
     let _ = scene.start_recording(&video_path, start_step);
 
     //-------------------------------------------------------------
@@ -105,7 +99,13 @@ pub fn main() {
     let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone(), time);
     
     println!("Simulation started...");
-
+    //--------------------------------------------------------------
+    // Start simulation loop
+    //
+    // Call scene.display() to update window, scene.save_img() to write
+    // img to file. simulation.update() to advance the simulation by one step
+    //--------------------------------------------------------------
+    
     println!("Simulation started...");
     
     // Run simulation loop for num_steps
@@ -116,24 +116,20 @@ pub fn main() {
         // update scene every dump timesteps
         if step % sim.settings.dump == 0 {
             // exit if window close requested
-            if scene.poll_events(&mut event_loop) {
-                break; 
-            }
+            //if scene.poll_events(&mut event_loop) {
+            //    break; 
+            //}
             
             //Handle graphics
-            //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
-            scene.display(&sim.get_particles()).expect("Error updating display");
+            //scene.display(&sim.get_particles()).expect("Error updating display");
             let _ = scene.save_frame(&sim.get_particles());
-            //sleep(Duration::from_millis(100));
 
             //save a snapshot of particle positions etc
-            {
-                file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
-
-            }
+            file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
         }
         
     }
+    scene.close();
     println!("Simulation finished");
 
 }

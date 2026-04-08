@@ -14,20 +14,33 @@ use winit::event_loop::EventLoop;
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::event::{Event as WinitEvent, WindowEvent};
 
+use crate::SimulationSettings;
 use crate::md_viz::objects::{create_ambient_light, create_directional_light, SimBox, create_simbox};
 use crate::md_viz::templates::SphereTemplate;
 use crate::md_viz::camera::{create_camera, CameraControl, CameraView};
 use crate::md_viz::video::VideoExporter;
 use crate::md_sim::particle::ParticleVec;
 
-type RenderableGeometry = Gm<InstancedMesh, PhysicalMaterial>;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)] 
 pub struct SceneSetup {
     pub camera: CameraView,
     pub window_size: (u32, u32),
     pub vid_fps: u32,
     pub sim_box_setup: SimBox,
+}
+
+impl Default for SceneSetup {
+    fn default() -> Self {
+        Self {
+            camera: CameraView::Perspective,
+            window_size: (1280, 960),
+            vid_fps: 30,
+            sim_box_setup: SimBox::default(),//The sim_box_size will be overwritten with values from the Simulation config.
+        }
+    }
 }
 
 struct GpuResources {
@@ -88,40 +101,38 @@ impl Scene {
         }
     }
 
-    fn init_headless(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let h_context = HeadlessContext::new()?;
-        let context_handle = (*h_context).clone();
-
-        self.context = Some(context_handle.clone());
-        self.owner = Some(ContextOwner::Headless(h_context));
-
-        let (w, h) = self.settings.window_size;
-
-        // Now use self.context.as_ref().unwrap() or context_handle to build textures
-        let mut color_texture = Texture2D::new_empty::<[u8; 4]>(
-            &context_handle, w, h,
-            Interpolation::Nearest, Interpolation::Nearest,
-            None, Wrapping::ClampToEdge, Wrapping::ClampToEdge,
-        );
-        let mut depth_texture = DepthTexture2D::new::<f32>(
-            &context_handle, w, h,
-            Wrapping::ClampToEdge, Wrapping::ClampToEdge,
-        );
-
-        let render_target = RenderTarget::new(color_texture.as_color_target(None),depth_texture.as_depth_target());
-
-        // Initialise resources
-        self.resources = Some(Self::_init_gpu_resources(&context_handle, self.settings.sim_box_setup.clone())?);
-        self.headless_target = Some((color_texture, depth_texture));
+    /// Creates a scene by reading a config file and applying simulation overrides
+    pub fn from_config(scene_config_path: PathBuf, sim_settings: &SimulationSettings) -> Self {
+        let mut settings = Self::load_json(scene_config_path).unwrap_or_default();
         
-        Ok(())
+        // Update the sim_box_size with real simulation data
+        settings.sim_box_setup.sim_box_size = sim_settings.sim_box_size_f32();
+
+        Self::new(settings)
     }
 
-    /// Setup live window and GPU resources
-    pub fn init_window(&mut self, event_loop: &EventLoop<()>) -> Result<(), Box<dyn std::error::Error>> {
+    fn load_json(path: PathBuf) -> Result<SceneSetup, Box<dyn std::error::Error>> {
+        let file = std::fs::File::open(path)?;
+        let reader = std::io::BufReader::new(file);
+        Ok(serde_json::from_reader(reader)?)
+    }
+
+    /// Initialises the window.
+    pub fn view(&mut self, event_loop: &EventLoop<()>) -> Result<(), Box<dyn std::error::Error>> {
+        self.init_window(event_loop, true)
+    }
+
+    /// Initialises a hardware-accelerated background context (Invisible Window)
+    pub fn background(&mut self, event_loop: &EventLoop<()>) -> Result<(), Box<dyn std::error::Error>> {
+        self.init_window(event_loop, false)
+    }
+
+    // Setup live window and GPU resources
+    fn init_window(&mut self, event_loop: &EventLoop<()>, visible: bool) -> Result<(), Box<dyn std::error::Error>> {
         let window = WindowBuilder::new()
             .with_title("Simulation")
             .with_inner_size(winit::dpi::PhysicalSize::new(self.settings.window_size.0, self.settings.window_size.1))
+            .with_visible(visible)
             .build(event_loop)?;
 
         let w_context = WindowedContext::from_winit_window(&window, SurfaceSettings::default())?;
@@ -167,7 +178,7 @@ impl Scene {
     }
 
     /// Central rendering logic used by both display() and save_frame()
-    fn render_to_target(camera: &Camera,resources: &mut GpuResources,target: &mut RenderTarget,particles: &ParticleVec,context: &Context) -> Result<(), Box<dyn std::error::Error>> {
+    fn render_to_target(camera: &Camera,resources: &mut GpuResources,target: &mut RenderTarget,particles: &ParticleVec) -> Result<(), Box<dyn std::error::Error>> {
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
 
         let mut transforms = std::mem::take(&mut resources.instance_transforms);
@@ -223,7 +234,7 @@ impl Scene {
 
         let mut target = RenderTarget::screen(context, frame_input.viewport.width, frame_input.viewport.height);
             
-        Self::render_to_target(&self.camera,resources,&mut target,particles,context)?;
+        Self::render_to_target(&self.camera,resources,&mut target,particles)?;
         if self.video_exporter.is_some() {
             let pixels = target.read_color::<u8>();
             self.current_frame_pixels = Some(pixels);
@@ -278,7 +289,22 @@ impl Scene {
             self.init_headless()?; 
         }
 
-        self.video_exporter = Some(VideoExporter::new(path, &self.settings)?);
+        //Format the step with 10-digit padding
+        let step_suffix = format!("_{:010}", step);
+
+        //Create the new path with the suffix
+        let mut new_path = path.clone();
+        
+        // Extract current filename without extension
+        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+            let filename_string = format!("{}{}.mp4", file_stem, step_suffix);
+            new_path.set_file_name(filename_string);
+        } else {
+            new_path.push(format!("video{}.mp4", step_suffix));
+        }
+
+        self.video_exporter = Some(VideoExporter::new(&new_path, &self.settings)?);
+        
         Ok(())
     }
 
@@ -288,11 +314,9 @@ impl Scene {
         if let Some(ref mut exporter) = self.video_exporter {
             let (w, h) = self.settings.window_size;
             
-            // 1. Extract immutable pieces (Context and Resources)
             let context = self.context.as_ref().ok_or("No context")?;
             let resources = self.resources.as_mut().ok_or("No resources")?;
 
-            // 2. Create the target (Mutably borrowing the texture field)
             let mut target = if self.winit_window.is_some() {
                 RenderTarget::screen(context, w, h)
             } else {
@@ -300,16 +324,12 @@ impl Scene {
                 RenderTarget::new(color.as_color_target(None), depth.as_depth_target())
             };
 
-            // 3. The Call: Use 'Self::' and pass references
-            Self::render_to_target(&self.camera,resources,&mut target, particles,context)?;
+            Self::render_to_target(&self.camera,resources,&mut target, particles)?;
 
-            // 4. Export
             exporter.write_frame(&target.read_color::<[u8; 4]>())?;
         }
         Ok(())
     }
-
-    
 
     pub fn close(&mut self) {
         if let Some(exporter) = self.video_exporter.take() {
