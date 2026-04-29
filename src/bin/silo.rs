@@ -1,3 +1,9 @@
+/// Explanation of simulation
+/// 
+/// Silo consists of a 2D hopper with diagonal walls and a flat bottom. We then drop a square lattice
+/// of balls from above into it and watch everything slosh around.
+
+
 use winit::event_loop::EventLoop;
 use glam::DVec3;
 
@@ -14,7 +20,6 @@ use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct};
 
 use md::md_viz::scene::Scene;
 
-
 pub struct SimUpdate;
 
 impl Forces for SimUpdate{
@@ -29,7 +34,7 @@ impl Forces for SimUpdate{
 
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings) {   
+    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time: f64) {   
         add_weight(i, forces, particles);
     }
 
@@ -67,7 +72,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (_particles, start_step, mut _time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
 
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 

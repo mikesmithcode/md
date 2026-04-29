@@ -16,24 +16,10 @@ use crate::md_sim::particle::{ParticleVec};
 use crate::md_sim::neighbours::CellGrid;
 use crate::md_sim::force::Forces;
 use crate::md_sim::motion::Motion;
+use crate::md_sim::models::*;
 
 
-/// SimulationModel defines the structure of the file to be read in which may be different in different simulations
-/// 
-/// The json tells serde what variant it should use.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum SimulationModel{
-    Solid(CollisionParams),
-    Fluid {viscosity: f64, cutoff: f64},
-}
 
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct CollisionParams {
-    pub stiffness: f64,
-    pub damping: f64,
-}
 
 ///---------------------------------------------------------
 /// These are general rather than particle specific parameters that affect the running of the simulation
@@ -42,6 +28,11 @@ pub struct CollisionParams {
 /// dt - timestep of the simulation
 /// sim_box_size - x,y,z dimensions of the simulation box
 /// cutoff - range of force or distance within which neighbours are defined by the cell grid / verlet in [`neighbours::CellGrid`]
+/// skin -  This is the distance beyond the cutoff in which particles are added to a particles verlet list. When any particle travels skin/2 the grid and verlet list are rebuilt.
+/// num_steps - How many steps the simulation will advance before stopping
+/// dump - Can be used to control how many steps occur before writing to a file or saving an image to the video. But must be used manually in the main loop
+/// active_ptypes - A Vec of i32 where each number represents. 
+/// 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimulationSettings{
     pub dt: f64,
@@ -60,9 +51,7 @@ pub struct SimulationSettings{
 
 impl SimulationSettings
     {
-    /// loads both sim config and initial state from file
-    /// 
-    /// Path
+    /// loads sim config from file
     pub fn new(path: &Path)-> Result<SimulationSettings, Box<dyn std::error::Error>>
     {
         let file = File::open(path).unwrap_or_else(|_err| {
@@ -109,6 +98,9 @@ impl Default for SimulationSettings {
 
 
 /// The main simulation engine
+/// 
+/// Requires a user defined struct which implements two Traits Forces and Motion.
+/// The method stubs need to be filled in by user to define what happens in the simulation.
 #[derive(Debug)]
 pub struct Simulation<S> 
     where 
@@ -146,6 +138,8 @@ impl<S> Simulation<S>
     /// The positions and velocities are updated in 2 steps
     /// First we predict the motion based on current values
     /// Then we calculate the forces
+    /// If there are any particles that shouldn't respond to the forces (walls, prescribed motion) we call a method
+    /// which zeros those elements of the force vector.
     /// Then we correct our prediction in light of the new forces.
     /// Only pairs of particles within the cutoff distance are 
     /// calculated for the pair forces.

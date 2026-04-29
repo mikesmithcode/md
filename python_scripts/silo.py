@@ -1,5 +1,5 @@
+"""Setup script for silo"""
 
-from filehandling import BatchProcess
 from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
@@ -25,11 +25,19 @@ base_particle = {
         "vx" : 0.0,
         "vy" : 0.0,
         "vz" : 0.0,
+        "phi_x" : 0.0,
+        "phi_y" : 0.0,
+        "phi_z" : 0.0,
+        "wx" : 0.0,
+        "wy" : 0.0,
+        "wz" : 0.0,
         "radius" : 0.04,
         "mass" : 2.35,#density 1000kgm^-3
+        "inertia" : 0.0,
         "r": 255.0,
         "g": 0.0,
-        "b" : 0.0
+        "b" : 0.0,
+        "a" : 255.0
     }
 
 particle = base_particle.copy()
@@ -45,6 +53,7 @@ for i in range(70):
         particle["x"] = base_particle["x"] + j*d
         particle["z"] = base_particle["z"] + i*d
         plt.plot(particle["x"], particle["z"], 'go')
+        
 
         df_new = pl.DataFrame(particle)
         if not i==j==0:

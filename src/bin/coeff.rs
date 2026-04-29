@@ -1,13 +1,14 @@
-use std::path::Path;
-use std::thread::sleep;
-use std::time::Duration;
+/// Explanation of simulation
+/// 
+/// Coeff shows one ball bouncing on another and can be used to estimate coefficient of restitution.
+
+
 use winit::event_loop::EventLoop;
 use glam::DVec3;
 
 // Import everything from your md_viz library
-use md::md_viz::scene::{Scene, SceneSetup};
-use md::md_viz::camera::CameraView;
-use md::md_viz::objects::SimBox;
+use md::md_viz::scene::Scene;
+
 
 // Imports from simulation library
 use md::md_sim::simulation::Simulation;
@@ -16,7 +17,7 @@ use md::md_sim::force::{Forces, inelastic_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::force::{add_weight, zero_forces_for_ptypes};
-use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct, change_rad};
+use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct};
 
 use md::md_sim::file_io;
 
@@ -35,7 +36,7 @@ impl Forces for SimUpdate{
 
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings) {   
+    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time:f64) {   
         add_weight(i, forces, particles);
     }
 
@@ -52,7 +53,7 @@ impl Forces for SimUpdate{
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, t:f64) {
+    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _t:f64) {
         integrate_verlet_update(forces, particles, settings);
         //change_rad(particles, 0)
     }
@@ -72,7 +73,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (_particles, start_step, mut _time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
 
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 

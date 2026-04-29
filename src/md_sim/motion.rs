@@ -3,10 +3,15 @@
 //! Each simulation should define a Motion trait which requires you to implement
 //! update_motion() which occurs before forces are calculated and correct_motion() which occurs afterwards.
 
-use crate::{SimulationSettings, md_sim::particle::ParticleVec};
+
 use glam::DVec3;
 use itertools::izip;
 use three_d::Srgba;
+use rand::prelude::*;
+use rand_distr::{Normal, Distribution};
+
+use crate::{SimulationSettings, md_sim::particle::ParticleVec};
+use crate::md_sim::models::SimulationModel;
 
 /// Defines the integration scheme and kinematic updates for the simulation.
 ///
@@ -61,6 +66,46 @@ pub trait Motion {
         // Optional: No correction by default
     }
 }
+
+/// Active Particles Motion
+/// 
+/// This updates the position of the ABPs and then nudges the orientation before applying periodic boundary conditions.
+pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
+    if let SimulationModel::Active(params) = &settings.model {
+        let inv_gamma = 1.0 / params.gamma;
+        let mut rng = rand::thread_rng();
+        let normal = rand_distr::Normal::new(0.0, 1.0).unwrap();
+        
+
+
+        for i in 0..particles.position.len() {
+            
+            // Calculate the scale for rotational noise
+            let Dr = 3.0*params.Dt/(4.0 * particles.radius[i].powi(2));
+            let theta_noise_scale = (2.0 * Dr * settings.dt).sqrt();
+
+            // Update Linear Velocity and Position (Overdamped)
+            // v = F / gamma
+            particles.velocity[i] = forces[i] * inv_gamma;
+            particles.position[i] += particles.velocity[i] * settings.dt;
+
+            // Apply Rotational Noise to Orientation
+            let d_theta = normal.sample(&mut rng) * theta_noise_scale;
+            let (sin_t, cos_t) = d_theta.sin_cos();
+            let x = particles.orientation[i].x;
+            let z = particles.orientation[i].z;
+            particles.orientation[i].x = x * cos_t - z * sin_t;
+            particles.orientation[i].z = x * sin_t + z * cos_t;
+            //to be safe make sure no floating point errors change magnitude
+            particles.orientation[i] = particles.orientation[i].normalize();
+
+            // Apply periodic boundaries
+            check_periodic(&mut particles.position[i], settings.sim_box_size);
+        }
+    }
+}
+
+
 
 
 /// Performs the first half of the Velocity Verlet integration (Prediction).

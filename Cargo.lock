@@ -1571,6 +1571,7 @@ dependencies = [
  "itertools",
  "polars",
  "rand",
+ "rand_distr",
  "serde",
  "serde_json",
  "soa_derive",

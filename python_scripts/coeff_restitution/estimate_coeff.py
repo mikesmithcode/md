@@ -1,3 +1,5 @@
+"""Utility"""
+
 import numpy as np
 
 # --- Parameters ---

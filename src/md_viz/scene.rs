@@ -4,7 +4,6 @@
 //! It uses a unified rendering pipeline to ensure visual consistency across all outputs.
 
 use three_d::*;
-use three_d::window::HeadlessContext;
 use soa_derive::soa_zip;
 use std::path::PathBuf;
 
@@ -47,6 +46,7 @@ struct GpuResources {
     ambient_light: AmbientLight,
     directional_light: DirectionalLight,
     simbox: Option<Gm<BoundingBox, PhysicalMaterial>>,
+    #[allow(dead_code)]
     sphere_template: SphereTemplate,
     particle_mesh: Gm<InstancedMesh, PhysicalMaterial>,
     instance_transforms: Vec<Mat4>,

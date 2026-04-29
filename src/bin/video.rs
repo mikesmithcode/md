@@ -1,3 +1,10 @@
+/// This is a utility
+/// 
+/// This is a command line tool that takes a simulation name. It finds the parquet files
+/// generated as output and then builds the images and pumps them into a video. Use it by typing `video sim_name` into command line
+
+
+
 use md::md_sim::file_io;
 use md::md_viz::scene::Scene;
 use md::md_sim::simulation::SimulationSettings;

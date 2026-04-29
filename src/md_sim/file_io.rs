@@ -36,7 +36,7 @@ pub fn filepaths(script_name: &str)-> [PathBuf;4]{
     const INPUT_PATH: &'static str = "input";
 
     //----------------------------------------------------------------
-    // Define simulation
+    // Create simulation filepaths
     //---------------------------------------------------------------
     let simulation_name = Path::new(script_name)
                                             .file_stem()
@@ -90,20 +90,38 @@ pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path)
 
 /// loads a json config file into a SimulationSettings struct
 /// 
-/// SimulationSettings has standard fields and a catch all which would require 
-/// writing a new struct type in you example and :
+/// SimulationSettings has standard fields and a catch all enum of structs called SimulationModel which is used for
+/// additional params for particular simulations e.g if you want a fluid viscosity:
 /// 
 /// ```rust, ignore
-/// pub struct SimulationSettings<T>{
-///    pub dt: f64,
-///    pub sim_box_size: [f64; 3], 
-///    pub start: usize,
-///    pub num_steps: usize,
-///    pub sim_path: String,
-///    pub dump: usize,
+/// pub struct SimulationSettings{
+/// pub dt: f64,
+/// pub sim_box_size: DVec3, 
+/// pub cutoff: f64,
+/// pub skin: f64,
+/// pub start: usize,
+/// pub num_steps: usize,
+/// pub dump: usize
+/// pub model: SimulationModel,
 /// }
 /// ```
-/// If there are no extra parameters in the file
+/// 
+/// These are loaded from json files with the same name as the simulation in the input folder. They look like this:
+/// 
+/// {
+///  "dt": 3e-6,
+///  "sim_box_size": [0.05, 0.01, 0.05],
+///  "cutoff": 0.01,
+///  "skin": 0.002,
+///  "start": 0,
+///  "num_steps": 1500000,
+///  "dump": 100,
+///  "model": {
+///    "type": "Solid",
+///    "stiffness": 665000.0,
+///    "damping": 2.97
+///  }
+///}
 /// 
 /// We update the start field to match index the initial value of the loop. Thus if you restart
 /// simulation start will be at the correct value.
@@ -155,11 +173,19 @@ pub fn save_snapshot(
         "vx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
         "vy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
         "vz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
+        "phi_x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
+        "phi_y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
+        "phi_z" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "wx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
+        "wy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
+        "wz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
         "radius" => &particles.radius,
         "mass" => &particles.mass,
+        "inertia" => &particles.inertia,
         "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
         "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
         "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
+        "a" => &particles.color.iter().map(|c| c.a as f64).collect::<Vec<_>>(),
     )?;
 
     // Write to Parquet (with temp file for safety)
@@ -207,17 +233,25 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
     let vx_col = df.column("vx")?.f64()?;
     let vy_col = df.column("vy")?.f64()?;
     let vz_col = df.column("vz")?.f64()?;
+    let phi_x_col = df.column("phi_x")?.f64()?;
+    let phi_y_col = df.column("phi_y")?.f64()?;
+    let phi_z_col = df.column("phi_z")?.f64()?;
+    let wx_col = df.column("wx")?.f64()?;
+    let wy_col = df.column("wy")?.f64()?;
+    let wz_col = df.column("wz")?.f64()?;
     let r_col = df.column("radius")?.f64()?;
     let m_col = df.column("mass")?.f64()?;
+    let j_col = df.column("inertia")?.f64()?;
     let col_r = df.column("r")?.f64()?;
     let col_g = df.column("g")?.f64()?;
     let col_b = df.column("b")?.f64()?;
+    let col_a = df.column("a")?.f64()?;
 
     let t = t_col.get(0).unwrap_or(0.0);
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, ptype, x, y, z, vx, vy, vz, rad, mass, r, g, b) in izip!(
+    for (id, ptype, x, y, z, vx, vy, vz,phi_x, phi_y, phi_z, wx,wy,wz, rad, mass, inertia, r, g, b, a) in izip!(
         id_col.into_iter(),
         ptype_col.into_iter(),
         x_col.into_iter(),
@@ -226,11 +260,19 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
         vx_col.into_iter(),
         vy_col.into_iter(),
         vz_col.into_iter(),
+        phi_x_col.into_iter(),
+        phi_y_col.into_iter(),
+        phi_z_col.into_iter(),
+        wx_col.into_iter(),
+        wy_col.into_iter(),
+        wz_col.into_iter(),
         r_col.into_iter(),
         m_col.into_iter(),
+        j_col.into_iter(),
         col_r.into_iter(),
         col_g.into_iter(),
-        col_b.into_iter()
+        col_b.into_iter(),
+        col_a.into_iter()
     ) {
         // We use .unwrap_or because Polars columns are technically nullable
         particles.push(Particle {
@@ -246,13 +288,24 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
                 vy.unwrap_or(0.0),
                 vz.unwrap_or(0.0),
             ),
+            orientation: DVec3::new(
+                phi_x.unwrap_or(0.0),
+                phi_y.unwrap_or(0.0),
+                phi_z.unwrap_or(0.0),
+            ),
+            omega: DVec3::new(
+                wx.unwrap_or(0.0),
+                wy.unwrap_or(0.0),
+                wz.unwrap_or(0.0),
+            ),
             radius: rad.unwrap_or(0.0),
             mass: mass.unwrap_or(0.0),
+            inertia: inertia.unwrap_or(0.0),
             color: Srgba::new(
                 r.unwrap_or(0.0) as u8,
                 g.unwrap_or(0.0) as u8,
                 b.unwrap_or(0.0) as u8,
-                255, // Full opacity
+                a.unwrap_or(255.0) as u8,
             ),
             ref_pos: DVec3::ZERO,
         });
@@ -291,6 +344,7 @@ pub fn load_latest_snapshot(
     Ok((particles, latest_step, time))
 }
 
+/// Loads the special json file (input/scene.json) into a SceneSetup struct which controls things like video fps, window_size.
 pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSetup, Box<dyn std::error::Error>> {
     // Open the file in read-only mode
     let file = fs::File::open(path)?;
@@ -310,6 +364,15 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn test_filepath()-> Result<(), Box<dyn std::error::Error>>{
+        let [sim_config_path, _scene_config_path, _snapshot_path, _video_path] = filepaths("test.rs");
+
+        assert_eq!(sim_config_path, Path::new("input").join("test"));
+
+        Ok(())
+    }
+
+    #[test]
     fn test_save_and_load_snapshot() -> Result<(), Box<dyn std::error::Error>> {
         // Setup temporary workspace
         let dir = tempdir()?;
@@ -323,8 +386,11 @@ mod tests {
                 ptype: 0,
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(0.1, 0.2, 0.3),
+                orientation: DVec3::new(0.0, 0.0, 0.0),
+                omega: DVec3::new(0.0, 0.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
+                inertia: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
             });
@@ -362,8 +428,11 @@ mod tests {
                 ptype: 0,
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(0.1, 0.2, 0.3),
+                orientation: DVec3::new(0.0, 0.0, 0.0),
+                omega: DVec3::new(0.0, 0.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
+                inertia: 1.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
             });

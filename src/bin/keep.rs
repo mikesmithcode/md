@@ -1,3 +1,8 @@
+/// This is a utility
+/// 
+/// keep takes a generic simulation output and moves it into its own folder with the simulation name and a timedatestamp so that it is not overwritten.
+
+
 use std::env;
 use std::fs;
 use std::io;

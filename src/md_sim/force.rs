@@ -5,10 +5,13 @@
 //! inside update_forces or define your own.
 
 use glam::DVec3;
+use rand::prelude::*;
+use rand_distr::{Normal, Distribution};
 
+use crate::Simulation;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
-use crate::SimulationModel;
+use crate::md_sim::models::SimulationModel;
 
 
 
@@ -204,6 +207,35 @@ pub fn add_viscous_drag(i: usize, forces: &mut [DVec3], particles: &ParticleVec,
     forces[i] += drag;
 }
 
+/// An active force for use with ABPs
+/// 
+/// For each particle i we generate some random numbers. We then calculate the noise scale.
+/// The variance of the random displacement in time dt is 2*Dt*dt but we will multiply this by 
+/// dt when we calculate the displacement in motion part. Friction F is gamma * v. The noise must be (2*gamma**2 * Dt/dt)**0.5
+pub fn active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings){
+    let mut rng = rand::thread_rng();
+    let normal = Normal::new(0.0, 1.0).unwrap();
+
+    if let SimulationModel::Active(params) = &settings.model {
+        // The Active Force
+        // F_active = gamma * v0 * n_vector acts in direction of particle orientation
+        let f_active = particles.orientation[i] * (params.gamma * params.v0);
+
+        // Translational Noise "Force"
+        // This represents the random kicks from the surrounding fluid
+        let noise_scale = params.gamma * (2.0 * params.Dt / settings.dt).sqrt();
+        
+        let f_noise = glam::DVec3::new(
+            normal.sample(&mut rng) * noise_scale,
+            0.0, // Keep 2D if that's your constraint, otherwise add Y noise
+            normal.sample(&mut rng) * noise_scale,
+        );
+
+        // Add force
+        forces[i] += f_active + f_noise;
+    }
+    
+}
 
 
 // -------------------------------------------------------------------------------------------------
@@ -292,6 +324,45 @@ pub fn inelastic_collision(i: usize,j: usize,particles: &ParticleVec,forces: &mu
     }
 }
 
+/// This implements the WCA between particles i and j. 
+/// 
+/// WCA is a truncated lennards-Jones potential that stops at the minimum of the potential.
+pub fn weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3],particles: &ParticleVec,settings: &SimulationSettings){
+
+    let mut delta = particles.position[i] - particles.position[j];
+    check_delta(&mut delta, &settings.sim_box_size);
+
+    let r2 = delta.x * delta.x + delta.z * delta.z;
+    let r = r2.sqrt();
+
+    if let SimulationModel::Active(params) = &settings.model {
+        let epsilon = params.stiffness;
+        let sigma = particles.radius[i] + particles.radius[j];
+        
+        // The WCA potential is only active up to the minimum of the LJ curve. r_cut = 2^(1/6) * sigma. 
+        let r2_cut = 1.259921 * (sigma * sigma);
+
+        if r2 < r2_cut {
+            // Implement the cutoff
+            let s2_r2 = (sigma * sigma) / r2;
+            let s6_r6 = s2_r2 * s2_r2 * s2_r2;
+            
+            // The derivative of the WCA potential gives the force magnitude:
+            // F(r) = (48 * epsilon / r^2) * [ (sigma/r)^12 - 0.5 * (sigma/r)^6 ]
+            let f_mag = (48.0 * epsilon / r2) * (s6_r6 * s6_r6 - 0.5 * s6_r6);
+
+            // Create the force vector
+            
+            let force_vec = glam::DVec3::new(delta.x * f_mag / r, 0.0, delta.z * f_mag / r);
+
+            // Apply Newton's Third Law (Equal and Opposite)
+            forces[i] += force_vec;
+            forces[j] -= force_vec;
+        }
+    }
+
+}
+
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
 //
@@ -354,7 +425,7 @@ pub fn check_delta(delta: &mut DVec3, sim_box_size: &DVec3) {
 mod tests {
     use super::*;
     use crate::test_utils::create_particle_vec;
-    use crate::CollisionParams;
+    use crate::md_sim::models::CollisionParams;
     
 
     // -----------------------------------------------------------------

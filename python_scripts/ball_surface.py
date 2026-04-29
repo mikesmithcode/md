@@ -1,3 +1,5 @@
+"""Setup script for ball_surface"""
+
 import polars as pl
 
 from pathlib import Path
@@ -28,11 +30,19 @@ base_particle = {
         "vx" : 0.0,
         "vy" : 0.0,
         "vz" : 0.0,
+        "phi_x" : 0.0,
+        "phi_y" : 0.0,
+        "phi_z" : 0.0,
+        "wx" : 0.0,
+        "wy" : 0.0,
+        "wz" : 0.0,
         "radius" : 0.005,
         "mass" : 5.2E-4,#density 1000kgm^-3
+        "inertia": 0.0,
         "r": 255.0,
         "g": 0.0,
-        "b" : 0.0
+        "b" : 0.0,
+        "a" : 255.0,
     }
 
 particle2 = base_particle.copy()

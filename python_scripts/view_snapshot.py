@@ -1,3 +1,5 @@
+"""This is a utility script for looking at output"""
+
 import polars as pl
 from filehandling import BatchProcess
 from pathlib import Path

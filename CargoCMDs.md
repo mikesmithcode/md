@@ -40,3 +40,8 @@ Run a python script with name "script_name.py" in the "python_scripts" folder.
 ```bash
     setup script_name
 ```
+
+Run runs a simulation. If the optional flag c is provided it will cleanup any existing files under that script_name in output. It then runs the appropriate python script before building and running the simulation.
+```bash
+    run -c script_name
+```

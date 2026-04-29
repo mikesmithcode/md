@@ -6,7 +6,7 @@
   "start": 0,
   "num_steps": 15000,
   "dump": 100,
-  "active_ptypes":[0],
+  "active_ptypes": [0],
   "model": {
     "type": "Solid",
     "stiffness": 100000.0,

@@ -1,12 +1,15 @@
+/// Explanation of simulation
+/// 
+/// Simple bouncing balls is one big ball falling on a surface of balls which are oscillating up and down.
 
-use std::path::Path;
+
+
 use winit::event_loop::EventLoop;
 use glam::DVec3;
 
 // Import everything from your md_viz library
-use md::md_viz::scene::{Scene, SceneSetup};
-use md::md_viz::camera::CameraView;
-use md::md_viz::objects::SimBox;
+use md::md_viz::scene::Scene;
+
 
 // Imports from simulation library
 use md::md_sim::simulation::Simulation;
@@ -34,7 +37,7 @@ impl Forces for SimUpdate{
 
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings) {   
+    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time:f64) {   
         add_weight(i, forces, particles);
     }
 
@@ -73,7 +76,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (particles, start_step, mut time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (_particles, start_step, mut _time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
 
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 

@@ -26,8 +26,11 @@ pub struct Particle {
     pub ptype: usize,
     pub position: DVec3,  
     pub velocity: DVec3,          
+    pub orientation: DVec3,
+    pub omega: DVec3,
     pub radius: f64, 
     pub mass: f64,  
+    pub inertia: f64,
     pub color: Srgba,      
     // Verlet lists tracker fields
     pub ref_pos: DVec3,
@@ -45,6 +48,8 @@ impl Particle {
     /// * `ptype` - The category ID (used for filtering or specific behaviours).
     /// * `position` - Initial coordinates in the simulation box.
     /// * `velocity` - Initial velocity vector.
+    /// * `orientation` - Initial orientation, set to 0,0,0 if not needed.
+    /// * `omega` - Initial angular velocity, set to 0,0,0 if not needed.
     /// * `radius` - The physical radius of the spherical particle.
     /// * `density` - The mass per unit volume.
     /// * `color` - The RGBA colour used for rendering.
@@ -54,6 +59,8 @@ impl Particle {
         ptype: usize, 
         position: DVec3, 
         velocity: DVec3, 
+        orientation: DVec3,
+        omega: DVec3,
         radius: f64, 
         density: f64, 
         color: Srgba
@@ -61,6 +68,7 @@ impl Particle {
         // Calculate mass: m = volume * density
         let volume = (4.0 / 3.0) * std::f64::consts::PI * radius.powi(3);
         let mass = volume * density;
+        let inertia = (2.0/5.0) * mass * radius.powi(2);
         let ref_pos = DVec3::ZERO;
 
 
@@ -69,8 +77,11 @@ impl Particle {
             ptype, 
             position, 
             velocity, 
+            orientation,
+            omega,
             radius, 
             mass, 
+            inertia,
             color,
             ref_pos 
         }
@@ -90,13 +101,15 @@ mod tests {
         let id = 1;
         let position = DVec3::new(1.0, 2.0, 3.0);
         let velocity = DVec3::new(0.1, 0.2, 0.3);
+        let orientation= DVec3::ZERO;
+        let omega= DVec3::ZERO;
         let color = Srgba::new(255, 0, 0, 255);
         let radius: f64 = 0.5;
         let density: f64=1.0;
         let ptype = 1;
         
         let mass = (4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density;
-        let particle = Particle::new(id, ptype, position, velocity, radius, density, color);
+        let particle = Particle::new(id, ptype, position, velocity, orientation, omega, radius, density, color);
 
         assert_eq!(particle.id, id);
         assert_eq!(particle.position, position);
