@@ -6,30 +6,10 @@ There are two top-level folders:
 - [`md_sim`]: the main simulation code
 - [`md_viz`]: the visualization code
 
-In addition you have the bin folder where the entry points for different simulations are stored. 
+In addition you have the bin folder where the entry points for different simulations are stored. See an explanation of [different simulation](crate::simulations).
 
-## Examples
+To make things easier this is a guide of both cargo commands and my own bash script commands to run things [Commands](crate::cmds) and some [know how](crate::knowhow).
 
-Different simulations are contained in the bin folder.
-
-If your simulation is in new_sim.rs. You can then run it with:
-
-```bash, no_run
-    cargo run --bin new_sim
-```
-
-or alternatively you can use the run command in the .bin folder. This continues to run the simulation from the latest output file until it reaches the number of steps specified in the config file:
-
-```bash
-    run new_sim
-```
-
-If you want to clean out old output files for that simulation and rebuild the initial conditions before running then use the -c flag:
-
-```bash
-    run -c new_sim
-```
-Each simulation has a .json config file which is in the input folder and a python script in the scripts folder to build the initial state. Config file, initialisation python script and simulation all have the same name with appropriate file extensions.
 
 ## Outline of a simulation
 
@@ -89,6 +69,7 @@ To handle the details of a simulation you must create a unit struct (I've called
             // particle pairs according to the cutoff distance and iterates over them. i and j are indices which specify the pair of particles.
             // You then calculate the interaction between these particles and update the forces on each particle accordingly.
             inelastic_collision(i, j, particles, forces, collision_params);
+        }
 
         fn has_single_forces(&self) -> bool { false }
             // If there are no single particle forces then call this method returning false. If you do have single particle forces this defaults to true and you 
@@ -112,13 +93,13 @@ To handle the details of a simulation you must create a unit struct (I've called
             zero_forces_for_ptypes(forces, particles, immobile);
         }
     }
-
+    
     
 ```
 
 ## Graphics
 
-Visualization is handled by md_viz.
+Visualization is handled by md_viz. This uses [open_gl graphics](crate::opengl)
 
 You should create a Scene struct which will control the graphics. This takes read only references to particles etc at intervals defined by the simulation loop. It then renders these.
 
@@ -141,7 +122,7 @@ If you don't need a live window but want to record images to a video you should 
     let _ = scene.start_recording(&video_path, start_step);
 ```
 
-Then in your simulation loop you can call either [`md_viz::scene::Scene.display()`] to update the window or [`md_viz::scene::Scene.save_frame()`] to save a frame to the video.
+Then in your simulation loop you can call either [`md_viz::scene::Scene::display`] to update the window or [`md_viz::scene::Scene::save_frame`] to save a frame to the video.
 
 ```rust, ignore
     scene.display(&simulation.get_particles(), step).expect("Error updating display");
@@ -150,7 +131,7 @@ Then in your simulation loop you can call either [`md_viz::scene::Scene.display(
 
 scene.save_frame pushes each displayed frame to an ffmpeg video stream which appears in output/sim_name.
 
-Alternatively, you can just record data output during the simulation and later construct a video using the [`src::bin::video.rs`] script. Here you simply supply the simulation name as a command line argument. ie `run video sim_name` and it will construct a video based on the parquet output files in output/sim_name.
+Alternatively, you can just record data output during the simulation and later construct a video using the [`video`](src/bin/video.rs) script. Here you simply supply the simulation name as a command line argument. ie `run video sim_name` and it will construct a video based on the parquet output files in output/sim_name.
 
 ## Data input / output
 
@@ -160,14 +141,14 @@ Periodically the simulation should write output files containing the current sta
 
 ## Simulation
 
-Simulation has two main methods: new() which creates a new simulation and update() which advances the simulation by one step.
+Simulation has two main methods: [`md_sim::simulation::Simulation::new`] which creates a new simulation and [`md_sim::simulation::Simulation::update`] which advances the simulation by one step.
 
 [`md_sim::simulation::Simulation::new`]
 This takes a SimSettings struct as input and creates a new Simulation struct. It reads the initial state from file and creates the cell grid for efficient finding of neighbouring particles. It also takes a SimUpdate unit struct which contains the details of the simulation. This implements the traits [`md_sim::motion::Motion`] and [`md_sim::force::Forces`]. Each of these traits needs to be implemented for your specific simulation. You can use the pre-built functions in motion.rs and forces.rs or write your own.
 
-[`Motion`] defines the update_motion() and correct_motion() functions. update_motion() is where you would implement your integration scheme to update the positions and velocities of the particles based on the forces. correct_motion() is where you would implement any correction step of your integration scheme if you are using one. This method is optional and can be left blank.
+[`md_sim::motion::Motion`] defines the [`md_sim::motion::Motion::update_motion`] and [`md_sim::motion::Motion::correct_motion`] functions. [`md_sim::motion::Motion::update_motion`] is where you would implement your integration scheme to update the positions and velocities of the particles based on the forces. [`md_sim::motion::Motion::correct_motion`] is where you would implement any correction step of your integration scheme if you are using one. This method is optional and can be left blank.
 
-[`md_sim::force::Forces`] defines the update_single_forces() function which is for those forces which act on individual particles. It also defines the update_pair_forces() function which is for forces that act between pairs of particles. If you don't want to use either you must reimplement [`md_sim::force::has_pair_forces`] or [`md_sim::force::update_single_forces`] returning false to tell the simulation you don't need these. the The CellGrid structure efficiently searches for particle pairs within a specified cutoff distance defined in your SimSettings, read from a config file.
+[`md_sim::force::Forces`] defines the [`md_sim::force::Forces::update_single_forces`] function which is for those forces which act on individual particles. It also defines the [`md_sim::force::Forces::update_pair_forces`] function which is for forces that act between pairs of particles. If you don't want to use either you must reimplement [`md_sim::force::Forces::has_pair_forces`] or [`md_sim::force::Forces::update_single_forces`] returning false to tell the simulation you don't need these. the The CellGrid structure efficiently searches for particle pairs within a specified cutoff distance defined in your SimSettings, read from a config file.
 
 [`Simulation::update`]
 This works through several steps:

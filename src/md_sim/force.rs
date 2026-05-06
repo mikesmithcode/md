@@ -5,10 +5,9 @@
 //! inside update_forces or define your own.
 
 use glam::DVec3;
-use rand::prelude::*;
 use rand_distr::{Normal, Distribution};
+use itertools::izip;
 
-use crate::Simulation;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::models::SimulationModel;
@@ -47,6 +46,7 @@ pub trait Forces {
         &self, 
         i: usize, 
         forces: &mut [DVec3], 
+        torques: &mut [DVec3],
         particles: &ParticleVec, 
         settings: &SimulationSettings,
         time: f64
@@ -67,6 +67,7 @@ pub trait Forces {
         i: usize, 
         j: usize, 
         forces: &mut [DVec3], 
+        torques: &mut [DVec3],
         particles: &ParticleVec, 
         settings: &SimulationSettings
     );
@@ -88,7 +89,7 @@ pub trait Forces {
     ///     zero_forces_for_ptypes(forces, particles, &[0, 1]);
     /// }
     /// ```
-    fn update_ptype_no_forces(&self, _forces: &mut [DVec3], _particles: &ParticleVec) {
+    fn update_ptype_no_forces(&self, _forces: &mut [DVec3],  _torques: &mut [DVec3], _particles: &ParticleVec) {
         // Default: No constraints applied.
     }
 }
@@ -129,11 +130,12 @@ pub trait Forces {
 /// * **Prescribed Motion:** Zeroing the force is necessary for particles following a 
 ///   pre-defined trajectory to prevent physical interactions from deviating them from 
 ///   their path.
-pub fn zero_forces_for_ptypes(forces: &mut [DVec3], particles: &ParticleVec, no_force_ptypes: &[usize]) {
-    for (f, &p_type) in forces.iter_mut().zip(particles.ptype.iter()) {
+pub fn zero_forces_for_ptypes(forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec, no_force_ptypes: &[usize]) {
+    for (f, t, &p_type) in izip!(forces.iter_mut(), torques.iter_mut(),particles.ptype.iter()) {
         // If the current particle's type is in the 'no_force' list, zero it
         if no_force_ptypes.contains(&p_type) {
             *f = DVec3::ZERO;
+            *t = DVec3::ZERO;
         }
     }
 }
@@ -248,117 +250,143 @@ pub fn active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec, set
 
 
 
-/// Calculates the normal contact force between two particles using an inelastic collision model.
+/// Calculates contact forces and torques between two particles using a Linear Spring-Dashpot (LSD) model.
 ///
-/// This function implements a Linear Spring-Dashpot (LSD) model. It calculates the 
-/// repulsive force based on the overlap (stiffness) and the relative normal velocity 
-/// (damping) of the two particles. 
+/// This function handles both central repulsion (normal force) and optional surface friction 
+/// (tangential force). It accounts for rotational dynamics by calculating relative velocity 
+/// at the contact point and applying resulting torques.
 ///
 /// # Physical Model
 ///
-/// The normal force $\mathbf{F}_n$ is calculated as:
-/// $$\mathbf{F}_n = (k \cdot \delta_{overlap} - \gamma \cdot v_{normal}) \mathbf{n}$$
-/// where $k$ is the stiffness, $\gamma$ is the damping coefficient, and $\mathbf{n}$ 
-/// is the contact normal. Damping is only applied during the compression phase 
-/// ($v_{normal} < 0$) to prevent unphysical "sticking" upon separation.
+/// ### Normal Force ($\mathbf{F}_n$)
+/// Calculated using a linear spring for overlap and a dashpot for dissipation:
+/// $$\mathbf{F}_n = \max(0, k \cdot \delta_{overlap} - \gamma \cdot v_{normal}) \mathbf{n}$$
+/// 
+/// ### Tangential Force ($\mathbf{F}_t$)
+/// If friction is enabled, the tangential component is calculated via relative surface velocity:
+/// $$\mathbf{v}_{surface} = \mathbf{v}_{cm} + \boldsymbol{\omega} \times \mathbf{r}$$
+/// The force is modeled as a viscous dashpot clamped by the Coulomb friction limit:
+/// $$\|\mathbf{F}_t\| \leq \mu \|\mathbf{F}_n\|$$
 ///
 /// # Arguments
 ///
 /// * `i`, `j` - Indices of the interacting particles.
-/// * `particles` - Reference to the particle data structure.
-/// * `forces` - Mutable slice of the force buffer (updates both $i$ and $j$).
-/// * `params` - Collision parameters including stiffness and damping.
-/// * `sim_box_size` - Dimensions of the periodic simulation box.
+/// * `particles` - Reference to the particle data structure (includes position, velocity, and omega).
+/// * `forces` - Mutable slice to accumulate linear forces.
+/// * `torques` - Mutable slice to accumulate angular torques.
+/// * `settings` - Global simulation config, including the `SimulationModel` for parameter dispatch.
 ///
-/// # Periodic Boundaries & Constraints
+/// # Periodic Boundaries
 ///
-/// * **Minimum Image Convention:** This function automatically handles periodic wrapping 
-///   via `check_delta`. It finds the shortest distance between particles across boundaries.
-/// * **Boundary Caution:** If using fixed boundaries (walls) near the edge of a periodic 
-///   box, ensure a "buffer zone" of at least one cutoff distance exists to prevent 
-///   particles from interacting with their own image through the wall.
+/// * **Minimum Image Convention:** Automatically handles periodic wrapping via `check_delta` 
+///   to ensure interactions occur over the shortest path across boundaries.
 ///
 /// # Performance
 ///
-/// This function is marked `#[inline(always)]` as it is called frequently within 
-/// the nested loops of the `CellGrid` spatial search.
+/// Marked `#[inline(always)]` to facilitate compiler optimisations within the spatial 
+/// search loops. For models without friction, the tangential and torque logic is 
+/// bypassed to maintain high execution speeds.
 #[inline(always)]
-pub fn inelastic_collision(i: usize,j: usize,particles: &ParticleVec,forces: &mut [DVec3],settings: &SimulationSettings) {    
-    let sim_box_size = settings.sim_box_size;
-
-    let (stiffness, damping) = match &settings.model{
-        SimulationModel::Solid(params) => {
-            (params.stiffness, params.damping)
-            }
-        _ => panic!("Settings model must use the Solid enum")
+pub fn granular_collision(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3], torques: &mut [DVec3], settings: &SimulationSettings) {    
+    // Extract params
+    let (stiffness, damping, mu_opt) = match &settings.model {
+        SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
+        SimulationModel::SolidFriction(p) => (p.stiffness, p.damping, Some(p.mu)),
+        _ => panic!("Unsupported model for granular collision"),
     };
 
-        
-    // Calculate relative separation with Minimum Image Convention
+    // Calc overlap etc
     let mut delta = particles.position[i] - particles.position[j];
-    check_delta(&mut delta, &sim_box_size);
+    check_delta(&mut delta, &settings.sim_box_size);
 
     let combined_rad = particles.radius[i] + particles.radius[j];
-    let dist_sq = delta.length_squared(); // Optimization: check squared distance first
+    let dist_sq = delta.length_squared();
 
     if dist_sq < combined_rad * combined_rad && dist_sq > 1e-18 {
         let dist = dist_sq.sqrt();
         let normal = delta / dist;
         let overlap = combined_rad - dist;
 
-        // Relative Velocity and Normal Component
+        // Normal Force
         let rel_vel = particles.velocity[i] - particles.velocity[j];
         let normal_vel = rel_vel.dot(normal);
 
-        // Force Calculation (Spring + Damping)
-        let spring_f = stiffness * overlap;
-        let damping_f = -damping * normal_vel;
+        let f_normal_mag = (stiffness * overlap - damping * normal_vel).max(0.0);
+        let f_normal_vec = normal * f_normal_mag;
 
-        // Ensure total force is never attractive (clamping)
-        let total_f = (spring_f + damping_f).max(0.0);
-        let f_vec = normal * total_f;
+        // Friction if applicable (Model = SolidFriction)
+        // Use viscous friction clamped to max of static normal_force * mu
+        if let Some(mu) = mu_opt {
+            let r_i = normal * -particles.radius[i];
+            let r_j = normal * particles.radius[j];
 
-        // Apply to both (Newton's Third Law: Action and Reaction)
-        forces[i] += f_vec;
-        forces[j] -= f_vec;
+            let v_surface_rel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
+                              - (particles.velocity[j] + particles.omega[j].cross(r_j));
+            let v_tang = v_surface_rel - (v_surface_rel.dot(normal) * normal);
+            
+            if v_tang.length_squared() > 1e-18 {
+                let f_t_ideal = v_tang * -damping; 
+                let limit = mu * f_normal_mag;
+                
+                let f_t_mag_sq = f_t_ideal.length_squared();
+                let f_t_vec = if f_t_mag_sq > limit * limit {
+                        f_t_ideal * (limit / f_t_mag_sq.sqrt())
+                    } else {
+                        f_t_ideal
+                    };
+
+                // Apply Tangential Forces and Torques
+                forces[i] += f_t_vec;
+                forces[j] -= f_t_vec;
+                torques[i] += r_i.cross(f_t_vec);
+                torques[j] -= r_j.cross(f_t_vec);
+            }
+        }
+
+        // Apply Normal Force (Shared)
+        forces[i] += f_normal_vec;
+        forces[j] -= f_normal_vec;
     }
 }
 
 /// This implements the WCA between particles i and j. 
 /// 
 /// WCA is a truncated lennards-Jones potential that stops at the minimum of the potential.
-pub fn weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3],particles: &ParticleVec,settings: &SimulationSettings){
+pub fn weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
 
     let mut delta = particles.position[i] - particles.position[j];
     check_delta(&mut delta, &settings.sim_box_size);
 
     let r2 = delta.x * delta.x + delta.z * delta.z;
-    let r = r2.sqrt();
+    if r2 > 1e-12{
+        let r = r2.sqrt();
 
-    if let SimulationModel::Active(params) = &settings.model {
-        let epsilon = params.stiffness;
-        let sigma = particles.radius[i] + particles.radius[j];
-        
-        // The WCA potential is only active up to the minimum of the LJ curve. r_cut = 2^(1/6) * sigma. 
-        let r2_cut = 1.259921 * (sigma * sigma);
-
-        if r2 < r2_cut {
-            // Implement the cutoff
-            let s2_r2 = (sigma * sigma) / r2;
-            let s6_r6 = s2_r2 * s2_r2 * s2_r2;
+        if let SimulationModel::Active(params) = &settings.model {
+            let epsilon = params.stiffness;
+            let sigma = particles.radius[i] + particles.radius[j];
             
-            // The derivative of the WCA potential gives the force magnitude:
-            // F(r) = (48 * epsilon / r^2) * [ (sigma/r)^12 - 0.5 * (sigma/r)^6 ]
-            let f_mag = (48.0 * epsilon / r2) * (s6_r6 * s6_r6 - 0.5 * s6_r6);
+            // The WCA potential is only active up to the minimum of the LJ curve. r_cut = 2^(1/6) * sigma. 
+            let r2_cut = 1.259921 * (sigma * sigma);
 
-            // Create the force vector
-            
-            let force_vec = glam::DVec3::new(delta.x * f_mag / r, 0.0, delta.z * f_mag / r);
+            if r2 < r2_cut {
+                // Implement the cutoff
+                let s2_r2 = (sigma * sigma) / r2;
+                let s6_r6 = s2_r2 * s2_r2 * s2_r2;
+                
+                // The derivative of the WCA potential gives the force magnitude:
+                // F(r) = (48 * epsilon / r^2) * [ (sigma/r)^12 - 0.5 * (sigma/r)^6 ]
+                let f_mag = (48.0 * epsilon / r) * (s6_r6 * s6_r6 - 0.5 * s6_r6);
 
-            // Apply Newton's Third Law (Equal and Opposite)
-            forces[i] += force_vec;
-            forces[j] -= force_vec;
+                // Create the force vector
+                let force_vec = glam::DVec3::new(delta.x * f_mag / r, 0.0, delta.z * f_mag / r);
+
+                // Apply Newton's Third Law (Equal and Opposite)
+                forces[i] += force_vec;
+                forces[j] -= force_vec;
+
+            }
         }
+
     }
 
 }
@@ -437,11 +465,14 @@ mod tests {
         // Create dummy particle data
             let particles = create_particle_vec();
             let mut forces = vec![DVec3::new(1.0,1.0,1.0), DVec3::new(1.0,1.0,1.0)];
+            let mut torques = vec![DVec3::new(1.0,1.0,1.0), DVec3::new(1.0,1.0,1.0)];
             
-            zero_forces_for_ptypes(&mut forces, &particles, &[1]);
+            zero_forces_for_ptypes(&mut forces,  &mut torques, &particles, &[1]);
 
             assert!(forces[0].x == 1.0);
             assert!(forces[1].x == 0.0);
+            assert!(torques[0].x == 1.0);
+            assert!(torques[1].x == 0.0);
     }
 
 
@@ -488,7 +519,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
-fn test_inelastic_collision() {
+fn test_granular_collision() {
     let particles = create_particle_vec();
     
     // Bundle params into the specific Enum variant
@@ -512,6 +543,7 @@ fn test_inelastic_collision() {
     };
 
     let mut forces = vec![DVec3::ZERO; particles.len()];
+    let mut torques = vec![DVec3::ZERO; particles.len()];
 
     // Create a controlled overlap (Combined rad = 1.0, distance = 0.8, overlap = 0.2)
     let mut particles = particles; 
@@ -522,7 +554,7 @@ fn test_inelastic_collision() {
     particles.velocity[0] = DVec3::new(1.0, 0.0, 0.0);
     particles.velocity[1] = DVec3::new(-1.0, 0.0, 0.0);
 
-    inelastic_collision(0, 1, &particles, &mut forces, &settings);
+    granular_collision(0, 1, &particles, &mut forces, &mut torques, &settings);
 
     assert!(forces[0].x < 0.0, "Force should be repulsive for particle 0");
     let force_with_damping = forces[0].length();
@@ -532,7 +564,7 @@ fn test_inelastic_collision() {
     particles.velocity[0] = DVec3::new(-1.0, 0.0, 0.0);
     particles.velocity[1] = DVec3::new(1.0, 0.0, 0.0);
 
-    inelastic_collision(0, 1, &particles, &mut forces, &settings);
+    granular_collision(0, 1, &particles, &mut forces,&mut torques, &settings);
     let force_no_damping = forces[0].length();
 
     // Verification

@@ -9,9 +9,11 @@ pub enum SimulationModel{
     Solid(CollisionParams),
     Fluid {viscosity: f64, cutoff: f64},
     Active(ActiveParams),
+    SolidFriction(SolidFrictionParams)
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[allow(non_snake_case)]
 pub struct ActiveParams {
     pub stiffness: f64,
     pub damping: f64,
@@ -24,4 +26,11 @@ pub struct ActiveParams {
 pub struct CollisionParams {
     pub stiffness: f64,
     pub damping: f64,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct SolidFrictionParams{
+    pub stiffness: f64,
+    pub damping: f64,
+    pub mu: f64,
 }

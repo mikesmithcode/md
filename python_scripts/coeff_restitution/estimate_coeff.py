@@ -4,9 +4,9 @@ import numpy as np
 
 # --- Parameters ---
 e = 0.7            # Coefficient of restitution (0.7 is fairly bouncy)
-r = 0.005         # 0.5mm radius
+r = 0.005         # 5mm radius
 Y = 1e9            # 1 GPa (Hard plastic/stiff rubber)
-density = 1000     # 1000 kg/m^3
+density = 2000     # 1000 kg/m^3
 
 # --- 1. Calculate Physical Mass ---
 m_particle = (4/3) * np.pi * density * (r**3)

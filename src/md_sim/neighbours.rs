@@ -22,7 +22,7 @@ use crate::md_sim::force::{check_delta,Forces};
 /// * `num_cells` - number cells in each dimension (calculated)
 /// * `cell_size` - set by SimulationSettings.cutoff
 /// * `heads` - list of the first Some(particle_id) in each cell or None if cell is empty
-/// * `next` - A linked list. particle_id.next[i] stores the id of the next particle in the same cell as particle i
+/// * `next` - A linked list. CellGrid.next\[i] stores the id of the next particle in the same cell as particle i
 /// * stride_y, stride z - used to convert 3d to 1d particle coords.
 /// * neighbour_table - relative indices of adjacent cells
 /// * verlet_table - lists of particle ids within cutoff + skin for each particle
@@ -210,6 +210,7 @@ impl CellGrid {
     pub fn apply_pair_forces<F: Forces>(
         &self,
         f_buf: &mut [DVec3],
+        t_buf: &mut [DVec3],
         particles: &ParticleVec,
         user_impl: &F,
         settings: &SimulationSettings,
@@ -223,7 +224,7 @@ impl CellGrid {
                 
                 let dist_sq = delta.length_squared();
                 if dist_sq < cutoff_sq {
-                    user_impl.update_pair_forces(i, j, f_buf, particles, settings);
+                    user_impl.update_pair_forces(i, j, f_buf, t_buf, particles, settings);
                 }
             }
         }

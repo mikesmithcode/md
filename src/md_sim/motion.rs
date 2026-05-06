@@ -7,8 +7,7 @@
 use glam::DVec3;
 use itertools::izip;
 use three_d::Srgba;
-use rand::prelude::*;
-use rand_distr::{Normal, Distribution};
+use rand_distr::Distribution;
 
 use crate::{SimulationSettings, md_sim::particle::ParticleVec};
 use crate::md_sim::models::SimulationModel;
@@ -38,6 +37,7 @@ pub trait Motion {
     fn update_motion(
         &self, 
         forces: &[DVec3], 
+        torques: &[DVec3],
         particles: &mut ParticleVec, 
         settings: &SimulationSettings,
         time: f64
@@ -60,6 +60,7 @@ pub trait Motion {
     fn correct_motion(
         &self, 
         _forces: &[DVec3], 
+        _torques: &[DVec3],
         _particles: &mut ParticleVec, 
         _settings: &SimulationSettings
     ) {
@@ -81,6 +82,7 @@ pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &Sim
         for i in 0..particles.position.len() {
             
             // Calculate the scale for rotational noise
+            #[allow(non_snake_case)]
             let Dr = 3.0*params.Dt/(4.0 * particles.radius[i].powi(2));
             let theta_noise_scale = (2.0 * Dr * settings.dt).sqrt();
 
@@ -99,6 +101,10 @@ pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &Sim
             //to be safe make sure no floating point errors change magnitude
             particles.orientation[i] = particles.orientation[i].normalize();
 
+
+            if particles.position[i].x.is_nan() || particles.position[i].x.abs() > 1e6 {
+               println!("Particle exploded! Force: {:?}, Position: {:?}", forces[i], particles.position[i]);
+            }
             // Apply periodic boundaries
             check_periodic(&mut particles.position[i], settings.sim_box_size);
         }
@@ -119,6 +125,7 @@ pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &Sim
 /// for new force calculations (e.g., collisions) at $x(t + \Delta t)$.
 pub fn integrate_verlet_update(
     forces: &[DVec3], 
+    torques: &[DVec3],
     particles: &mut ParticleVec, 
     settings: &SimulationSettings
 ) {
@@ -126,19 +133,32 @@ pub fn integrate_verlet_update(
     let half_dt = dt * 0.5;
     let sim_box_size = settings.sim_box_size;
 
-    for (pos, vel, &mass, &force) in izip!(
+    let is_rotating = matches!(settings.model, SimulationModel::SolidFriction(_));
+
+    for (pos, vel, orientation, omega, &mass, &inertia, &force, &torque) in izip!(
         &mut particles.position,
         &mut particles.velocity,
+        &mut particles.orientation,
+        &mut particles.omega,
         &particles.mass,
-        forces
+        &particles.inertia,
+        forces, 
+        torques,
     ) {
         let acceleration = force / mass;
         
         // Half-step velocity update
         *vel += acceleration * half_dt;
-        
         // Full-step position update
         *pos += *vel * dt;
+
+        if is_rotating{
+            let alpha = torque / inertia;
+            // Half-step omega update
+            *omega += alpha * half_dt;
+            // Full-step orientation update
+            *orientation += *omega * dt;
+        }
         
         // Enforce boundary conditions
         check_periodic(pos, sim_box_size);
@@ -152,20 +172,30 @@ pub fn integrate_verlet_update(
 /// $v(t + \Delta t) = v(t + \frac{\Delta t}{2}) + \frac{a(t + \Delta t)\Delta t}{2}$
 pub fn integrate_verlet_correct(
     forces: &[DVec3], 
+    torques: &[DVec3],
     particles: &mut ParticleVec, 
     settings: &SimulationSettings
 ) {
     let half_dt = settings.dt * 0.5;
 
-    for (vel, &mass, &force) in izip!(
+    let is_rotating = matches!(settings.model, SimulationModel::SolidFriction(_));
+
+    for (vel, omega, &mass, &inertia, &force, &torque) in izip!(
         &mut particles.velocity,
+        &mut particles.omega,
         &particles.mass,
-        forces
+        &particles.inertia,
+        forces,
+        torques,
     ) {
-        let acceleration = force / mass;
-        
+        let acceleration = force / mass;       
         // Final half-step velocity update using new forces
         *vel += acceleration * half_dt;
+
+        if is_rotating{
+            let alpha=torque / inertia;
+            *omega += alpha * half_dt;
+        }
     }
 }
 
@@ -260,11 +290,13 @@ mod tests {
         // Force of 10.0 on Particle 0 (mass is 1.0) -> Accel = 10.0
         let mut forces = vec![DVec3::ZERO; particles.len()];
         forces[0] = DVec3::new(10.0, 0.0, 0.0);
+        let mut torques = vec![DVec3::ZERO; particles.len()];
+        torques[0] = DVec3::new(10.0, 0.0, 0.0);
 
         // Initial state: pos=1.0, vel=1.0
         // Expected Vel Half-step: 1.0 + (10.0 * 0.05) = 1.5
         // Expected Pos Full-step: 1.0 + (1.5 * 0.1) = 1.15
-        integrate_verlet_update(&forces, &mut particles, &settings);
+        integrate_verlet_update(&forces, &torques,  &mut particles, &settings);
 
         assert!((particles.velocity[0].x - 1.5).abs() < 1e-6);
         assert!((particles.position[0].x - 1.15).abs() < 1e-6);
@@ -278,6 +310,7 @@ mod tests {
 
         // Force of 10.0 in X direction. mass is 1.0, so Accel = 10.0
         let forces = vec![DVec3::new(10.0, 0.0, 0.0); particles.len()];
+        let torques = vec![DVec3::new(0.0, 0.0, 0.0); particles.len()];
 
         // Manually set a "pre-predicted" state.
         // Let's assume the particle started at vel 1.0.
@@ -289,7 +322,7 @@ mod tests {
         // Perform the Correction (The second half-kick)
         // Mathematically: v_final = v_half + (a_new * half_dt)
         // v_final = 1.5 + (10.0 * 0.05) = 2.0
-        integrate_verlet_correct(&forces, &mut particles, &settings);
+        integrate_verlet_correct(&forces, &torques, &mut particles, &settings);
 
         // Verify
         for vel in &particles.velocity {

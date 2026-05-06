@@ -1,4 +1,8 @@
 
+/// ball_surface
+/// 
+/// A very simple simulation in which a ball is dropped and bounces on a horizontal surface defined mathematically.
+
 use winit::event_loop::EventLoop;
 use glam::DVec3;
 
@@ -69,6 +73,7 @@ impl Forces for SimUpdate{
             _i: usize, 
             _j: usize, 
             _forces: &mut [DVec3], 
+            _torques: &mut [DVec3],
             _particles: &ParticleVec, 
             _settings: &SimulationSettings
         ) {
@@ -77,7 +82,7 @@ impl Forces for SimUpdate{
 
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, settings: &SimulationSettings, _time:f64) {   
+    fn update_single_forces(&self,i:usize, forces: &mut [DVec3], _torques: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings, _time:f64) {   
         add_weight(i, forces, particles);
         add_surface(i, forces, particles, settings);
 
@@ -86,12 +91,12 @@ impl Forces for SimUpdate{
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _time:f64) {
-        integrate_verlet_update(forces, particles, settings);
+    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _time:f64) {
+        integrate_verlet_update(forces, _torques, particles, settings);
     }
 
-    fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
-        integrate_verlet_correct(forces, particles, settings);
+    fn correct_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
+        integrate_verlet_correct(forces, _torques, particles, settings);
     }
 }
 

@@ -27,7 +27,7 @@ use crate::md_sim::models::*;
 /// 
 /// dt - timestep of the simulation
 /// sim_box_size - x,y,z dimensions of the simulation box
-/// cutoff - range of force or distance within which neighbours are defined by the cell grid / verlet in [`neighbours::CellGrid`]
+/// cutoff - range of force or distance within which neighbours are defined by the cell grid / verlet in [`crate::md_sim::neighbours::CellGrid`]
 /// skin -  This is the distance beyond the cutoff in which particles are added to a particles verlet list. When any particle travels skin/2 the grid and verlet list are rebuilt.
 /// num_steps - How many steps the simulation will advance before stopping
 /// dump - Can be used to control how many steps occur before writing to a file or saving an image to the video. But must be used manually in the main loop
@@ -108,6 +108,7 @@ pub struct Simulation<S>
 {
     pub particles: ParticleVec,
     pub forces: Vec<DVec3>,
+    pub torques: Vec<DVec3>,
     pub sim_update: S,
     pub settings: SimulationSettings,
     pub current_step: usize,
@@ -125,6 +126,7 @@ impl<S> Simulation<S>
         Self {
             particles,
             forces : vec![DVec3::ZERO; n],
+            torques : vec![DVec3::ZERO; n],
             sim_update,
             settings: settings.clone(),
             current_step: settings.start,
@@ -146,7 +148,7 @@ impl<S> Simulation<S>
     pub fn update(&mut self){
 
         // Predict the new positions, velocities etc
-        self.sim_update.update_motion(&self.forces, &mut self.particles, &self.settings, self.time);
+        self.sim_update.update_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, self.time);
 
 
         // Form the cell_grid, putting particles in
@@ -158,7 +160,7 @@ impl<S> Simulation<S>
         if self.sim_update.has_single_forces(){
             // Single forces apply to individual particles
             for i in 0..self.particles.len(){
-                self.sim_update.update_single_forces(i, &mut self.forces, &self.particles, &self.settings, self.time);
+                self.sim_update.update_single_forces(i, &mut self.forces, &mut self.torques, &self.particles, &self.settings, self.time);
             }
         }
 
@@ -170,6 +172,7 @@ impl<S> Simulation<S>
             //appy pairwise forces
             self.cell_grid.apply_pair_forces(
                 &mut self.forces, 
+                &mut self.torques,
                 &self.particles, 
                 &self.sim_update, 
                 &self.settings
@@ -177,11 +180,11 @@ impl<S> Simulation<S>
         }
 
         // Prevents some particles from responding to the forces eg walls.
-        self.sim_update.update_ptype_no_forces(&mut self.forces, &self.particles);
+        self.sim_update.update_ptype_no_forces(&mut self.forces, &mut self.torques, &self.particles);
 
 
         // Perform correction to the motion based on the updated forces
-        self.sim_update.correct_motion(&self.forces, &mut self.particles, &self.settings);
+        self.sim_update.correct_motion(&self.forces, &self.torques, &mut self.particles, &self.settings);
 
         // Update simulation time
         self.time += self.settings.dt;
@@ -205,8 +208,10 @@ impl<S> Simulation<S>
     fn reset_forces(&mut self){
         if self.forces.len() != self.particles.len(){
             self.forces.resize(self.particles.len(), DVec3::ZERO);
+            self.torques.resize(self.particles.len(), DVec3::ZERO);
         }else{
             self.forces.fill(DVec3::ZERO);
+            self.torques.fill(DVec3::ZERO);
         }
     }
 }

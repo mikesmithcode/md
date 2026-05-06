@@ -1,6 +1,6 @@
 # Opengl and three-d
 
-Notes on https://learnopengl.com with any links to three-d (Rust) added. All the examples shown are also translated to Rust open-gl here: https://github.com/srcres258/learnopengl-rust
+Notes on <https://learnopengl.com> with any links to three-d (Rust) added. All the examples shown are also translated to [this Rust repository](https://github.com/srcres258/learnopengl-rust).
 
 ### Terminology
 

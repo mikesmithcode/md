@@ -160,16 +160,21 @@ pub fn save_snapshot(
 
 
     let t: Vec<f64> = vec![time;particles.len()];
-    let ids: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
+    let id: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
+    let next_id: Vec<u64> = particles.next_id.iter().map(|&next_id| next_id as u64).collect();
     let ptype: Vec<u64> = particles.ptype.iter().map(|&ptype| ptype as u64).collect();
 
     let mut df = df!(
         "t" => &t,
-        "id" => &ids,
+        "id" => &id,
+        "next_id" => &next_id,
         "ptype" => &ptype,
         "x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
         "y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
         "z" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "rel_x" => &particles.rel_pos.iter().map(|p| p.x).collect::<Vec<_>>(),
+        "rel_y" => &particles.rel_pos.iter().map(|p| p.y).collect::<Vec<_>>(),
+        "rel_z" => &particles.rel_pos.iter().map(|p| p.z).collect::<Vec<_>>(),
         "vx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
         "vy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
         "vz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
@@ -182,6 +187,7 @@ pub fn save_snapshot(
         "radius" => &particles.radius,
         "mass" => &particles.mass,
         "inertia" => &particles.inertia,
+        "charge" => &particles.charge,
         "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
         "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
         "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
@@ -226,10 +232,14 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 
     let t_col = df.column("t")?.f64()?;
     let id_col = df.column("id")?.u64()?;
+    let next_id_col = df.column("next_id")?.u64()?;
     let ptype_col = df.column("ptype")?.u64()?;
     let x_col = df.column("x")?.f64()?;
     let y_col = df.column("y")?.f64()?;
     let z_col = df.column("z")?.f64()?;
+    let rel_x_col = df.column("rel_x")?.f64()?;
+    let rel_y_col = df.column("rel_y")?.f64()?;
+    let rel_z_col = df.column("rel_z")?.f64()?;
     let vx_col = df.column("vx")?.f64()?;
     let vy_col = df.column("vy")?.f64()?;
     let vz_col = df.column("vz")?.f64()?;
@@ -242,6 +252,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
     let r_col = df.column("radius")?.f64()?;
     let m_col = df.column("mass")?.f64()?;
     let j_col = df.column("inertia")?.f64()?;
+    let q_col = df.column("charge")?.f64()?;
     let col_r = df.column("r")?.f64()?;
     let col_g = df.column("g")?.f64()?;
     let col_b = df.column("b")?.f64()?;
@@ -251,12 +262,16 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, ptype, x, y, z, vx, vy, vz,phi_x, phi_y, phi_z, wx,wy,wz, rad, mass, inertia, r, g, b, a) in izip!(
+    for (id, next_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,phi_x, phi_y, phi_z, wx,wy,wz, rad, mass, inertia, charge, r, g, b, a) in izip!(
         id_col.into_iter(),
+        next_id_col.into_iter(),
         ptype_col.into_iter(),
         x_col.into_iter(),
         y_col.into_iter(),
         z_col.into_iter(),
+        rel_x_col.into_iter(),
+        rel_y_col.into_iter(),
+        rel_z_col.into_iter(),
         vx_col.into_iter(),
         vy_col.into_iter(),
         vz_col.into_iter(),
@@ -269,6 +284,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
         r_col.into_iter(),
         m_col.into_iter(),
         j_col.into_iter(),
+        q_col.into_iter(),
         col_r.into_iter(),
         col_g.into_iter(),
         col_b.into_iter(),
@@ -277,11 +293,17 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
         // We use .unwrap_or because Polars columns are technically nullable
         particles.push(Particle {
             id: id.unwrap_or(0) as usize,
+            next_id: next_id.unwrap_or(0) as usize,
             ptype: ptype.unwrap_or(0) as usize,
             position: DVec3::new(
                 x.unwrap_or(0.0),
                 y.unwrap_or(0.0),
                 z.unwrap_or(0.0),
+            ),
+            rel_pos: DVec3::new(
+                rel_x.unwrap_or(0.0),
+                rel_y.unwrap_or(0.0),
+                rel_z.unwrap_or(0.0),
             ),
             velocity: DVec3::new(
                 vx.unwrap_or(0.0),
@@ -301,13 +323,14 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
             radius: rad.unwrap_or(0.0),
             mass: mass.unwrap_or(0.0),
             inertia: inertia.unwrap_or(0.0),
+            charge: charge.unwrap_or(0.0),
             color: Srgba::new(
                 r.unwrap_or(0.0) as u8,
                 g.unwrap_or(0.0) as u8,
                 b.unwrap_or(0.0) as u8,
                 a.unwrap_or(255.0) as u8,
             ),
-            ref_pos: DVec3::ZERO,
+            ref_pos : DVec3::ZERO,        
         });
     }
 
@@ -362,12 +385,13 @@ pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSetup, Box<dy
 mod tests {
     use super::*;
     use tempfile::tempdir;
+    const NULL_ID: usize = usize::MAX;
 
     #[test]
     fn test_filepath()-> Result<(), Box<dyn std::error::Error>>{
         let [sim_config_path, _scene_config_path, _snapshot_path, _video_path] = filepaths("test.rs");
 
-        assert_eq!(sim_config_path, Path::new("input").join("test"));
+        assert_eq!(sim_config_path, Path::new("input").join("test.json"));
 
         Ok(())
     }
@@ -383,14 +407,17 @@ mod tests {
         particles.push(
             Particle {
                 id: 1,
+                next_id: NULL_ID,
                 ptype: 0,
                 position: DVec3::new(1.0, 2.0, 3.0),
+                rel_pos: DVec3::ZERO,
                 velocity: DVec3::new(0.1, 0.2, 0.3),
                 orientation: DVec3::new(0.0, 0.0, 0.0),
                 omega: DVec3::new(0.0, 0.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
                 inertia: 1.0,
+                charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
             });
@@ -425,14 +452,17 @@ mod tests {
         particles.push(
             Particle {
                 id: 1,
+                next_id: NULL_ID,
                 ptype: 0,
                 position: DVec3::new(1.0, 2.0, 3.0),
+                rel_pos: DVec3::ZERO,
                 velocity: DVec3::new(0.1, 0.2, 0.3),
                 orientation: DVec3::new(0.0, 0.0, 0.0),
                 omega: DVec3::new(0.0, 0.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
                 inertia: 1.0,
+                charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
             });

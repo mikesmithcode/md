@@ -1,8 +1,7 @@
-
 /// Explanation of simulation
 /// 
-/// Demo for active brownian particles
-
+/// Silo consists of a 2D hopper with diagonal walls and a flat bottom. We then drop a square lattice
+/// of balls from above into it and watch everything slosh around.
 
 
 use winit::event_loop::EventLoop;
@@ -13,49 +12,58 @@ use glam::DVec3;
 use md::md_sim::file_io;
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::{Forces, weeks_chandler_andersen, active_force};
-use md::md_sim::motion::{Motion,update_abps};
+use md::md_sim::force::{Forces, granular_collision};
+use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
-
+use md::md_sim::force::{add_weight, zero_forces_for_ptypes};
+use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct};
 
 use md::md_viz::scene::Scene;
-
 
 pub struct SimUpdate;
 
 impl Forces for SimUpdate{
+    // Default implementation is true, set to false if not using
+    fn has_pair_forces(&self)-> bool {
+        true
+    }
+    // Default implementation is true set to false if not using
+    fn has_single_forces(&self)-> bool {
+        true
+    }
+
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings, _time: f64) {   
-       active_force(i, forces, particles, settings);
+    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time: f64) {   
+        add_weight(i, forces, particles);
     }
 
     // forces that operate between pairs of particles
-    fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3], _torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
-        weeks_chandler_andersen(i, j, forces, particles, settings);
+    fn update_pair_forces(&self,i: usize,j: usize, forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
+        granular_collision(i, j, particles, forces, torques, settings);
+    }
+
+    // For particles that shouldn't follow the calculated forces e.g walls etc.
+    fn update_ptype_no_forces(&self, forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec){
+        let immobile = &[0, 1];
+        zero_forces_for_ptypes(forces, torques, particles, immobile);
     }
 }
 
-
-
-/// Add any changes to the motion e.g particles changing size, being created or disappearing. Then integrate the equations of motion.
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _time:f64) {
-        if forces.iter().all(|&f| f == DVec3::ZERO) {
-            return;
-        }
-                 update_abps(forces, particles, settings);
-            
-       
+    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _time:f64) {
+        integrate_verlet_update(forces, torques, particles, settings);
+    }
+    fn correct_motion(&self, forces: &[glam::DVec3],  torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
+        integrate_verlet_correct(forces, torques, particles, settings);
     }
 }
-
 
 
 
 pub fn main() {    
 
-    // Construct filepaths from script name.
+    // Construct filepaths
     let [sim_config_path, scene_config_path, snapshot_path, video_path] = file_io::filepaths(file!());
     
 
@@ -72,17 +80,14 @@ pub fn main() {
     //----------------------------------------------------------------
     //  Graphics
     //
-    //  Graphics are handled by a Scene struct.
-    //  For any graphics you need an event_loop and scene.view() for live display or scene.background() for hidden. 
-    //  Optional video output requires you to scene.start_recording()
-    //
-    //  Once in your main loop you can update display with scene.display() and add a frame to the video with scene.save_frame()
+    //  event_loop and scene.init_window(&event_loop) for live display. Optional video output.
+    //  scene.init_headless() for headless video 
+    //  Call scene.display() to update window, scene.save_img() to write
     //--------------------------------------------------------------   
 
     let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);   
     let mut event_loop = EventLoop::new(); 
     let _ = scene.view(&event_loop);
-    //let _ = scene.background(&event_loop);
     let _ = scene.start_recording(&video_path, start_step);
 
     //-------------------------------------------------------------

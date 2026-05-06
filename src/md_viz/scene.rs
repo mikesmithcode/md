@@ -148,6 +148,8 @@ impl Scene {
         // Create an initial empty mesh
         let mut mat = PhysicalMaterial::default();
         mat.albedo = Srgba::WHITE;
+        mat.render_states.blend = Blend::TRANSPARENCY;
+        mat.render_states.cull = Cull::Back;
 
         let particle_mesh = Gm::new(
             InstancedMesh::new(context, &Instances::default(), &sphere_template.cpu_mesh),

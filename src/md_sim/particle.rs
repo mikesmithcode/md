@@ -18,22 +18,28 @@ use glam::f64::DVec3;
 use three_d::*;
 use soa_derive::StructOfArray;
 
+
+const NULL_ID: usize = usize::MAX;
+
 ///Particle defines a particle object which defines key properties: position, velocity etc
 #[derive(Debug, Clone, PartialEq, StructOfArray)]
 #[soa_derive(Debug, PartialEq)]
 pub struct Particle {
     pub id: usize,
+    pub next_id: usize,
     pub ptype: usize,
     pub position: DVec3,  
+    pub rel_pos: DVec3,
     pub velocity: DVec3,          
     pub orientation: DVec3,
     pub omega: DVec3,
     pub radius: f64, 
     pub mass: f64,  
     pub inertia: f64,
-    pub color: Srgba,      
+    pub charge: f64,
+    pub color: Srgba, 
     // Verlet lists tracker fields
-    pub ref_pos: DVec3,
+    pub ref_pos: DVec3,    
 }
 
 impl Particle {
@@ -45,24 +51,30 @@ impl Particle {
     /// # Arguments
     ///
     /// * `id` - A unique identifier for the particle.
+    /// * `next_id` - ids allow for a linked list of connected particles. None if end of linked list
     /// * `ptype` - The category ID (used for filtering or specific behaviours).
     /// * `position` - Initial coordinates in the simulation box.
+    /// * `rel_pos` - This is the position relative to particle at head of linked list.
     /// * `velocity` - Initial velocity vector.
     /// * `orientation` - Initial orientation, set to 0,0,0 if not needed.
     /// * `omega` - Initial angular velocity, set to 0,0,0 if not needed.
     /// * `radius` - The physical radius of the spherical particle.
     /// * `density` - The mass per unit volume.
+    /// * `charge` - charge
     /// * `color` - The RGBA colour used for rendering.
     ///
     pub fn new(
-        id: usize, 
+        id: usize,
+        next_id: usize, 
         ptype: usize, 
-        position: DVec3, 
+        position: DVec3,
+        rel_pos: DVec3, 
         velocity: DVec3, 
         orientation: DVec3,
         omega: DVec3,
         radius: f64, 
         density: f64, 
+        charge: f64,
         color: Srgba
     ) -> Self {
         // Calculate mass: m = volume * density
@@ -71,19 +83,21 @@ impl Particle {
         let inertia = (2.0/5.0) * mass * radius.powi(2);
         let ref_pos = DVec3::ZERO;
 
-
         Particle { 
             id, 
+            next_id,
             ptype, 
-            position, 
+            position,
+            rel_pos, 
             velocity, 
             orientation,
             omega,
             radius, 
             mass, 
             inertia,
+            charge,
             color,
-            ref_pos 
+            ref_pos
         }
     }
 }
@@ -106,10 +120,11 @@ mod tests {
         let color = Srgba::new(255, 0, 0, 255);
         let radius: f64 = 0.5;
         let density: f64=1.0;
+        
         let ptype = 1;
         
         let mass = (4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density;
-        let particle = Particle::new(id, ptype, position, velocity, orientation, omega, radius, density, color);
+        let particle = Particle::new(id, NULL_ID, ptype, position,DVec3::ZERO, velocity, orientation, omega, radius, density, 0.0, color);
 
         assert_eq!(particle.id, id);
         assert_eq!(particle.position, position);

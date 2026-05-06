@@ -13,7 +13,7 @@ use md::md_viz::scene::Scene;
 // Imports from simulation library
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::{Forces, inelastic_collision};
+use md::md_sim::force::{Forces, granular_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::force::{add_weight, zero_forces_for_ptypes};
@@ -36,29 +36,29 @@ impl Forces for SimUpdate{
 
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time:f64) {   
+    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time:f64) {   
         add_weight(i, forces, particles);
     }
 
     // forces that operate between pairs of particles
-    fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3],particles: &ParticleVec,settings: &SimulationSettings){
-        inelastic_collision(i, j, particles, forces, settings);
+    fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3],_torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
+        granular_collision(i, j, particles, forces, _torques, settings);
     }
 
     // For particles that shouldn't follow the calculated forces e.g walls etc.
-    fn update_ptype_no_forces(&self, forces: &mut [DVec3], particles: &ParticleVec){
+    fn update_ptype_no_forces(&self, forces: &mut [DVec3], _torques: &mut [DVec3], particles: &ParticleVec){
         let immobile = &[0]; // Bottom particle is immobile
-        zero_forces_for_ptypes(forces, particles, immobile);
+        zero_forces_for_ptypes(forces, _torques, particles, immobile);
     }
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _t:f64) {
-        integrate_verlet_update(forces, particles, settings);
+    fn update_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _t:f64) {
+        integrate_verlet_update(forces, _torques, particles, settings);
         //change_rad(particles, 0)
     }
-    fn correct_motion(&self, forces: &[glam::DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
-        integrate_verlet_correct(forces, particles, settings);
+    fn correct_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings) {
+        integrate_verlet_correct(forces, _torques, particles, settings);
     }
 }
 

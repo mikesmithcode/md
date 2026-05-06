@@ -1,30 +1,26 @@
-import json
-from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 import polars as pl
 
 from utility import get_config, plot_circles_orientation
 
-input_path = Path(__file__).parent.parent.joinpath("input")
-config_path = input_path.joinpath("abp.json")
+
 
 config, snapshot_filepath = get_config(__file__)
 
 box_x = config["sim_box_size"][0]
 box_z = config["sim_box_size"][2]
 
-path_to_snapshots = Path("output/abp/snapshots/")
-os.makedirs(path_to_snapshots, exist_ok=True)
-filepath = path_to_snapshots.joinpath("snapshot_0000000000.parquet")
 
-num_particles_target = 1000 
+
+num_particles_target = 100 
 n = int(np.sqrt(num_particles_target))
 
 spacing_x = box_x / (n + 1)
 spacing_z = box_z / (n + 1)
 
+#assume density of 2000kgm^-3
+# Assume solid sphere.
 base_particle = {
     "t": 0.0,
     "ptype": 0,
@@ -36,9 +32,9 @@ base_particle = {
     "wx": 0.0,
     "wy": 0.0,
     "wz": 0.0,
-    "radius": 0.25,
-    "mass": 2.35,
-    "inertia": 0.0,
+    "radius": 0.005,
+    "mass": 0.001047166666666667,
+    "inertia": 1.047166666666667e-08,
     "r": 255.0,
     "g": 0.0,
     "b": 0.0,

@@ -9,7 +9,7 @@
   "active_ptypes": [0],
   "model": {
     "type": "Active",
-    "stiffness": 20000.0,
+    "stiffness": 200.0,
     "damping": 1000.0,
     "v0": 100.0,
     "Dt": 0.01,
