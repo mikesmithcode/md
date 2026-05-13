@@ -33,20 +33,30 @@ def plot_circles_orientation(df, ax):
     pc = PatchCollection(circles, edgecolors='black', facecolors='none', linewidths=1)
     ax.add_collection(pc)
 
+    # Add ptype labels at the centre of each particle
+    for x, z, ptype in zip(df["x"], df["z"], df["ptype"]):
+        ax.text(
+            x, z, str(int(ptype)), 
+            color='blue', 
+            fontsize=8, 
+            ha='center', 
+            va='center',
+            fontweight='bold'
+        )
+
     # Orientation vectors (quiver)
-    # scale_units='xy' and angles='xy' ensure the arrows scale with the axes
     u = df["phi_x"] * df["radius"]
     w = df["phi_z"] * df["radius"]
 
     ax.quiver(
         df["x"], df["z"], u, w, 
         color='red', 
-        scale=1,              # 1 data unit = 1 arrow unit
-        scale_units='xy',     # Use the coordinate system for scale
-        angles='xy',          # Arrows point correctly in the X-Z plane
-        width=0.003,          # Thickness of the arrow shaft
+        scale=1,              
+        scale_units='xy',     
+        angles='xy',          
+        width=0.003,          
         headwidth=3,
-        pivot='tail'          # Ensures the arrow starts from the particle centre
+        pivot='tail'          
     )
 
     return ax

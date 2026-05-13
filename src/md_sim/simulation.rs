@@ -42,36 +42,57 @@ pub struct SimulationSettings{
     pub start: usize,
     pub num_steps: usize,
     pub dump: usize,
-    pub active_ptypes: Vec<i32>,
+    pub interaction_ptypes: Vec<[u8;2]>,
+    #[serde(default)]
+    pub head_ptypes: Vec<u8>,
     pub model: SimulationModel,
-    #[serde(skip)]  
-    pub active_map: [bool; 32],
+    #[serde(skip)] // Don't try to load this from JSON
+    pub active_mask: [bool; 32],
     
 }
 
-impl SimulationSettings
-    {
-    /// loads sim config from file
-    pub fn new(path: &Path)-> Result<SimulationSettings, Box<dyn std::error::Error>>
-    {
-        let file = File::open(path).unwrap_or_else(|_err| {
-            panic!("\n==========================================\nError: Couldn't find file at {}\n==========================================\n", path.display());
-        });
+impl SimulationSettings {
+    /// Loads sim config from file and builds the active mask
+    pub fn new(path: &Path) -> Result<SimulationSettings, Box<dyn std::error::Error>> {
+        let file = File::open(path).map_err(|e| {
+            format!(
+                "\n==========================================\n\
+                Error: Couldn't find config at {}\n\
+                Details: {}\n\
+                ==========================================\n", 
+                path.display(), e
+            )
+        })?;
+        
         let reader = BufReader::new(file);
+        let mut sim_settings: SimulationSettings = serde_json::from_reader(reader)?;
 
-        let mut sim_settings = serde_json::from_reader::<_, SimulationSettings>(reader)?;
-        sim_settings.active_map = [false; 32];
-        for &ptype in &sim_settings.active_ptypes {
-            if ptype >= 0 && (ptype as usize) < 32 {
-                sim_settings.active_map[ptype as usize] = true;
+        // Build the active mask from interaction_ptypes
+        // A ptype is active if it appears as the first element in any pair
+        sim_settings.active_mask = [false; 32];
+        for pair in &sim_settings.interaction_ptypes {
+            let ptype = pair[0] as usize;
+            if ptype < 32 {
+                sim_settings.active_mask[ptype] = true;
             }
         }
 
         Ok(sim_settings)
     }
 
-    pub fn sim_box_size_f32(&self)->[f32;3]{
+    pub fn sim_box_size_f32(&self) -> [f32; 3] {
         self.sim_box_size.as_vec3().to_array()
+    }
+
+    /// Helper to check if a type should have forces calculated
+    #[inline]
+    pub fn is_active(&self, ptype: usize) -> bool {
+        //check bounds if we only use 32
+        ptype < 32 && self.active_mask[ptype]
+    }
+
+    pub fn is_head(&self, ptype: u8) -> bool {
+        self.head_ptypes.contains(&ptype)
     }
 }
 
@@ -86,11 +107,12 @@ impl Default for SimulationSettings {
             start: 0,
             num_steps: 15,
             dump: 1000,
-            active_ptypes: vec![0],
+            interaction_ptypes: vec![[0,0]],
+            head_ptypes: vec![],
             model: SimulationModel::Solid(CollisionParams{
                 stiffness: 1000.0, 
                 damping: 50.0}),
-            active_map:[true;32]
+            active_mask:[true;32]
         }
 
     }
@@ -120,101 +142,109 @@ impl<S> Simulation<S>
     where 
         S: Forces + Motion,
     {
-    /// Create a new simulation
-    pub fn new(particles: ParticleVec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
-        let n = particles.len();
-        Self {
-            particles,
-            forces : vec![DVec3::ZERO; n],
-            torques : vec![DVec3::ZERO; n],
-            sim_update,
-            settings: settings.clone(),
-            current_step: settings.start,
-            cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n, settings.skin),
-            time
-        }
-    }
-
-    /// Update the simulation
-    /// 
-    /// The positions and velocities are updated in 2 steps
-    /// First we predict the motion based on current values
-    /// Then we calculate the forces
-    /// If there are any particles that shouldn't respond to the forces (walls, prescribed motion) we call a method
-    /// which zeros those elements of the force vector.
-    /// Then we correct our prediction in light of the new forces.
-    /// Only pairs of particles within the cutoff distance are 
-    /// calculated for the pair forces.
-    pub fn update(&mut self){
-
-        // Predict the new positions, velocities etc
-        self.sim_update.update_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, self.time);
-
-
-        // Form the cell_grid, putting particles in
-        if self.sim_update.has_single_forces() || self.sim_update.has_pair_forces(){
-            //Clear the force buffer and check same length as particles
-            self.reset_forces();
-        }
-
-        if self.sim_update.has_single_forces(){
-            // Single forces apply to individual particles
-            for i in 0..self.particles.len(){
-                self.sim_update.update_single_forces(i, &mut self.forces, &mut self.torques, &self.particles, &self.settings, self.time);
+        /// Create a new simulation
+        pub fn new(particles: ParticleVec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
+            let n = particles.len();
+            Self {
+                particles,
+                forces : vec![DVec3::ZERO; n],
+                torques : vec![DVec3::ZERO; n],
+                sim_update,
+                settings: settings.clone(),
+                current_step: settings.start,
+                cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n, settings.skin),
+                time
             }
         }
 
-        // Grid means you only check particles nearby. Then it calculates all pair forces 
-        // between particles i and j.
-        if self.sim_update.has_pair_forces(){
-            //Check if grid and verlet lists need recalculating
-            self.cell_grid.check_and_rebuild_neighbours(&mut self.particles, &self.settings);
-            //appy pairwise forces
-            self.cell_grid.apply_pair_forces(
-                &mut self.forces, 
-                &mut self.torques,
-                &self.particles, 
-                &self.sim_update, 
-                &self.settings
-                );
+        /// Update the simulation
+        /// 
+        /// The positions and velocities are updated in 2 steps
+        /// First we predict the motion based on current values
+        /// Then we calculate the forces
+        /// If there are any particles that shouldn't respond to the forces (walls, prescribed motion) we call a method
+        /// which zeros those elements of the force vector.
+        /// Then we correct our prediction in light of the new forces.
+        /// Only pairs of particles within the cutoff distance are 
+        /// calculated for the pair forces.
+        pub fn update(&mut self){
+
+            // Predict the new positions, velocities etc
+            self.sim_update.update_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, self.time);
+
+
+            if self.sim_update.has_single_forces() || self.sim_update.has_pair_forces(){
+                //Clear the force buffer and check same length as particles
+                self.reset_forces();
+            }
+
+            if self.sim_update.has_single_forces(){
+                // Single forces apply to individual particles
+                for i in 0..self.particles.len(){
+                    if self.settings.is_active(self.particles.ptype[i]){
+                        self.sim_update.update_single_forces(i, &mut self.forces, &mut self.torques, &self.particles, &self.settings, self.time);
+                    }
+                }
+            }
+
+            // Grid means you only check particles nearby. Then it calculates all pair forces 
+            // between particles i and j.
+            if self.sim_update.has_pair_forces(){
+                //Check if grid and verlet lists need recalculating
+                self.cell_grid.check_and_rebuild_neighbours(&mut self.particles, &self.settings);
+                //appy pairwise forces
+                self.cell_grid.apply_pair_forces(
+                    &mut self.forces, 
+                    &mut self.torques,
+                    &self.particles, 
+                    &self.sim_update, 
+                    &self.settings
+                    );
+            }
+
+            if self.sim_update.has_internal_forces(){
+                for i in 0..self.particles.len() {
+                    // we will use the linked list from the head particle to calculate internal forces and torques.
+                    if self.settings.is_head(self.particles.ptype[i] as u8){
+                        todo!()
+                    }
+                    
+                }
+            }
+
+            // Perform correction to the motion based on the updated forces
+            self.sim_update.correct_motion(&self.forces, &self.torques, &mut self.particles, &self.settings);
+
+            // Update simulation time
+            self.time += self.settings.dt;
+            
         }
 
-        // Prevents some particles from responding to the forces eg walls.
-        self.sim_update.update_ptype_no_forces(&mut self.forces, &mut self.torques, &self.particles);
+        //Return read only reference to particles
+        pub fn get_particles(&self)-> &ParticleVec{
+            &self.particles
+        }
 
+        //Return mut reference to particles
+        pub fn get_mut_particles(&mut self)-> &mut ParticleVec{
+            &mut self.particles
+        }
 
-        // Perform correction to the motion based on the updated forces
-        self.sim_update.correct_motion(&self.forces, &self.torques, &mut self.particles, &self.settings);
-
-        // Update simulation time
-        self.time += self.settings.dt;
-        
-    }
-
-    //Return read only reference to particles
-    pub fn get_particles(&self)-> &ParticleVec{
-        &self.particles
-    }
-
-    //Return mut reference to particles
-    pub fn get_mut_particles(&mut self)-> &mut ParticleVec{
-        &mut self.particles
-    }
-
-    /// Reset the force vec to Zeros
-    /// 
-    /// This resets but it also checks if the array has changed size due
-    /// to creation or destruction of particles
-    fn reset_forces(&mut self){
-        if self.forces.len() != self.particles.len(){
-            self.forces.resize(self.particles.len(), DVec3::ZERO);
-            self.torques.resize(self.particles.len(), DVec3::ZERO);
-        }else{
-            self.forces.fill(DVec3::ZERO);
-            self.torques.fill(DVec3::ZERO);
+        /// Reset the force vec to Zeros
+        /// 
+        /// This resets but it also checks if the array has changed size due
+        /// to creation or destruction of particles
+        fn reset_forces(&mut self){
+            if self.forces.len() != self.particles.len(){
+                self.forces.resize(self.particles.len(), DVec3::ZERO);
+                self.torques.resize(self.particles.len(), DVec3::ZERO);
+            }else{
+                self.forces.fill(DVec3::ZERO);
+                self.torques.fill(DVec3::ZERO);
+            }
         }
     }
-}
+    
 
 
 

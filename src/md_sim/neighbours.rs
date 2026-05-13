@@ -136,7 +136,7 @@ impl CellGrid {
         self.verlet_table.resize(new_count, Vec::with_capacity(20));
     }
 
-    // Put particles into cells and build linked lists
+    // Put particles into cells and build linked lists associated with each cell
     fn bin(&mut self, particles: &ParticleVec) {
         self.heads.fill(None);
         for (i, pos) in particles.position.iter().enumerate() {
@@ -158,52 +158,76 @@ impl CellGrid {
         // Sync the reference positions
         particles.ref_pos.copy_from_slice(&particles.position);
 
+        //for each cell in the grid look at other particles in the linked list
+        // and check if they should be added to that particles verlet list. Then repeat
+        // process for particles in the neighbouring cells. The neighbouring cell
+        // might be wrapped since sim box boundaries are periodic.
         for cell_idx in 0..self.heads.len() {
             let mut i_opt = self.heads[cell_idx];
             while let Some(i) = i_opt {
                 // Look at same cell
                 let mut j_opt = self.heads[cell_idx]; 
-                    while let Some(j) = j_opt {
-                        self.try_add_pair(i, j, search_radius_sq, particles, settings);
-                        j_opt = self.next[j];
-                    }
+                while let Some(j) = j_opt {
+                    self.try_add_pair(i, j, search_radius_sq, particles, settings);
+                    j_opt = self.next[j];
+                }
 
-                    // Look at neighbour cells
-                    for neighbour_idx in self.neighbour_table[cell_idx].clone() {
-                        let mut nj_opt = self.heads[neighbour_idx];
-                        while let Some(j) = nj_opt {
-                            self.try_add_pair(i, j, search_radius_sq, particles, settings);
-                            nj_opt = self.next[j];
-                        }
+                // Look at neighbour cells
+                for neighbour_idx in self.neighbour_table[cell_idx].clone() {
+                    let mut nj_opt = self.heads[neighbour_idx];
+                    while let Some(j) = nj_opt {
+                        self.try_add_pair(i, j, search_radius_sq, particles, settings);
+                        nj_opt = self.next[j];
                     }
-                    i_opt = self.next[i];
+                }
+                i_opt = self.next[i];
                 }
             }
         }
 
     // Check if pair should be added to particles verlet list.
     fn try_add_pair(&mut self, i: usize, j: usize, r_sq: f64, p: &ParticleVec, settings: &SimulationSettings) {
-        // This prevents double-counting and self-interaction (i == j)
+        // This prevents self-interaction (i == j) and double counting
         if i >= j {
             return;
         }
 
-        // get particle ptypes
-        let ptype_i = p.ptype[i] as usize;
-        let ptype_j = p.ptype[j] as usize;
+        // determine if particles are active
+        let ptype_i = p.ptype[i];
+        let ptype_j = p.ptype[j];
 
-        // If both are inactive don't add to a verlet list
-        if !settings.active_map[ptype_i] && !settings.active_map[ptype_j] {
+        // Check if this pair is allowed to interact based on the JSON config
+        let is_pair_allowed = settings.interaction_ptypes.iter()
+            .any(|pair| (pair[0] == ptype_i as u8 && pair[1] == ptype_j as u8) || 
+                    (pair[0] == ptype_j as u8 && pair[1] == ptype_i as u8));
+
+        if !is_pair_allowed {
             return;
         }
+
+        let active_i = settings.is_active(ptype_i);
+        let active_j = settings.is_active(ptype_j);
+
+        // If both are static ignore
+        if !active_i && !active_j { return; }
 
         // Calculate wrapped distance
         let mut delta = p.position[i] - p.position[j];
         check_delta(&mut delta, &settings.sim_box_size);
         
         if delta.length_squared() < r_sq {
-            self.verlet_table[i].push(j);
+            // If i active add to j verlet list
+            if active_i{
+                self.verlet_table[i].push(j);
+            }
+
+            // If j active add to i verlet list
+            if active_j{
+                self.verlet_table[j].push(i);
+            }
         }
+
+        
     }
 
     /// loop that uses the verlet_table
@@ -370,10 +394,10 @@ mod tests {
         let mut grid = CellGrid::new(box_size, 2.0, particles.len(), settings.skin);
         
         // Trigger the build
-        // Because ref_pos is likely still (0,0,0) from the utility, 
+        // Because ref_pos is still (0,0,0) from the utility, 
         // this will definitely trigger a rebuild.
         grid.check_and_rebuild_neighbours(&mut particles, &settings);
-        println!("{:?}", grid.verlet_table);
+
         // Assertions
         // The direct distance is 9.8, but the wrapped distance across the boundary is 0.2.
         // Since 0.2 < (cutoff + skin), they must be neighbours.
@@ -384,7 +408,98 @@ mod tests {
         
         // Verify that the table only contains the pair once (i < j logic)
         assert_eq!(grid.verlet_table[0].len(), 1);
-        assert!(grid.verlet_table[1].is_empty(), "Verlet table should respect i < j to avoid double-counting.");
+        
+    }
+
+    #[test]
+    fn test_active_ghost_interaction() {
+        let box_size = DVec3::splat(10.0);
+        // Setup: Type 0 is active, Type 1 is a ghost (not in active_mask)
+        let mut settings = SimulationSettings {
+            sim_box_size: box_size,
+            cutoff: 1.0,
+            skin: 0.2,
+            active_mask: [false; 32],
+            ..Default::default()
+        };
+        settings.active_mask[0] = true; // Only 0 is active
+
+        let mut particles = create_particle_vec();
+        particles.ptype[0] = 0; // Ball
+        particles.ptype[1] = 1; // Floor
+        particles.position[0] = DVec3::new(5.0, 5.0, 5.0);
+        particles.position[1] = DVec3::new(5.0, 5.0, 5.5); // 0.5 distance
+
+        let mut grid = CellGrid::new(box_size, 1.2, particles.len(), 0.2);
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+        // Ball (0) should have Floor (1) in its list because 0 is active
+        assert!(grid.verlet_table[0].contains(&1), "Active particle should see the ghost particle");
+        
+        // Floor (1) should NOT have Ball (0) in its list because 1 is inactive
+        assert!(!grid.verlet_table[1].contains(&0), "Ghost particle should not have its own verlet list populated");
+    }
+
+
+    #[test]
+    fn test_ghost_ghost_invisibility() {
+        let box_size = DVec3::splat(10.0);
+        let settings = SimulationSettings {
+            sim_box_size: box_size,
+            cutoff: 1.0,
+            skin: 0.2,
+            active_mask: [false; 32],
+            ..Default::default()
+        };
+        // Neither 1 nor 2 are active
+
+        let mut particles = create_particle_vec();
+        particles.ptype[0] = 1; 
+        particles.ptype[1] = 2; 
+        particles.position[0] = DVec3::new(5.0, 5.0, 5.0);
+        particles.position[1] = DVec3::new(5.0, 5.0, 5.2);
+
+        let mut grid = CellGrid::new(box_size, 1.2, particles.len(), 0.2);
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+        assert!(grid.verlet_table[0].is_empty());
+        assert!(grid.verlet_table[1].is_empty());
+    }
+
+    #[test]
+    fn test_active_mask_derivation_from_json_logic() {
+        // 1. Simulate the JSON structure for interaction_ptypes = [[0, 0]]
+        let interaction_ptypes = vec![[0 as u8, 0 as u8]];
+
+        // 2. Create settings (using a dummy box/cutoff)
+        let mut settings = SimulationSettings {
+            interaction_ptypes,
+            sim_box_size: DVec3::splat(10.0),
+            cutoff: 1.0,
+            ..Default::default()
+        };
+
+        // 3. Manually trigger the mask building logic from your 'new' function
+        // (If this logic is inside SimulationSettings::new, you could also test by 
+        // writing a temp JSON file, but testing the loop logic directly is cleaner)
+        settings.active_mask = [false; 32];
+        for pair in &settings.interaction_ptypes {
+            let ptype = pair[0] as usize; // First element defines the searcher
+            if ptype < 32 {
+                settings.active_mask[ptype] = true;
+            }
+        }
+
+        // 4. Assertions
+        assert!(
+            settings.is_active(0), 
+            "ptype 0 should be active because it appears as pair[0] in [[0,0]]"
+        );
+        
+        assert!(
+            !settings.is_active(1), 
+            "ptype 1 should NOT be active as it isn't in the interaction list"
+        );
     }
 }
 

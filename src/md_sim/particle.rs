@@ -19,8 +19,6 @@ use three_d::*;
 use soa_derive::StructOfArray;
 
 
-const NULL_ID: usize = usize::MAX;
-
 ///Particle defines a particle object which defines key properties: position, velocity etc
 #[derive(Debug, Clone, PartialEq, StructOfArray)]
 #[soa_derive(Debug, PartialEq)]
@@ -108,6 +106,7 @@ impl Particle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    const NULL_ID: usize = usize::MAX;
 
     #[test]
     fn test_particle_new() {

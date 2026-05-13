@@ -6,7 +6,6 @@
 
 use glam::DVec3;
 use rand_distr::{Normal, Distribution};
-use itertools::izip;
 
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
@@ -30,6 +29,9 @@ pub trait Forces {
     ///
     /// If `false`, the engine will skip the `update_single_forces` loop.
     fn has_single_forces(&self) -> bool { true }
+
+    /// Set this to true if your particle is composite and you need to apply forces and torques to whole.
+    fn has_internal_forces(&self) -> bool {false}
 
     /// Calculates unary forces acting on a specific particle.
     ///
@@ -72,73 +74,15 @@ pub trait Forces {
         settings: &SimulationSettings
     );
 
-    /// Finalises the force buffer by applying kinematic constraints or overrides.
-    ///
-    /// This hook is called by the engine after all single and pair forces have 
-    /// been accumulated, but before the motion integrator is applied. 
-    ///
-    /// # Default Implementation
-    /// The default implementation does nothing. To "freeze" specific particle 
-    /// types (e.g., static walls), call the standalone utility 
-    /// `zero_forces_for_ptypes()` within your implementation of this method.
-    ///
-    /// # Example
-    /// ```no run
-    /// fn update_ptype_no_forces(&self, forces: &mut [DVec3], particles: &ParticleVec) {
-    ///     // Ensure type 0 (floor) and type 1 (boundary) remain immobile
-    ///     zero_forces_for_ptypes(forces, particles, &[0, 1]);
-    /// }
-    /// ```
-    fn update_ptype_no_forces(&self, _forces: &mut [DVec3],  _torques: &mut [DVec3], _particles: &ParticleVec) {
-        // Default: No constraints applied.
-    }
+    fn update_internal_forces(
+        &self,
+        particles: &ParticleVec, 
+        forces: &mut [DVec3], 
+        torques: &mut [DVec3],
+        settings: &SimulationSettings
+    ); 
 }
 
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-//
-// Single Forces - forces applied to individual particles
-//
-// -------------------------------------------------------------------------------------------------
-// -------------------------------------------------------------------------------------------------
-
-
-/// Enforces kinematic constraints by zeroing forces for specific particle types.
-///
-/// This function acts as a post-processing step to ensure that certain particle types 
-/// (such as static boundaries, fixed obstacles, or particles with prescribed motion) 
-/// do not respond to calculated physical forces.
-///
-/// # Arguments
-///
-/// * `forces` - The mutable buffer of accumulated forces to be filtered.
-/// * `particles` - A reference to the particle data, used to check `ptype`.
-/// * `no_force_ptypes` - A slice of type IDs that should remain unaffected by forces.
-///
-/// # Example
-///
-/// ```no run
-/// // Freeze particles of type 1 (floor) and type 2 (walls)
-/// let immobile = [1, 2];
-/// simupdate.zero_forces_for_ptypes(&mut forces, &particles, &immobile);
-/// ```
-///
-/// # Notes
-///
-/// * **Execution Order:** This should be called after all force contributors (single and pair) 
-///   have been added to the buffer, but before the motion integrator updates velocities.
-/// * **Prescribed Motion:** Zeroing the force is necessary for particles following a 
-///   pre-defined trajectory to prevent physical interactions from deviating them from 
-///   their path.
-pub fn zero_forces_for_ptypes(forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec, no_force_ptypes: &[usize]) {
-    for (f, t, &p_type) in izip!(forces.iter_mut(), torques.iter_mut(),particles.ptype.iter()) {
-        // If the current particle's type is in the 'no_force' list, zero it
-        if no_force_ptypes.contains(&p_type) {
-            *f = DVec3::ZERO;
-            *t = DVec3::ZERO;
-        }
-    }
-}
 
 
 
@@ -255,6 +199,10 @@ pub fn active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec, set
 /// This function handles both central repulsion (normal force) and optional surface friction 
 /// (tangential force). It accounts for rotational dynamics by calculating relative velocity 
 /// at the contact point and applying resulting torques.
+/// 
+/// N.B because each particle is stored in each others Verlet list (ie i knows about j and j knows about i)
+/// when an interaction is possible we don't apply Newton's third law (ie $F_ij = -F_ji$). This is done
+/// by running this function for both i, j and j,i.
 ///
 /// # Physical Model
 ///
@@ -287,7 +235,7 @@ pub fn active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec, set
 /// search loops. For models without friction, the tangential and torque logic is 
 /// bypassed to maintain high execution speeds.
 #[inline(always)]
-pub fn granular_collision(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3], torques: &mut [DVec3], settings: &SimulationSettings) {    
+pub fn granular_collision(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3], torques: &mut [DVec3], settings: &SimulationSettings) {   
     // Extract params
     let (stiffness, damping, mu_opt) = match &settings.model {
         SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
@@ -337,15 +285,14 @@ pub fn granular_collision(i: usize, j: usize, particles: &ParticleVec, forces: &
 
                 // Apply Tangential Forces and Torques
                 forces[i] += f_t_vec;
-                forces[j] -= f_t_vec;
+                //forces[j] -= f_t_vec;
                 torques[i] += r_i.cross(f_t_vec);
-                torques[j] -= r_j.cross(f_t_vec);
+                //torques[j] -= r_j.cross(f_t_vec);
             }
         }
 
         // Apply Normal Force (Shared)
         forces[i] += f_normal_vec;
-        forces[j] -= f_normal_vec;
     }
 }
 
@@ -382,7 +329,6 @@ pub fn weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], particles
 
                 // Apply Newton's Third Law (Equal and Opposite)
                 forces[i] += force_vec;
-                forces[j] -= force_vec;
 
             }
         }
@@ -460,21 +406,6 @@ mod tests {
     // Test single particle forces
     // -----------------------------------------------------------------
 
-    #[test]
-    fn test_check_zero_forces(){
-        // Create dummy particle data
-            let particles = create_particle_vec();
-            let mut forces = vec![DVec3::new(1.0,1.0,1.0), DVec3::new(1.0,1.0,1.0)];
-            let mut torques = vec![DVec3::new(1.0,1.0,1.0), DVec3::new(1.0,1.0,1.0)];
-            
-            zero_forces_for_ptypes(&mut forces,  &mut torques, &particles, &[1]);
-
-            assert!(forces[0].x == 1.0);
-            assert!(forces[1].x == 0.0);
-            assert!(torques[0].x == 1.0);
-            assert!(torques[1].x == 0.0);
-    }
-
 
     #[test]
     fn test_add_weight() {
@@ -537,9 +468,9 @@ fn test_granular_collision() {
         start: 0,
         num_steps: 100,
         dump: 10,
-        active_ptypes:vec![0],
+        interaction_ptypes:vec![[0 as u8,0 as u8]],
         model,                 // Our Solid model
-        active_map: [true; 32]
+        active_mask: [true; 32]
     };
 
     let mut forces = vec![DVec3::ZERO; particles.len()];

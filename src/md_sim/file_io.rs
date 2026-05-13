@@ -26,6 +26,8 @@ use itertools::izip;
 
 use crate::md_viz::scene::SceneSetup;
 
+const NULL_ID: usize = usize::MAX;
+
 /// Generate all the filepaths
 /// 
 /// use the file!() macro as input. Do this [sim_config,scene_config, snapshot, video]=filepaths(file!());
@@ -212,6 +214,29 @@ pub fn save_snapshot(
     Ok(())
 }
 
+
+/// Helper to get a column or return a fallback Series of a specific type
+/// 
+/// let next_id_series = get_u64_col(&df, "next_id", NULL_ID as u64);
+/// let next_id_col = next_id_series.u64()?;
+/// Specialized helper for ID columns (u64)
+pub fn get_u64_col(df: &DataFrame, name: &str, filler: u64) -> Series {
+    df.column(name)
+        .cloned()
+        .unwrap_or_else(|_| {
+            UInt64Chunked::full(name, filler, df.height()).into_series()
+        })
+}
+
+/// Specialized helper for Physical columns (f64)
+pub fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
+    df.column(name)
+        .cloned()
+        .unwrap_or_else(|_| {
+            Float64Chunked::full(name, filler, df.height()).into_series()
+        })
+}
+
 /// Load particle snapshot from Parquet file
 /// 
 /// Each row in file represents a particle. Each column is a field
@@ -219,6 +244,12 @@ pub fn save_snapshot(
 /// 
 /// # Arguments
 /// * `file_path` - Path to the snapshot file
+/// 
+/// The input from python script has compulsory params. All optional params
+/// are filled with default values. These may not be physically meaningful. If for example
+/// you need inertia you need to define it.
+/// compulsory : id, x,y,z,radius,mass
+/// optional : next_id,rel_x,rel_y,rel_z,vx,vy,vz,phi_x,phi_y,phi_z,wx,wy,wz,inertia,r,g,b,a
 /// 
 /// # Returns
 /// * `(particles, time)` - Vector of particles and simulation time
@@ -232,31 +263,51 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 
     let t_col = df.column("t")?.f64()?;
     let id_col = df.column("id")?.u64()?;
-    let next_id_col = df.column("next_id")?.u64()?;
-    let ptype_col = df.column("ptype")?.u64()?;
+    let next_id_series = get_u64_col(&df, "next_id", NULL_ID as u64);
+    let next_id_col = next_id_series.u64()?;
+    let ptype_series = get_u64_col(&df, "ptype", 0 as u64);
+    let ptype_col = ptype_series.u64()?;
     let x_col = df.column("x")?.f64()?;
     let y_col = df.column("y")?.f64()?;
     let z_col = df.column("z")?.f64()?;
-    let rel_x_col = df.column("rel_x")?.f64()?;
-    let rel_y_col = df.column("rel_y")?.f64()?;
-    let rel_z_col = df.column("rel_z")?.f64()?;
-    let vx_col = df.column("vx")?.f64()?;
-    let vy_col = df.column("vy")?.f64()?;
-    let vz_col = df.column("vz")?.f64()?;
-    let phi_x_col = df.column("phi_x")?.f64()?;
-    let phi_y_col = df.column("phi_y")?.f64()?;
-    let phi_z_col = df.column("phi_z")?.f64()?;
-    let wx_col = df.column("wx")?.f64()?;
-    let wy_col = df.column("wy")?.f64()?;
-    let wz_col = df.column("wz")?.f64()?;
+    let rel_x_series = get_f64_col(&df, "rel_x", 0.0);
+    let rel_x_col = rel_x_series.f64()?;
+    let rel_y_series = get_f64_col(&df, "rel_y", 0.0);
+    let rel_y_col = rel_y_series.f64()?;
+    let rel_z_series = get_f64_col(&df, "rel_z", 0.0);
+    let rel_z_col = rel_z_series.f64()?;
+    let vx_series = get_f64_col(&df, "vx", 0.0);
+    let vx_col = vx_series.f64()?;
+    let vy_series = get_f64_col(&df, "vy", 0.0);
+    let vy_col = vy_series.f64()?;
+    let vz_series = get_f64_col(&df, "vz", 0.0);
+    let vz_col = vz_series.f64()?;
+    let phix_series = get_f64_col(&df, "phi_x", 0.0);
+    let phi_x_col = phix_series.f64()?;
+    let phiy_series = get_f64_col(&df, "phi_y", 0.0);
+    let phi_y_col = phiy_series.f64()?;
+    let phiz_series = get_f64_col(&df, "phi_z", 0.0);
+    let phi_z_col = phiz_series.f64()?;
+    let wx_series = get_f64_col(&df, "wx", 0.0);
+    let wx_col = wx_series.f64()?;
+    let wy_series = get_f64_col(&df, "wy", 0.0);
+    let wy_col = wy_series.f64()?;
+    let wz_series = get_f64_col(&df, "wz", 0.0);
+    let wz_col = wz_series.f64()?;
     let r_col = df.column("radius")?.f64()?;
     let m_col = df.column("mass")?.f64()?;
-    let j_col = df.column("inertia")?.f64()?;
-    let q_col = df.column("charge")?.f64()?;
-    let col_r = df.column("r")?.f64()?;
-    let col_g = df.column("g")?.f64()?;
-    let col_b = df.column("b")?.f64()?;
-    let col_a = df.column("a")?.f64()?;
+    let j_series = get_f64_col(&df, "inertia", NULL_ID as f64);
+    let j_col = j_series.f64()?;
+    let q_series = get_f64_col(&df, "charge", 0.0);
+    let q_col = q_series.f64()?;
+    let r_series = get_f64_col(&df, "r", 255.0);
+    let col_r = r_series.f64()?;
+    let g_series = get_f64_col(&df, "g", 0.0);
+    let col_g = g_series.f64()?;
+    let b_series = get_f64_col(&df, "b", 0.0);
+    let col_b = b_series.f64()?;
+    let a_series = get_f64_col(&df, "a", 255.0);
+    let col_a = a_series.f64()?;
 
     let t = t_col.get(0).unwrap_or(0.0);
 
@@ -385,7 +436,7 @@ pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSetup, Box<dy
 mod tests {
     use super::*;
     use tempfile::tempdir;
-    const NULL_ID: usize = usize::MAX;
+    
 
     #[test]
     fn test_filepath()-> Result<(), Box<dyn std::error::Error>>{

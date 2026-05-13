@@ -7,3 +7,6 @@ target-dir = "C:/temp/rust-builds/md"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[profile.test]
+incremental = false

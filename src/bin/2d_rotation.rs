@@ -15,7 +15,7 @@ use md::md_sim::simulation::SimulationSettings;
 use md::md_sim::force::{Forces, granular_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
-use md::md_sim::force::{add_weight, zero_forces_for_ptypes};
+use md::md_sim::force::add_weight;
 use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct};
 
 use md::md_viz::scene::Scene;
@@ -41,12 +41,6 @@ impl Forces for SimUpdate{
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
         granular_collision(i, j, particles, forces, torques, settings);
-    }
-
-    // For particles that shouldn't follow the calculated forces e.g walls etc.
-    fn update_ptype_no_forces(&self, forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec){
-        let immobile = &[0, 1];
-        zero_forces_for_ptypes(forces, torques, particles, immobile);
     }
 }
 

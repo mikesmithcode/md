@@ -6,7 +6,7 @@
   "start": 0,
   "num_steps": 50000,
   "dump": 50,
-  "active_ptypes": [0],
+  "interaction_ptypes": [[0,0]],
   "model": {
     "type": "Active",
     "stiffness": 200.0,
