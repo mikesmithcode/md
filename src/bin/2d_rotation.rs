@@ -48,8 +48,6 @@ impl Forces for SimUpdate{
 
     fn update_internal_forces(&self, particles: &ParticleVec, forces: &mut [DVec3], torques: &mut [DVec3], settings: &SimulationSettings){
         
-
-
     }
 }
 

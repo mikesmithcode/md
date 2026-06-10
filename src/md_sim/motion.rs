@@ -161,20 +161,20 @@ pub fn verlet_integrate_rigid_bodies(
         let mut pos = DVec3::ZERO;
         let mut vel = DVec3::ZERO;
 
-        let num_particles = pids.len() as f64;
-
-        
+          
         // Calculate aggregate quantites of molecule
         for &idx in pids {
             total_force += forces[idx];
             total_torque += torques[idx] + particles.rel_pos[idx].cross(forces[idx]);
             total_mass += particles.mass[idx];
         
-            //Divide by num particles
-            pos += particles.position[idx]/num_particles;
-            vel += particles.velocity[idx]/num_particles;
+            //For calculating COM and vel.
+            pos += (particles.position[idx]+particles.rel_pos[idx])*particles.mass[idx];
+            vel += particles.velocity[idx]*particles.mass[idx];
         }
 
+        pos /= total_mass;
+        vel /= total_mass;
 
         //Update based on the COM of molecule.
         let acceleration = total_force / total_mass;
@@ -185,10 +185,14 @@ pub fn verlet_integrate_rigid_bodies(
 
         check_periodic(&mut pos, sim_box_size);
 
+        //temporary before adding rotation.
+        let Rot_mat = DMat3::IDENTITY;
+
         for &idx in pids {
             // Update individual particle positions based on molecule
-            particles.position[idx] = pos;
-            particles.velocity[idx] = vel;
+            particles.position[idx] = pos + Rot_mat*particles.rel_pos[idx];
+            // Correct formula for particle velocity in a rigid body:
+            particles.velocity[idx] = vel + (particles.omega[0].cross(Rot_mat * particles.rel_pos[idx]));
         }
     }
 }
@@ -223,16 +227,22 @@ pub fn verlet_integrate_rigid_bodies_correct(
             total_mass += particles.mass[idx];
         
             //Divide by num particles
-            vel += particles.velocity[idx]/num_particles;
+            vel += particles.velocity[idx]*particles.mass[idx];
         }
+
+        vel /= total_mass;
        
         let acceleration = total_force / total_mass;
         // Half-step velocity update
         vel += acceleration * half_dt;
 
+
+        //temporary before adding rotation.
+        let Rot_mat = DMat3::IDENTITY;
+
         for &idx in pids {
             // Update individual particle positions based on molecule
-            particles.velocity[idx] = vel;
+            particles.velocity[idx] = vel + (particles.omega[0].cross(Rot_mat * particles.rel_pos[idx]));
         }
 
     }
