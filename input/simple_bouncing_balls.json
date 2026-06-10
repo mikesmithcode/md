@@ -6,7 +6,7 @@
   "start": 0,
   "num_steps": 1500000,
   "dump": 100,
-  "interaction_ptypes": [[0,0]],
+  "interaction_ptypes": [[1,0]],
   "model": {
     "type": "Solid",
     "stiffness": 665000.0,

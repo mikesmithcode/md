@@ -6,7 +6,7 @@
   "start": 0,
   "num_steps": 50000,
   "dump": 100,
-  "interaction_ptypes": [[0,1],[2,3]],
+  "interaction_ptypes": [[0,1],[2,2]],
   "model": {
     "type": "SolidFriction",
     "stiffness": 665000.0,

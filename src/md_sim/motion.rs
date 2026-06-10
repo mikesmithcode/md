@@ -4,7 +4,12 @@
 //! update_motion() which occurs before forces are calculated and correct_motion() which occurs afterwards.
 
 
-use glam::DVec3;
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::thread;
+use std::time;
+
+use glam::{DVec3,DMat3};
 use itertools::izip;
 use three_d::Srgba;
 use rand_distr::Distribution;
@@ -40,6 +45,7 @@ pub trait Motion {
         torques: &[DVec3],
         particles: &mut ParticleVec, 
         settings: &SimulationSettings,
+        molecule_map: &HashMap<usize, Vec<usize>>,
         time: f64
     );
 
@@ -62,7 +68,8 @@ pub trait Motion {
         _forces: &[DVec3], 
         _torques: &[DVec3],
         _particles: &mut ParticleVec, 
-        _settings: &SimulationSettings
+        _settings: &SimulationSettings,
+        _molecule_map: &HashMap<usize, Vec<usize>>
     ) {
         // Optional: No correction by default
     }
@@ -111,6 +118,125 @@ pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &Sim
     }
 }
 
+
+
+/// Builds a rotation matrix from an orientation vector (assuming Axis-Angle)
+/// orientation: vector where length is the angle, and direction is the axis
+pub fn build_rotation_matrix(orientation: DVec3) -> DMat3 {
+    let angle = orientation.length();
+    if angle < 1e-9 {
+        return DMat3::IDENTITY; // No rotation
+    }
+    
+    let axis = orientation / angle;
+    // Creates a rotation matrix from an axis and an angle
+    DMat3::from_axis_angle(axis, angle)
+}
+
+/// Performs the first half of the Velocity Verlet integration for multiparticle rigid bodies (Prediction).
+///
+/// This function should be called inside `update_motion`. It uses the forces 
+/// from the **previous** timestep to:
+/// 1. Update velocities by a half-step: $v(t + \frac{\Delta t}{2}) = v(t) + \frac{a(t)\Delta t}{2}$
+/// 2. Update positions by a full step: $x(t + \Delta t) = x(t) + v(t + \frac{\Delta t}{2})\Delta t$
+///
+/// After this call, positions are finalised for the current step, allowing 
+/// for new force calculations (e.g., collisions) at $x(t + \Delta t)$.
+pub fn verlet_integrate_rigid_bodies(
+    forces: &[DVec3], 
+    torques: &[DVec3],
+    particles: &mut ParticleVec, 
+    molecule_map: &HashMap<usize, Vec<usize>>,
+    settings: &SimulationSettings
+) {
+    let dt = settings.dt;
+    let half_dt = dt * 0.5;
+    let sim_box_size = settings.sim_box_size;
+
+    //Iterate over molecules
+    for (_m_id, pids) in molecule_map {
+        let mut total_force = DVec3::ZERO;
+        let mut total_torque = DVec3::ZERO;
+        let mut total_mass = 0.0;
+        let mut pos = DVec3::ZERO;
+        let mut vel = DVec3::ZERO;
+
+        let num_particles = pids.len() as f64;
+
+        
+        // Calculate aggregate quantites of molecule
+        for &idx in pids {
+            total_force += forces[idx];
+            total_torque += torques[idx] + particles.rel_pos[idx].cross(forces[idx]);
+            total_mass += particles.mass[idx];
+        
+            //Divide by num particles
+            pos += particles.position[idx]/num_particles;
+            vel += particles.velocity[idx]/num_particles;
+        }
+
+
+        //Update based on the COM of molecule.
+        let acceleration = total_force / total_mass;
+        // Half-step velocity update
+        vel += acceleration * half_dt;
+        // Full-step position update
+        pos += vel * dt;
+
+        check_periodic(&mut pos, sim_box_size);
+
+        for &idx in pids {
+            // Update individual particle positions based on molecule
+            particles.position[idx] = pos;
+            particles.velocity[idx] = vel;
+        }
+    }
+}
+
+
+/// Performs the second half of the Velocity Verlet integration for rigid bodies (Correction).
+///
+/// This function should be called inside `correct_motion`. It uses the forces 
+/// calculated at the **new** positions to finalise the velocities:
+/// $v(t + \Delta t) = v(t + \frac{\Delta t}{2}) + \frac{a(t + \Delta t)\Delta t}{2}$
+pub fn verlet_integrate_rigid_bodies_correct(
+    forces: &[DVec3], 
+    torques: &[DVec3],
+    particles: &mut ParticleVec, 
+    molecule_map: &HashMap<usize, Vec<usize>>,
+    settings: &SimulationSettings
+) {
+    let half_dt = settings.dt * 0.5;
+    //Iterate over molecules
+    for (_m_id, pids) in molecule_map {
+        let mut total_force = DVec3::ZERO;
+        let mut total_torque = DVec3::ZERO;
+        let mut total_mass = 0.0;
+        let mut vel = DVec3::ZERO;
+
+        let num_particles = pids.len() as f64;
+    
+        // Calculate aggregate quantites of molecule
+        for &idx in pids {
+            total_force += forces[idx];
+            total_torque += torques[idx] + particles.rel_pos[idx].cross(forces[idx]);
+            total_mass += particles.mass[idx];
+        
+            //Divide by num particles
+            vel += particles.velocity[idx]/num_particles;
+        }
+       
+        let acceleration = total_force / total_mass;
+        // Half-step velocity update
+        vel += acceleration * half_dt;
+
+        for &idx in pids {
+            // Update individual particle positions based on molecule
+            particles.velocity[idx] = vel;
+        }
+
+    }
+}
 
 
 
@@ -198,7 +324,6 @@ pub fn integrate_verlet_correct(
         }
     }
 }
-
 
 
 /// Enforces periodic boundary conditions by wrapping a position into the primary simulation box.

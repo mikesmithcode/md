@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 1. Configuration - Set your environment path here once
-PYTHON_EXEC="/c/Users/mikei/miniconda3/envs/md/python.exe"
+PYTHON_EXEC=".venv/Scripts/python.exe"
 
 # 2. Flag Logic
 RUN_CLEAN=false

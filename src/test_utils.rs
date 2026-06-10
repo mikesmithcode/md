@@ -10,7 +10,7 @@
         particles.push(
             Particle {
                 id: 0,
-                next_id: NULL_ID,
+                molecule_id: 0,
                 ptype: 0,
                 position: DVec3::new(1.0, 2.0, 3.0),
                 rel_pos: DVec3::ZERO,
@@ -27,7 +27,7 @@
         particles.push(
             Particle {
                 id: 1,
-                next_id: NULL_ID,
+                molecule_id: 1,
                 ptype: 1,
                 position: DVec3::new(1.0, 2.0, 3.0),
                 velocity: DVec3::new(0.1, 0.2, 0.3),

@@ -24,7 +24,7 @@ use soa_derive::StructOfArray;
 #[soa_derive(Debug, PartialEq)]
 pub struct Particle {
     pub id: usize,
-    pub next_id: usize,
+    pub molecule_id: usize,
     pub ptype: usize,
     pub position: DVec3,  
     pub rel_pos: DVec3,
@@ -49,10 +49,10 @@ impl Particle {
     /// # Arguments
     ///
     /// * `id` - A unique identifier for the particle.
-    /// * `next_id` - ids allow for a linked list of connected particles. None if end of linked list
+    /// * `molecule_id` - id shared by all particles in a molecule. If isolated particle set to 
     /// * `ptype` - The category ID (used for filtering or specific behaviours).
     /// * `position` - Initial coordinates in the simulation box.
-    /// * `rel_pos` - This is the position relative to particle at head of linked list.
+    /// * `rel_pos` - This is the position relative to COM of particle.
     /// * `velocity` - Initial velocity vector.
     /// * `orientation` - Initial orientation, set to 0,0,0 if not needed.
     /// * `omega` - Initial angular velocity, set to 0,0,0 if not needed.
@@ -63,7 +63,7 @@ impl Particle {
     ///
     pub fn new(
         id: usize,
-        next_id: usize, 
+        molecule_id: usize, 
         ptype: usize, 
         position: DVec3,
         rel_pos: DVec3, 
@@ -83,7 +83,7 @@ impl Particle {
 
         Particle { 
             id, 
-            next_id,
+            molecule_id,
             ptype, 
             position,
             rel_pos, 

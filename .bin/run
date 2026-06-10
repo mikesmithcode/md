@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # 1. Configuration
-PYTHON_EXEC="/c/Users/mikei/miniconda3/envs/md/python.exe"
+PYTHON_EXEC=".venv/Scripts/python.exe"
 RUN_CLEAN=false
 
 # 2. Process the "-c" flag

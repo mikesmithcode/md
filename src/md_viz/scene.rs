@@ -177,9 +177,9 @@ impl Scene {
         transforms.clear();
         colors.clear();
 
-        for (pos, rad, col) in soa_zip!(particles, [position, radius, color]) {
+        for (pos, rel_pos, rad, col) in soa_zip!(particles, [position, rel_pos, radius, color]) {
             transforms.push(
-                Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) 
+                Mat4::from_translation(vec3((pos.x + rel_pos.x) as f32, (pos.y + rel_pos.y) as f32, (pos.z + rel_pos.z) as f32)) 
                 * Mat4::from_scale(*rad as f32) // Radii changes are handled here
             );
             colors.push(*col); // Colour changes are handled here

@@ -1,7 +1,6 @@
 """Setup script for coeff"""
 
-from asyncio.windows_events import NULL
-from tarfile import NUL
+
 
 import polars as pl
 
@@ -11,7 +10,7 @@ import matplotlib.pyplot as plt
 import os
 
 
-from utility import get_config, plot_circles_orientation, NULL_ID
+from utility import get_config, plot_circles_orientation
 
 
 config, snapshot_filepath = get_config(__file__)
@@ -20,10 +19,12 @@ box_z = config["sim_box_size"][2]
 
 id=0
 
+#'x','y','z' specifies the molecules centre of mass. Global position = eg x + rel_x
+
 base_particle = {
         "t": 0.0,
         "id": id,
-        "next_id": NULL_ID, 
+        "molecule_id": 0, 
         "ptype": 0,
         "x" : 0.025,
         "y" : 0.005,
@@ -55,11 +56,11 @@ base_particle = {
 particle = base_particle.copy()
 particle2 = base_particle.copy()
 particle["z"] = 0.045
-particle["next_id"] = 2
+particle["molecule_id"] = 0
 #particle["x"] += 0.0005
 id += 1
 particle2["id"] = id
-particle2["next_id"] = 3
+particle2["molecule_id"] = 1
 particle2["ptype"] = 1
 
 #charges
@@ -67,14 +68,11 @@ charge = particle.copy()
 id += 1
 charge["id"] = id
 charge["ptype"] = 2
-charge["next_id"]= NULL_ID
+charge["molecule_id"]= 0
 charge["radius"]=0.1*particle["radius"]
 charge["rel_x"] = particle["radius"]*0.5*particle["phi_x"]
 charge["rel_y"] = particle["radius"]*0.5*particle["phi_y"]
 charge["rel_z"] = particle["radius"]*0.5*particle["phi_z"]
-charge["x"] = particle["x"] + charge["rel_x"]
-charge["y"] = particle["y"] + charge["rel_y"]
-charge["z"] = particle["z"] + charge["rel_z"]
 charge["phi_x"] = 0.0
 charge["phi_y"] = 0.0
 charge["phi_z"] = 0.0
@@ -87,14 +85,11 @@ charge2 = particle2.copy()
 id += 1
 charge2["id"] = id
 charge2["ptype"] = 3
-charge2["next_id"]= NULL_ID
+charge2["molecule_id"]= 1
 charge2["radius"]=0.1*particle2["radius"]
 charge2["rel_x"] = particle2["radius"]*0.5*particle2["phi_x"]
 charge2["rel_y"] = particle2["radius"]*0.5*particle2["phi_y"]
 charge2["rel_z"] = particle2["radius"]*0.5*particle2["phi_z"]
-charge2["x"] = particle2["x"] + charge2["rel_x"]
-charge2["y"] = particle2["y"] + charge2["rel_y"]
-charge2["z"] = particle2["z"] + charge2["rel_z"]
 charge2["phi_x"] = 0.0
 charge2["phi_y"] = 0.0
 charge2["phi_z"] = 0.0
@@ -114,7 +109,7 @@ df=pl.concat([df, df_4])
 
 df = df.with_columns(pl.col("ptype").cast(pl.UInt64))
 df = df.with_columns(pl.col("id").cast(pl.UInt64))
-df = df.with_columns(pl.col("next_id").cast(pl.UInt64))
+df = df.with_columns(pl.col("molecule_id").cast(pl.UInt64))
 
 df.write_parquet(snapshot_filepath)
 print(df)

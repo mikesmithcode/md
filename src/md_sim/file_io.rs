@@ -163,13 +163,13 @@ pub fn save_snapshot(
 
     let t: Vec<f64> = vec![time;particles.len()];
     let id: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
-    let next_id: Vec<u64> = particles.next_id.iter().map(|&next_id| next_id as u64).collect();
+    let molecule_id: Vec<u64> = particles.molecule_id.iter().map(|&molecule_id| molecule_id as u64).collect();
     let ptype: Vec<u64> = particles.ptype.iter().map(|&ptype| ptype as u64).collect();
 
     let mut df = df!(
         "t" => &t,
         "id" => &id,
-        "next_id" => &next_id,
+        "molecule_id" => &molecule_id,
         "ptype" => &ptype,
         "x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
         "y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
@@ -217,10 +217,20 @@ pub fn save_snapshot(
 
 /// Helper to get a column or return a fallback Series of a specific type
 /// 
-/// let next_id_series = get_u64_col(&df, "next_id", NULL_ID as u64);
-/// let next_id_col = next_id_series.u64()?;
+/// let molecule_id_series = get_u64_col(&df, "molecule_id", NULL_ID as u64);
+/// let molecule_id_col = molecule_id_series.u64()?;
 /// Specialized helper for ID columns (u64)
-pub fn get_u64_col(df: &DataFrame, name: &str, filler: u64) -> Series {
+pub fn get_u64_col_or_id(df: &DataFrame) -> PolarsResult<Series> {
+    match df.column("molecule_id") {
+        Ok(col) => Ok(col.clone()),
+        Err(_) => {
+            // Fallback: If "molecule_id" is missing, use the "id" column
+            Ok(df.column("id")?.clone())
+        }
+    }
+}
+
+pub fn get_u64_col_or_filler(df: &DataFrame, name: &str, filler: u64) -> Series {
     df.column(name)
         .cloned()
         .unwrap_or_else(|_| {
@@ -249,7 +259,7 @@ pub fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
 /// are filled with default values. These may not be physically meaningful. If for example
 /// you need inertia you need to define it.
 /// compulsory : id, x,y,z,radius,mass
-/// optional : next_id,rel_x,rel_y,rel_z,vx,vy,vz,phi_x,phi_y,phi_z,wx,wy,wz,inertia,r,g,b,a
+/// optional : molecule_id,rel_x,rel_y,rel_z,vx,vy,vz,phi_x,phi_y,phi_z,wx,wy,wz,inertia,r,g,b,a
 /// 
 /// # Returns
 /// * `(particles, time)` - Vector of particles and simulation time
@@ -263,9 +273,9 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 
     let t_col = df.column("t")?.f64()?;
     let id_col = df.column("id")?.u64()?;
-    let next_id_series = get_u64_col(&df, "next_id", NULL_ID as u64);
-    let next_id_col = next_id_series.u64()?;
-    let ptype_series = get_u64_col(&df, "ptype", 0 as u64);
+    // Use .clone() to own the data, avoiding the "temporary borrow" error
+    let molecule_id_col = get_u64_col_or_id(&df)?.u64()?.clone();
+    let ptype_series = get_u64_col_or_filler(&df, "ptype", 0 as u64);
     let ptype_col = ptype_series.u64()?;
     let x_col = df.column("x")?.f64()?;
     let y_col = df.column("y")?.f64()?;
@@ -313,9 +323,9 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, next_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,phi_x, phi_y, phi_z, wx,wy,wz, rad, mass, inertia, charge, r, g, b, a) in izip!(
+    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,phi_x, phi_y, phi_z, wx,wy,wz, rad, mass, inertia, charge, r, g, b, a) in izip!(
         id_col.into_iter(),
-        next_id_col.into_iter(),
+        molecule_id_col.into_iter(),
         ptype_col.into_iter(),
         x_col.into_iter(),
         y_col.into_iter(),
@@ -344,7 +354,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
         // We use .unwrap_or because Polars columns are technically nullable
         particles.push(Particle {
             id: id.unwrap_or(0) as usize,
-            next_id: next_id.unwrap_or(0) as usize,
+            molecule_id: molecule_id.unwrap_or(0) as usize,
             ptype: ptype.unwrap_or(0) as usize,
             position: DVec3::new(
                 x.unwrap_or(0.0),
@@ -458,7 +468,7 @@ mod tests {
         particles.push(
             Particle {
                 id: 1,
-                next_id: NULL_ID,
+                molecule_id: NULL_ID,
                 ptype: 0,
                 position: DVec3::new(1.0, 2.0, 3.0),
                 rel_pos: DVec3::ZERO,
@@ -503,7 +513,7 @@ mod tests {
         particles.push(
             Particle {
                 id: 1,
-                next_id: NULL_ID,
+                molecule_id: NULL_ID,
                 ptype: 0,
                 position: DVec3::new(1.0, 2.0, 3.0),
                 rel_pos: DVec3::ZERO,

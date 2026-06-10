@@ -5,7 +5,6 @@ import json
 from pathlib import Path
 import os
 
-NULL_ID = (1 << 63) - 1
 
 def get_config(script_name):
     """call this function with get_config(__file__)"""
@@ -22,11 +21,11 @@ def get_config(script_name):
 
     return config, snapshot_filepath
 
-def plot_circles_orientation(df, ax):
+def plot_circles_orientation(df, ax, offset=(0, 10)):
     # Create a list of Circle patches using the actual radius from the data
     circles = [
         patches.Circle((x, z), radius=r) 
-        for x, z, r in zip(df["x"], df["z"], df["radius"])
+        for x, z, r in zip(df["x"] + df["rel_x"], df["z"] + df["rel_z"], df["radius"])
     ]
 
     # Create a collection for efficiency
@@ -34,7 +33,7 @@ def plot_circles_orientation(df, ax):
     ax.add_collection(pc)
 
     # Add ptype labels at the centre of each particle
-    for x, z, ptype in zip(df["x"], df["z"], df["ptype"]):
+    for x, z, ptype in zip(df["x"] + df["rel_x"], df["z"]+ df["rel_z"], df["ptype"]):
         ax.text(
             x, z, str(int(ptype)), 
             color='blue', 
@@ -43,13 +42,27 @@ def plot_circles_orientation(df, ax):
             va='center',
             fontweight='bold'
         )
+    
+    if 'molecule_id' in df.columns:
+        for x, z, m_type in zip(df["x"] + df["rel_x"], df["z"]+ df["rel_z"], df["molecule_id"]):
+            ax.annotate(
+                str(int(m_type)), 
+                xy=(x, z),             # The position of the particle
+                xytext=offset,        # Offset: 0 points right, 10 points up
+                textcoords='offset points', 
+                color='green', 
+                fontsize=8, 
+                ha='center', 
+                va='bottom',
+                fontweight='bold'
+            )
 
     # Orientation vectors (quiver)
     u = df["phi_x"] * df["radius"]
     w = df["phi_z"] * df["radius"]
 
     ax.quiver(
-        df["x"], df["z"], u, w, 
+        df["x"]+ df["rel_x"], df["z"]+ df["rel_z"], u, w, 
         color='red', 
         scale=1,              
         scale_units='xy',     

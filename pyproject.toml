@@ -1,0 +1,12 @@
+[project]
+name = "Rust_MD"
+version = "0.1.0"
+description = "Learning Rust with MD simulations"
+requires-python = ">=3.11"
+readme = "README.md"
+
+dependencies = [
+    "numpy",
+    "polars",
+    "matplotlib",
+]

@@ -34,6 +34,7 @@ impl Forces for SimUpdate{
     fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3], _torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
         weeks_chandler_andersen(i, j, forces, particles, settings);
     }
+
 }
 
 

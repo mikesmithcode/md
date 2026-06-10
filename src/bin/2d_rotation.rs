@@ -1,12 +1,11 @@
 /// Explanation of simulation
 /// 
-/// Silo consists of a 2D hopper with diagonal walls and a flat bottom. We then drop a square lattice
-/// of balls from above into it and watch everything slosh around.
+/// We have two balls with buried charges. We drop one on the other.
 
 
 use winit::event_loop::EventLoop;
 use glam::DVec3;
-
+use std::collections::HashMap;
 
 // Imports from simulation library
 use md::md_sim::file_io;
@@ -16,7 +15,7 @@ use md::md_sim::force::{Forces, granular_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::force::add_weight;
-use md::md_sim::motion::{integrate_verlet_update, integrate_verlet_correct};
+use md::md_sim::motion::{verlet_integrate_rigid_bodies, verlet_integrate_rigid_bodies_correct};
 
 use md::md_viz::scene::Scene;
 
@@ -32,6 +31,10 @@ impl Forces for SimUpdate{
         true
     }
 
+    fn has_internal_forces(&self) -> bool {
+        true
+    }
+
 
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time: f64) {   
@@ -42,14 +45,20 @@ impl Forces for SimUpdate{
     fn update_pair_forces(&self,i: usize,j: usize, forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
         granular_collision(i, j, particles, forces, torques, settings);
     }
+
+    fn update_internal_forces(&self, particles: &ParticleVec, forces: &mut [DVec3], torques: &mut [DVec3], settings: &SimulationSettings){
+        
+
+
+    }
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _time:f64) {
-        integrate_verlet_update(forces, torques, particles, settings);
+    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings,molecule_map: &HashMap<usize,Vec<usize>>, _time:f64) {
+        verlet_integrate_rigid_bodies(forces, torques, particles, molecule_map, settings);
     }
-    fn correct_motion(&self, forces: &[glam::DVec3],  torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings) {
-        integrate_verlet_correct(forces, torques, particles, settings);
+    fn correct_motion(&self, forces: &[glam::DVec3],  torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize,Vec<usize>>) {
+        verlet_integrate_rigid_bodies_correct(forces,torques,particles,molecule_map, settings)
     }
 }
 

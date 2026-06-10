@@ -80,7 +80,9 @@ pub trait Forces {
         forces: &mut [DVec3], 
         torques: &mut [DVec3],
         settings: &SimulationSettings
-    ); 
+    ){
+        // Optional: No Internal Forces by Default
+    }
 }
 
 
@@ -238,10 +240,10 @@ pub fn active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec, set
 pub fn granular_collision(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3], torques: &mut [DVec3], settings: &SimulationSettings) {   
     // Extract params
     let (stiffness, damping, mu_opt) = match &settings.model {
-        SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
-        SimulationModel::SolidFriction(p) => (p.stiffness, p.damping, Some(p.mu)),
-        _ => panic!("Unsupported model for granular collision"),
-    };
+            SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
+            SimulationModel::SolidFriction(p) => (p.stiffness, p.damping, Some(p.mu)),
+            _ => panic!("Unsupported model for granular collision"),
+        };
 
     // Calc overlap etc
     let mut delta = particles.position[i] - particles.position[j];

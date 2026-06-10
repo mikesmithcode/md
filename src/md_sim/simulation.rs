@@ -6,11 +6,14 @@
 //! 
 
 use glam::DVec3;
+use std::collections::HashMap;
+use std::thread::current;
 
 use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use itertools::izip;
 
 use crate::md_sim::particle::{ParticleVec};
 use crate::md_sim::neighbours::CellGrid;
@@ -136,6 +139,17 @@ pub struct Simulation<S>
     pub current_step: usize,
     pub cell_grid: CellGrid,
     pub time: f64,
+    pub molecule_map: HashMap<usize, Vec<usize>>,
+}
+
+/// Create a look up table that tells you which particle ids are in which molecule
+fn build_molecule_map(particles: &ParticleVec) -> HashMap<usize, Vec<usize>>{
+    let mut molecule_map = HashMap::new();
+    for (id, mol_id) in izip!(&particles.id, &particles.molecule_id){
+        molecule_map.entry(*mol_id).and_modify(|current_vec: &mut Vec<usize>| current_vec.push(*id)).or_insert(vec![*id]);
+    }
+
+    molecule_map
 }
 
 impl<S> Simulation<S> 
@@ -145,6 +159,9 @@ impl<S> Simulation<S>
         /// Create a new simulation
         pub fn new(particles: ParticleVec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
             let n = particles.len();
+            let molecule_map = build_molecule_map(&particles);
+
+
             Self {
                 particles,
                 forces : vec![DVec3::ZERO; n],
@@ -153,7 +170,8 @@ impl<S> Simulation<S>
                 settings: settings.clone(),
                 current_step: settings.start,
                 cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n, settings.skin),
-                time
+                time,
+                molecule_map
             }
         }
 
@@ -170,9 +188,12 @@ impl<S> Simulation<S>
         pub fn update(&mut self){
 
             // Predict the new positions, velocities etc
-            self.sim_update.update_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, self.time);
+            self.sim_update.update_motion(&self.forces, &self.torques, &mut self.particles, &self.settings,&self.molecule_map, self.time);
 
 
+            //----------------------------------------------------------------------------
+            // Calculate all the forces
+            //----------------------------------------------------------------------------
             if self.sim_update.has_single_forces() || self.sim_update.has_pair_forces(){
                 //Clear the force buffer and check same length as particles
                 self.reset_forces();
@@ -202,18 +223,15 @@ impl<S> Simulation<S>
                     );
             }
 
-            if self.sim_update.has_internal_forces(){
-                for i in 0..self.particles.len() {
-                    // we will use the linked list from the head particle to calculate internal forces and torques.
-                    if self.settings.is_head(self.particles.ptype[i] as u8){
-                        todo!()
-                    }
-                    
-                }
-            }
+            //if self.sim_update.has_internal_forces(){
+            //    for i in 0..self.particles.len() {
+            //        todo!();
+            //        
+            //    }
+            //}
 
             // Perform correction to the motion based on the updated forces
-            self.sim_update.correct_motion(&self.forces, &self.torques, &mut self.particles, &self.settings);
+            self.sim_update.correct_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, &self.molecule_map);
 
             // Update simulation time
             self.time += self.settings.dt;
