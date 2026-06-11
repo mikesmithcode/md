@@ -5,7 +5,9 @@
 import polars as pl
 
 from pathlib import Path
-
+import matplotlib
+# Use Qt6Agg to leverage your newly installed PyQt6
+matplotlib.use('qtAgg')
 import matplotlib.pyplot as plt
 import os
 
@@ -38,6 +40,7 @@ base_particle = {
         "phi_x" : 1.0,
         "phi_y" : 0.0,
         "phi_z" : 0.0,
+        "phi_w" : 0.0,
         "wx" : 0.0,
         "wy" : 0.0,
         "wz" : 0.0,
@@ -56,6 +59,7 @@ base_particle = {
 particle = base_particle.copy()
 particle2 = base_particle.copy()
 particle["z"] = 0.045
+particle["wy"] = 1.0
 particle["molecule_id"] = 0
 #particle["x"] += 0.0005
 id += 1
@@ -71,11 +75,8 @@ charge["ptype"] = 2
 charge["molecule_id"]= 0
 charge["radius"]=0.1*particle["radius"]
 charge["rel_x"] = particle["radius"]*0.5*particle["phi_x"]
-charge["rel_y"] = particle["radius"]*0.5*particle["phi_y"]
-charge["rel_z"] = particle["radius"]*0.5*particle["phi_z"]
-charge["phi_x"] = 0.0
-charge["phi_y"] = 0.0
-charge["phi_z"] = 0.0
+charge["rel_y"] = 0.0
+charge["rel_z"] = 0.0
 charge["r"] = 0.0
 charge["g"] = 255.0
 charge["b"] = 0.0
@@ -90,9 +91,6 @@ charge2["radius"]=0.1*particle2["radius"]
 charge2["rel_x"] = particle2["radius"]*0.5*particle2["phi_x"]
 charge2["rel_y"] = particle2["radius"]*0.5*particle2["phi_y"]
 charge2["rel_z"] = particle2["radius"]*0.5*particle2["phi_z"]
-charge2["phi_x"] = 0.0
-charge2["phi_y"] = 0.0
-charge2["phi_z"] = 0.0
 charge2["r"] = 0.0
 charge2["g"] = 255.0
 charge2["b"] = 0.0

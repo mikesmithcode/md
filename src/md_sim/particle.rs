@@ -14,7 +14,7 @@
 //! 
 
 // md_sim/src/lib.rs
-use glam::f64::DVec3;
+use glam::f64::{DVec3,DQuat};
 use three_d::*;
 use soa_derive::StructOfArray;
 
@@ -29,7 +29,7 @@ pub struct Particle {
     pub position: DVec3,  
     pub rel_pos: DVec3,
     pub velocity: DVec3,          
-    pub orientation: DVec3,
+    pub orientation: DQuat,
     pub omega: DVec3,
     pub radius: f64, 
     pub mass: f64,  
@@ -68,7 +68,7 @@ impl Particle {
         position: DVec3,
         rel_pos: DVec3, 
         velocity: DVec3, 
-        orientation: DVec3,
+        orientation: DQuat,
         omega: DVec3,
         radius: f64, 
         density: f64, 

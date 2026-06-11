@@ -7,6 +7,7 @@
 
 use winit::event_loop::EventLoop;
 use glam::DVec3;
+use std::collections::HashMap;
 
 
 // Imports from simulation library
@@ -41,7 +42,7 @@ impl Forces for SimUpdate{
 
 /// Add any changes to the motion e.g particles changing size, being created or disappearing. Then integrate the equations of motion.
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _time:f64) {
+    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, Vec<usize>>, _time:f64) {
         if forces.iter().all(|&f| f == DVec3::ZERO) {
             return;
         }

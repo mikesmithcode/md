@@ -76,10 +76,10 @@ pub trait Forces {
 
     fn update_internal_forces(
         &self,
-        particles: &ParticleVec, 
-        forces: &mut [DVec3], 
-        torques: &mut [DVec3],
-        settings: &SimulationSettings
+        _particles: &ParticleVec, 
+        _forces: &mut [DVec3], 
+        _torques: &mut [DVec3],
+        _settings: &SimulationSettings
     ){
         // Optional: No Internal Forces by Default
     }
@@ -166,8 +166,13 @@ pub fn active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec, set
 
     if let SimulationModel::Active(params) = &settings.model {
         // The Active Force
-        // F_active = gamma * v0 * n_vector acts in direction of particle orientation
-        let f_active = particles.orientation[i] * (params.gamma * params.v0);
+               
+        //Calc direction of particle
+        let local_forward = DVec3::X; 
+        let dir_vector = particles.orientation[i] * local_forward;
+
+        // F_active = gamma * v0 * n_vector in direction of particle orientation
+        let f_active = dir_vector * (params.gamma * params.v0);
 
         // Translational Noise "Force"
         // This represents the random kicks from the surrounding fluid

@@ -20,7 +20,7 @@ use std::{fs, io::Error, path::Path, path::PathBuf};
 
 use std::io::BufReader;
 use polars::prelude::*;
-use glam::DVec3;
+use glam::{DVec3,DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
@@ -183,6 +183,7 @@ pub fn save_snapshot(
         "phi_x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
         "phi_y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
         "phi_z" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "phi_w" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
         "wx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
         "wy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
         "wz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
@@ -259,7 +260,7 @@ pub fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
 /// are filled with default values. These may not be physically meaningful. If for example
 /// you need inertia you need to define it.
 /// compulsory : id, x,y,z,radius,mass
-/// optional : molecule_id,rel_x,rel_y,rel_z,vx,vy,vz,phi_x,phi_y,phi_z,wx,wy,wz,inertia,r,g,b,a
+/// optional : molecule_id,rel_x,rel_y,rel_z,vx,vy,vz,phi_x,phi_y,phi_z,phi_w,wx,wy,wz,inertia,r,g,b,a
 /// 
 /// # Returns
 /// * `(particles, time)` - Vector of particles and simulation time
@@ -298,6 +299,8 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
     let phi_y_col = phiy_series.f64()?;
     let phiz_series = get_f64_col(&df, "phi_z", 0.0);
     let phi_z_col = phiz_series.f64()?;
+    let phiw_series = get_f64_col(&df, "phi_w", 1.0);
+    let phi_w_col = phiw_series.f64()?;
     let wx_series = get_f64_col(&df, "wx", 0.0);
     let wx_col = wx_series.f64()?;
     let wy_series = get_f64_col(&df, "wy", 0.0);
@@ -323,7 +326,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,phi_x, phi_y, phi_z, wx,wy,wz, rad, mass, inertia, charge, r, g, b, a) in izip!(
+    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,phi_x, phi_y, phi_z, phi_w, wx ,wy,wz, rad, mass, inertia, charge, r, g, b, a) in izip!(
         id_col.into_iter(),
         molecule_id_col.into_iter(),
         ptype_col.into_iter(),
@@ -339,6 +342,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
         phi_x_col.into_iter(),
         phi_y_col.into_iter(),
         phi_z_col.into_iter(),
+        phi_w_col.into_iter(),
         wx_col.into_iter(),
         wy_col.into_iter(),
         wz_col.into_iter(),
@@ -371,11 +375,12 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
                 vy.unwrap_or(0.0),
                 vz.unwrap_or(0.0),
             ),
-            orientation: DVec3::new(
+            orientation: DQuat::from_xyzw(
                 phi_x.unwrap_or(0.0),
                 phi_y.unwrap_or(0.0),
                 phi_z.unwrap_or(0.0),
-            ),
+                phi_w.unwrap_or(1.0)
+            ).normalize(),
             omega: DVec3::new(
                 wx.unwrap_or(0.0),
                 wy.unwrap_or(0.0),
@@ -394,7 +399,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
             ref_pos : DVec3::ZERO,        
         });
     }
-
+    
     Ok((particles, t))
 }
 

@@ -6,13 +6,12 @@
 //! 
 
 use glam::DVec3;
-use std::collections::HashMap;
-use std::thread::current;
 
 use serde::{Serialize, Deserialize};
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use std::collections::HashMap;
 use itertools::izip;
 
 use crate::md_sim::particle::{ParticleVec};

@@ -15,7 +15,7 @@ use md::md_sim::force::{Forces, granular_collision};
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::force::add_weight;
-use md::md_sim::motion::{verlet_integrate_rigid_bodies, verlet_integrate_rigid_bodies_correct};
+use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 
 use md::md_viz::scene::Scene;
 
@@ -46,17 +46,17 @@ impl Forces for SimUpdate{
         granular_collision(i, j, particles, forces, torques, settings);
     }
 
-    fn update_internal_forces(&self, particles: &ParticleVec, forces: &mut [DVec3], torques: &mut [DVec3], settings: &SimulationSettings){
+    fn update_internal_forces(&self, _particles: &ParticleVec, _forces: &mut [DVec3], _torques: &mut [DVec3], _settings: &SimulationSettings){
         
     }
 }
 
 impl Motion for SimUpdate{
     fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings,molecule_map: &HashMap<usize,Vec<usize>>, _time:f64) {
-        verlet_integrate_rigid_bodies(forces, torques, particles, molecule_map, settings);
+        integrate_rigid_bodies(forces, torques, particles, molecule_map, settings);
     }
     fn correct_motion(&self, forces: &[glam::DVec3],  torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize,Vec<usize>>) {
-        verlet_integrate_rigid_bodies_correct(forces,torques,particles,molecule_map, settings)
+        integrate_rigid_bodies_correct(forces,torques,particles,molecule_map, settings)
     }
 }
 

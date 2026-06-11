@@ -9,4 +9,5 @@ dependencies = [
     "numpy",
     "polars",
     "matplotlib",
+    "pyqt6>=6.11.0",
 ]

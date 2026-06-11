@@ -5,16 +5,13 @@
 
 
 use std::collections::HashMap;
-use std::hash::Hash;
-use std::thread;
-use std::time;
 
-use glam::{DVec3,DMat3};
+use glam::{DVec3,DMat3, DQuat};
 use itertools::izip;
 use three_d::Srgba;
 use rand_distr::Distribution;
 
-use crate::{SimulationSettings, md_sim::particle::ParticleVec};
+use crate::md_sim::{simulation::SimulationSettings, particle::ParticleVec};
 use crate::md_sim::models::SimulationModel;
 
 /// Defines the integration scheme and kinematic updates for the simulation.
@@ -120,19 +117,6 @@ pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &Sim
 
 
 
-/// Builds a rotation matrix from an orientation vector (assuming Axis-Angle)
-/// orientation: vector where length is the angle, and direction is the axis
-pub fn build_rotation_matrix(orientation: DVec3) -> DMat3 {
-    let angle = orientation.length();
-    if angle < 1e-9 {
-        return DMat3::IDENTITY; // No rotation
-    }
-    
-    let axis = orientation / angle;
-    // Creates a rotation matrix from an axis and an angle
-    DMat3::from_axis_angle(axis, angle)
-}
-
 /// Performs the first half of the Velocity Verlet integration for multiparticle rigid bodies (Prediction).
 ///
 /// This function should be called inside `update_motion`. It uses the forces 
@@ -142,7 +126,7 @@ pub fn build_rotation_matrix(orientation: DVec3) -> DMat3 {
 ///
 /// After this call, positions are finalised for the current step, allowing 
 /// for new force calculations (e.g., collisions) at $x(t + \Delta t)$.
-pub fn verlet_integrate_rigid_bodies(
+pub fn integrate_rigid_bodies(
     forces: &[DVec3], 
     torques: &[DVec3],
     particles: &mut ParticleVec, 
@@ -158,10 +142,10 @@ pub fn verlet_integrate_rigid_bodies(
         let mut total_force = DVec3::ZERO;
         let mut total_torque = DVec3::ZERO;
         let mut total_mass = 0.0;
-        let mut pos = DVec3::ZERO;
+        let mut com_pos = DVec3::ZERO;
         let mut vel = DVec3::ZERO;
 
-          
+        
         // Calculate aggregate quantites of molecule
         for &idx in pids {
             total_force += forces[idx];
@@ -169,11 +153,11 @@ pub fn verlet_integrate_rigid_bodies(
             total_mass += particles.mass[idx];
         
             //For calculating COM and vel.
-            pos += (particles.position[idx]+particles.rel_pos[idx])*particles.mass[idx];
+            com_pos += (particles.position[idx]+particles.rel_pos[idx])*particles.mass[idx];
             vel += particles.velocity[idx]*particles.mass[idx];
         }
 
-        pos /= total_mass;
+        com_pos /= total_mass;
         vel /= total_mass;
 
         //Update based on the COM of molecule.
@@ -181,19 +165,27 @@ pub fn verlet_integrate_rigid_bodies(
         // Half-step velocity update
         vel += acceleration * half_dt;
         // Full-step position update
-        pos += vel * dt;
+        com_pos += vel * dt;
 
-        check_periodic(&mut pos, sim_box_size);
+        check_periodic(&mut com_pos, sim_box_size);
 
-        //temporary before adding rotation.
-        let Rot_mat = DMat3::IDENTITY;
+        let rot_mat = DMat3::from_quat(particles.orientation[pids[0]]);
+    
 
         for &idx in pids {
             // Update individual particle positions based on molecule
-            particles.position[idx] = pos + Rot_mat*particles.rel_pos[idx];
+            particles.position[idx] = com_pos + (rot_mat*particles.rel_pos[idx]);
             // Correct formula for particle velocity in a rigid body:
-            particles.velocity[idx] = vel + (particles.omega[0].cross(Rot_mat * particles.rel_pos[idx]));
+            particles.velocity[idx] = vel + (particles.omega[pids[0]].cross(rot_mat * particles.rel_pos[idx]));
         }
+
+         //update orientation
+        let delta_q = DQuat::from_scaled_axis(particles.omega[pids[0]] * settings.dt);
+        particles.orientation[pids[0]] = (delta_q * particles.orientation[pids[0]]).normalize();
+
+        println!("omega {:?}", particles.omega);
+        println!("omega {:?}", particles.orientation);
+
     }
 }
 
@@ -203,7 +195,7 @@ pub fn verlet_integrate_rigid_bodies(
 /// This function should be called inside `correct_motion`. It uses the forces 
 /// calculated at the **new** positions to finalise the velocities:
 /// $v(t + \Delta t) = v(t + \frac{\Delta t}{2}) + \frac{a(t + \Delta t)\Delta t}{2}$
-pub fn verlet_integrate_rigid_bodies_correct(
+pub fn integrate_rigid_bodies_correct(
     forces: &[DVec3], 
     torques: &[DVec3],
     particles: &mut ParticleVec, 
@@ -217,8 +209,6 @@ pub fn verlet_integrate_rigid_bodies_correct(
         let mut total_torque = DVec3::ZERO;
         let mut total_mass = 0.0;
         let mut vel = DVec3::ZERO;
-
-        let num_particles = pids.len() as f64;
     
         // Calculate aggregate quantites of molecule
         for &idx in pids {
@@ -237,14 +227,14 @@ pub fn verlet_integrate_rigid_bodies_correct(
         vel += acceleration * half_dt;
 
 
-        //temporary before adding rotation.
-        let Rot_mat = DMat3::IDENTITY;
+        let rot_mat = DMat3::from_quat(particles.orientation[pids[0]]);
 
         for &idx in pids {
             // Update individual particle positions based on molecule
-            particles.velocity[idx] = vel + (particles.omega[0].cross(Rot_mat * particles.rel_pos[idx]));
+            particles.velocity[idx] = vel + (particles.omega[pids[0]].cross(rot_mat * particles.rel_pos[idx]));
         }
 
+       
     }
 }
 
@@ -259,9 +249,9 @@ pub fn verlet_integrate_rigid_bodies_correct(
 ///
 /// After this call, positions are finalised for the current step, allowing 
 /// for new force calculations (e.g., collisions) at $x(t + \Delta t)$.
-pub fn integrate_verlet_update(
+pub fn integrate_singleparticle_update(
     forces: &[DVec3], 
-    torques: &[DVec3],
+    _torques: &[DVec3],
     particles: &mut ParticleVec, 
     settings: &SimulationSettings
 ) {
@@ -269,9 +259,9 @@ pub fn integrate_verlet_update(
     let half_dt = dt * 0.5;
     let sim_box_size = settings.sim_box_size;
 
-    let is_rotating = matches!(settings.model, SimulationModel::SolidFriction(_));
+    let _is_rotating = matches!(settings.model, SimulationModel::SolidFriction(_));
 
-    for (pos, vel, orientation, omega, &mass, &inertia, &force, &torque) in izip!(
+    for (pos, vel, _orientation, _omega, &mass, &_inertia, &force, &_torque) in izip!(
         &mut particles.position,
         &mut particles.velocity,
         &mut particles.orientation,
@@ -279,7 +269,7 @@ pub fn integrate_verlet_update(
         &particles.mass,
         &particles.inertia,
         forces, 
-        torques,
+        _torques,
     ) {
         let acceleration = force / mass;
         
@@ -287,14 +277,6 @@ pub fn integrate_verlet_update(
         *vel += acceleration * half_dt;
         // Full-step position update
         *pos += *vel * dt;
-
-        if is_rotating{
-            let alpha = torque / inertia;
-            // Half-step omega update
-            *omega += alpha * half_dt;
-            // Full-step orientation update
-            *orientation += *omega * dt;
-        }
         
         // Enforce boundary conditions
         check_periodic(pos, sim_box_size);
@@ -306,7 +288,7 @@ pub fn integrate_verlet_update(
 /// This function should be called inside `correct_motion`. It uses the forces 
 /// calculated at the **new** positions to finalise the velocities:
 /// $v(t + \Delta t) = v(t + \frac{\Delta t}{2}) + \frac{a(t + \Delta t)\Delta t}{2}$
-pub fn integrate_verlet_correct(
+pub fn integrate_singleparticle_correct(
     forces: &[DVec3], 
     torques: &[DVec3],
     particles: &mut ParticleVec, 
@@ -416,7 +398,7 @@ mod tests {
     use crate::test_utils::create_particle_vec;
 
     #[test]
-    fn test_integrate_verlet_update() {
+    fn test_integrate_singleparticle_update() {
         let mut particles = create_particle_vec(); // Particles at (1,2,3)
         let mut settings = SimulationSettings::default();
         settings.dt = 0.1;
@@ -431,14 +413,14 @@ mod tests {
         // Initial state: pos=1.0, vel=1.0
         // Expected Vel Half-step: 1.0 + (10.0 * 0.05) = 1.5
         // Expected Pos Full-step: 1.0 + (1.5 * 0.1) = 1.15
-        integrate_verlet_update(&forces, &torques,  &mut particles, &settings);
+        integrate_singleparticle_update(&forces, &torques,  &mut particles, &settings);
 
         assert!((particles.velocity[0].x - 1.5).abs() < 1e-6);
         assert!((particles.position[0].x - 1.15).abs() < 1e-6);
     }
 
     #[test]
-    fn test_integrate_verlet_correct() {
+    fn test_integrate_singleparticle_correct() {
         let mut particles = create_particle_vec();
         let mut settings = SimulationSettings::default();
         settings.dt = 0.1;
@@ -457,7 +439,7 @@ mod tests {
         // Perform the Correction (The second half-kick)
         // Mathematically: v_final = v_half + (a_new * half_dt)
         // v_final = 1.5 + (10.0 * 0.05) = 2.0
-        integrate_verlet_correct(&forces, &torques, &mut particles, &settings);
+        integrate_singleparticle_correct(&forces, &torques, &mut particles, &settings);
 
         // Verify
         for vel in &particles.velocity {

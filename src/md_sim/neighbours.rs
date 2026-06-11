@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use glam::DVec3;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::simulation::SimulationSettings;

@@ -13,7 +13,7 @@ use winit::event_loop::EventLoop;
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::event::{Event as WinitEvent, WindowEvent};
 
-use crate::SimulationSettings;
+use crate::md_sim::simulation::SimulationSettings;
 use crate::md_viz::objects::{create_ambient_light, create_directional_light, SimBox, create_simbox};
 use crate::md_viz::templates::SphereTemplate;
 use crate::md_viz::camera::{create_camera, CameraControl, CameraView};
@@ -177,7 +177,7 @@ impl Scene {
         transforms.clear();
         colors.clear();
 
-        for (pos, rel_pos, rad, col) in soa_zip!(particles, [position, rel_pos, radius, color]) {
+        for (pos, rad, col) in soa_zip!(particles, [position, radius, color]) {
             transforms.push(
                 Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) 
                 * Mat4::from_scale(*rad as f32) // Radii changes are handled here
