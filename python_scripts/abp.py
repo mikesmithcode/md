@@ -5,25 +5,26 @@ import matplotlib.pyplot as plt
 import os
 import polars as pl
 
-from utility import get_config, plot_circles_orientation
+from utility import get_config, plot_circles_orientation, quaternion, display
 
 input_path = Path(__file__).parent.parent.joinpath("input")
 config_path = input_path.joinpath("abp.json")
 
 config, snapshot_filepath = get_config(__file__)
 
-box_x = config["sim_box_size"][0]
-box_z = config["sim_box_size"][2]
+box = config["sim_box_size"]
 
 path_to_snapshots = Path("output/abp/snapshots/")
 os.makedirs(path_to_snapshots, exist_ok=True)
 filepath = path_to_snapshots.joinpath("snapshot_0000000000.parquet")
 
-num_particles_target = 1000 
+num_particles_target = 100 
 n = int(np.sqrt(num_particles_target))
 
-spacing_x = box_x / (n + 1)
-spacing_z = box_z / (n + 1)
+spacing_x = box[0] / (n + 1)
+spacing_z = box[2] / (n + 1)
+
+(qx,qy,qz,qw) = quaternion((0,1,0), 0)
 
 base_particle = {
     "t": 0.0,
@@ -32,7 +33,10 @@ base_particle = {
     "vx": 0.0,
     "vy": 0.0,
     "vz": 0.0,
-    "phi_y": 0.0,
+    "qx": qx,
+    "qy": qy,
+    "qz": qz,
+    "qw": qw,
     "wx": 0.0,
     "wy": 0.0,
     "wz": 0.0,
@@ -56,12 +60,12 @@ for i in range(n):
         p["z"] = spacing_z + i * spacing_z
         
         theta = np.random.uniform(0, 2 * np.pi)
-        p["phi_x"] = np.cos(theta)
-        p["phi_z"] = np.sin(theta)
+        (p["qx"],p["qy"],p["qz"],p["qw"])=quaternion((0,1,0), theta)
         
         p["id"] = particle_id
         particle_id += 1
         particles_list.append(p)
+
 
 
 df = pl.from_dicts(particles_list)
@@ -70,22 +74,10 @@ df = df.with_columns([
     pl.col("id").cast(pl.UInt64)
 ])
 
-
-fig, ax = plt.subplots(figsize=(8, 8))
-
-ax = plot_circles_orientation(df, ax)
-
-# Set axis limits and ensure aspect ratio is 1:1 so circles aren't ellipses
-ax.set_xlim(0, box_x)
-ax.set_ylim(0, box_z)
-ax.set_aspect('equal')
-
-plt.title(f"SI Units Initialisation: {len(df)} Particles (True Scale)")
-plt.xlabel("X (m)")
-plt.ylabel("Z (m)")
-plt.grid(True, linestyle=':', alpha=0.6)
-plt.show()
-
-
 df.write_parquet(snapshot_filepath)
-print(f"Successfully initialised {len(df)} particles for a {box_x}x{box_z} box.")
+print(f"Successfully initialised {len(df)} particles for a {box[0]}x{box[2]} box.")
+
+display(df, box)
+
+
+

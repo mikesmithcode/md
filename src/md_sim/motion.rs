@@ -38,12 +38,12 @@ pub trait Motion {
     /// should be called within this method to maintain a modular design.
     fn update_motion(
         &self, 
-        forces: &[DVec3], 
-        torques: &[DVec3],
-        particles: &mut ParticleVec, 
-        settings: &SimulationSettings,
-        molecule_map: &HashMap<usize, Vec<usize>>,
-        time: f64
+        _forces: &[DVec3], 
+        _torques: &[DVec3],
+        _particles: &mut ParticleVec, 
+        _settings: &SimulationSettings,
+        _molecule_map: &HashMap<usize, Vec<usize>>,
+        _time: f64
     );
 
     /// Finalises particle states at the end of a simulation step (Correction).
@@ -75,7 +75,7 @@ pub trait Motion {
 /// Active Particles Motion
 /// 
 /// This updates the position of the ABPs and then nudges the orientation before applying periodic boundary conditions.
-pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
+/*pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
     if let SimulationModel::Active(params) = &settings.model {
         let inv_gamma = 1.0 / params.gamma;
         let mut rng = rand::thread_rng();
@@ -109,6 +109,43 @@ pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &Sim
             if particles.position[i].x.is_nan() || particles.position[i].x.abs() > 1e6 {
                println!("Particle exploded! Force: {:?}, Position: {:?}", forces[i], particles.position[i]);
             }
+            // Apply periodic boundaries
+            check_periodic(&mut particles.position[i], settings.sim_box_size);
+        }
+    }
+}
+*/
+
+pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
+    if let SimulationModel::Active(params) = &settings.model {
+        let inv_gamma = 1.0 / params.gamma;
+        let mut rng = rand::thread_rng();
+        let normal = rand_distr::Normal::new(0.0, 1.0).unwrap();
+
+        for i in 0..particles.position.len() {
+            // 1. Update Linear Velocity and Position (Overdamped)
+            particles.velocity[i] = forces[i] * inv_gamma;
+            particles.position[i] += particles.velocity[i] * settings.dt;
+
+            // 2. Calculate the scale for rotational noise
+            #[allow(non_snake_case)]
+            let Dr = 3.0 * params.Dt / (4.0 * particles.radius[i].powi(2));
+            let theta_noise_scale = (2.0 * Dr * settings.dt).sqrt();
+            let d_theta = normal.sample(&mut rng) * theta_noise_scale;
+
+            // 3. Apply Rotational Noise safely to the 3D Heading Vector
+            // We create a clean rotation quaternion around the Y-axis (up-axis for X-Z plane)
+            let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, d_theta);
+            
+            // Rotate the entire orientation vector safely
+            particles.orientation[i] = rotation * particles.orientation[i];
+            particles.orientation[i] = particles.orientation[i].normalize();
+
+            // 4. Debug Checks
+            if particles.position[i].x.is_nan() || particles.position[i].x.abs() > 1e6 {
+               println!("Particle exploded! Force: {:?}, Position: {:?}", forces[i], particles.position[i]);
+            }
+            
             // Apply periodic boundaries
             check_periodic(&mut particles.position[i], settings.sim_box_size);
         }
@@ -153,7 +190,7 @@ pub fn integrate_rigid_bodies(
             total_mass += particles.mass[idx];
         
             //For calculating COM and vel.
-            com_pos += (particles.position[idx]+particles.rel_pos[idx])*particles.mass[idx];
+            com_pos += particles.position[idx]*particles.mass[idx];
             vel += particles.velocity[idx]*particles.mass[idx];
         }
 
@@ -183,8 +220,8 @@ pub fn integrate_rigid_bodies(
         let delta_q = DQuat::from_scaled_axis(particles.omega[pids[0]] * settings.dt);
         particles.orientation[pids[0]] = (delta_q * particles.orientation[pids[0]]).normalize();
 
-        println!("omega {:?}", particles.omega);
-        println!("omega {:?}", particles.orientation);
+        //println!("omega {:?}", particles.omega);
+        //println!("omega {:?}", particles.orientation);
 
     }
 }

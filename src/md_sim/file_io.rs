@@ -180,10 +180,10 @@ pub fn save_snapshot(
         "vx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
         "vy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
         "vz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
-        "phi_x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
-        "phi_y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
-        "phi_z" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
-        "phi_w" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "qx" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
+        "qy" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
+        "qz" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "qw" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
         "wx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
         "wy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
         "wz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
@@ -260,7 +260,7 @@ pub fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
 /// are filled with default values. These may not be physically meaningful. If for example
 /// you need inertia you need to define it.
 /// compulsory : id, x,y,z,radius,mass
-/// optional : molecule_id,rel_x,rel_y,rel_z,vx,vy,vz,phi_x,phi_y,phi_z,phi_w,wx,wy,wz,inertia,r,g,b,a
+/// optional : molecule_id,rel_x,rel_y,rel_z,vx,vy,vz,qx,qy,qz,qw,wx,wy,wz,inertia,r,g,b,a
 /// 
 /// # Returns
 /// * `(particles, time)` - Vector of particles and simulation time
@@ -293,14 +293,14 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
     let vy_col = vy_series.f64()?;
     let vz_series = get_f64_col(&df, "vz", 0.0);
     let vz_col = vz_series.f64()?;
-    let phix_series = get_f64_col(&df, "phi_x", 0.0);
-    let phi_x_col = phix_series.f64()?;
-    let phiy_series = get_f64_col(&df, "phi_y", 0.0);
-    let phi_y_col = phiy_series.f64()?;
-    let phiz_series = get_f64_col(&df, "phi_z", 0.0);
-    let phi_z_col = phiz_series.f64()?;
-    let phiw_series = get_f64_col(&df, "phi_w", 1.0);
-    let phi_w_col = phiw_series.f64()?;
+    let qx_series = get_f64_col(&df, "qx", 0.0);
+    let qx_col = qx_series.f64()?;
+    let qy_series = get_f64_col(&df, "qy", 0.0);
+    let qy_col = qy_series.f64()?;
+    let qz_series = get_f64_col(&df, "qz", 0.0);
+    let qz_col = qz_series.f64()?;
+    let qw_series = get_f64_col(&df, "qw", 1.0);
+    let qw_col = qw_series.f64()?;
     let wx_series = get_f64_col(&df, "wx", 0.0);
     let wx_col = wx_series.f64()?;
     let wy_series = get_f64_col(&df, "wy", 0.0);
@@ -326,7 +326,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,phi_x, phi_y, phi_z, phi_w, wx ,wy,wz, rad, mass, inertia, charge, r, g, b, a) in izip!(
+    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,qx, qy, qz, qw, wx ,wy,wz, rad, mass, inertia, charge, r, g, b, a) in izip!(
         id_col.into_iter(),
         molecule_id_col.into_iter(),
         ptype_col.into_iter(),
@@ -339,10 +339,10 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
         vx_col.into_iter(),
         vy_col.into_iter(),
         vz_col.into_iter(),
-        phi_x_col.into_iter(),
-        phi_y_col.into_iter(),
-        phi_z_col.into_iter(),
-        phi_w_col.into_iter(),
+        qx_col.into_iter(),
+        qy_col.into_iter(),
+        qz_col.into_iter(),
+        qw_col.into_iter(),
         wx_col.into_iter(),
         wy_col.into_iter(),
         wz_col.into_iter(),
@@ -376,10 +376,10 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
                 vz.unwrap_or(0.0),
             ),
             orientation: DQuat::from_xyzw(
-                phi_x.unwrap_or(0.0),
-                phi_y.unwrap_or(0.0),
-                phi_z.unwrap_or(0.0),
-                phi_w.unwrap_or(1.0)
+                qx.unwrap_or(0.0),
+                qy.unwrap_or(0.0),
+                qz.unwrap_or(0.0),
+                qw.unwrap_or(1.0)
             ).normalize(),
             omega: DVec3::new(
                 wx.unwrap_or(0.0),

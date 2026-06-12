@@ -26,6 +26,7 @@ pub struct SimUpdate;
 
 impl Forces for SimUpdate{
 
+
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings, _time: f64) {   
        active_force(i, forces, particles, settings);
@@ -46,9 +47,7 @@ impl Motion for SimUpdate{
         if forces.iter().all(|&f| f == DVec3::ZERO) {
             return;
         }
-                 update_abps(forces, particles, settings);
-            
-       
+        update_abps(forces, particles, settings);    
     }
 }
 

@@ -146,10 +146,29 @@ impl Scene {
         let sphere_template = SphereTemplate::new(context);
     
         // Create an initial empty mesh
+        //let mut mat = PhysicalMaterial::default();
+        //mat.albedo = Srgba::WHITE;
+        //mat.render_states.blend = Blend::TRANSPARENCY;
+        //mat.render_states.cull = Cull::Back;
         let mut mat = PhysicalMaterial::default();
         mat.albedo = Srgba::WHITE;
-        mat.render_states.blend = Blend::TRANSPARENCY;
-        mat.render_states.cull = Cull::Back;
+
+        mat.render_states = RenderStates {
+            blend: Blend::Enabled {
+                source_rgb_multiplier: BlendMultiplierType::SrcAlpha,
+                source_alpha_multiplier: BlendMultiplierType::One,
+                destination_rgb_multiplier: BlendMultiplierType::OneMinusSrcAlpha,
+                destination_alpha_multiplier: BlendMultiplierType::OneMinusSrcAlpha,
+                rgb_equation: BlendEquationType::Add,
+                alpha_equation: BlendEquationType::Add,
+            },
+            cull: Cull::Back,
+            // Disable writing to the depth buffer for transparent objects
+            write_mask: WriteMask::COLOR, 
+            // Keep depth testing ON so the simbox can still occlude the spheres
+            depth_test: DepthTest::Always,
+        };
+
 
         let particle_mesh = Gm::new(
             InstancedMesh::new(context, &Instances::default(), &sphere_template.cpu_mesh),
@@ -168,6 +187,13 @@ impl Scene {
         Ok(resources)
     }
 
+    // Helper to reduce code duplication
+    fn push_transform_and_color(i: usize, particles: &ParticleVec, transforms: &mut Vec<Mat4>, colors: &mut Vec<Srgba>) {
+        transforms.push(Mat4::from_translation(vec3(particles.position[i].x as f32, particles.position[i].y as f32, particles.position[i].z as f32)) 
+            * Mat4::from_scale(particles.radius[i] as f32));
+        colors.push(particles.color[i]);
+    }
+
     /// Central rendering logic used by both display() and save_frame()
     fn render_to_target(camera: &Camera,resources: &mut GpuResources,target: &mut RenderTarget,particles: &ParticleVec) -> Result<(), Box<dyn std::error::Error>> {
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
@@ -177,12 +203,29 @@ impl Scene {
         transforms.clear();
         colors.clear();
 
-        for (pos, rad, col) in soa_zip!(particles, [position, radius, color]) {
-            transforms.push(
-                Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) 
-                * Mat4::from_scale(*rad as f32) // Radii changes are handled here
-            );
-            colors.push(*col); // Colour changes are handled here
+        let needs_sorting = particles.color.iter().any(|c| c.a < 255);
+
+        if needs_sorting {
+            // Perform the sort as we discussed
+            let cam_pos = camera.position();
+            let mut indices: Vec<usize> = (0..particles.len()).collect();
+            indices.sort_by(|&a, &b| {
+                let pos_a = vec3(particles.position[a].x as f32, particles.position[a].y as f32, particles.position[a].z as f32);
+                let pos_b = vec3(particles.position[b].x as f32, particles.position[b].y as f32, particles.position[b].z as f32);
+                let dist_a = cam_pos.distance2(pos_a);
+                let dist_b = cam_pos.distance2(pos_b);
+                dist_b.partial_cmp(&dist_a).unwrap()
+            });
+
+            for i in indices {
+                Self::push_transform_and_color(i, particles, &mut transforms, &mut colors);
+            }
+        } else {
+            // Fast path: No transparency, no sorting needed
+            for (pos, rad, col) in soa_zip!(particles, [position, radius, color]) {
+                transforms.push(Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) * Mat4::from_scale(*rad as f32));
+                colors.push(*col);
+            }
         }
 
         let instances = Instances {
@@ -200,11 +243,13 @@ impl Scene {
         let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
 
         let mut objects: Vec<&dyn Object> = Vec::with_capacity(2);
-        objects.push(&resources.particle_mesh);
 
         if let Some(ref sb) = resources.simbox {
             objects.push(sb); 
         }
+        
+        objects.push(&resources.particle_mesh);
+       
         
         // Render the persistent mesh
         target.render(camera, objects, &lights);

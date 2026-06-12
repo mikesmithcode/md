@@ -6,17 +6,20 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import os
+from utility import display, get_config
 
 
 
 path = "output/coeff"
 path_to_snapshots = path + "/snapshots"
-
-
 os.makedirs(path_to_snapshots, exist_ok=True)
 
 root_path = Path.cwd()
 filepath = root_path.joinpath(path_to_snapshots,  "snapshot_0000000000.parquet")
+
+config, snapshot_filepath = get_config(__file__)
+box = config["sim_box_size"]
+
 
 base_particle = {
         "t": 0.0,
@@ -28,9 +31,6 @@ base_particle = {
         "vx" : 0.0,
         "vy" : 0.0,
         "vz" : 0.0,
-        "phi_x" : 0.0,
-        "phi_y" : 0.0,
-        "phi_z" : 0.0,
         "wx" : 0.0,
         "wy" : 0.0,
         "wz" : 0.0,
@@ -58,11 +58,6 @@ df = df.with_columns(pl.col("ptype").cast(pl.UInt64))
 df = df.with_columns(pl.col("id").cast(pl.UInt64))
 
 df.write_parquet(filepath)
-print(df)
 
-# Scatter plot of two columns
-plt.figure()
-plt.scatter(df["x"], df["z"])
-plt.show()
-print("max", df.select(pl.max("ptype")))
+display(df, box)
 

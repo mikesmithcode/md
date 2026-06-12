@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from utility import display, get_config
 
 import sys
 print(f"DEBUG: Using Python at {sys.executable}")
@@ -15,6 +16,9 @@ os.makedirs(path_to_snapshots, exist_ok=True)
 root_path = Path(__file__).parent.parent
 filepath = root_path.joinpath(path_to_snapshots,  "snapshot_0000000000.parquet")
 
+config, snapshot_filepath = get_config(__file__)
+box = config["sim_box_size"]
+
 base_particle = {
         "t": 0.0,
         "id": 0,
@@ -25,9 +29,9 @@ base_particle = {
         "vx" : 0.0,
         "vy" : 0.0,
         "vz" : 0.0,
-        "phi_x" : 0.0,
-        "phi_y" : 0.0,
-        "phi_z" : 0.0,
+        "qx" : 0.0,
+        "qy" : 0.0,
+        "qz" : 0.0,
         "wx" : 0.0,
         "wy" : 0.0,
         "wz" : 0.0,
@@ -99,5 +103,5 @@ print(df)
 df.write_parquet(filepath)
         
 
-
+display(df, box)
 

@@ -11,6 +11,6 @@
     "type": "SolidFriction",
     "stiffness": 665000.0,
     "damping": 2.97,
-    "mu": 0.0
+    "mu": 0.4
   }
 }
