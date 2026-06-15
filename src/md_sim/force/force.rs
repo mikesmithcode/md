@@ -6,10 +6,11 @@
 
 use glam::DVec3;
 use rand_distr::{Normal, Distribution};
+use std::f64::consts::PI;
 
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
-use crate::md_sim::models::SimulationModel;
+use crate::md_sim::utils::models::SimulationModel;
 
 
 
@@ -86,7 +87,9 @@ pub trait Forces {
 }
 
 
-
+///--------------------------------------------------------------------------------------------
+/// SINGLE PARTICLE FORCES
+/// -------------------------------------------------------------------------------------------
 
 /// Calculates and adds the gravitational weight to a specific particle.
 ///
@@ -118,10 +121,6 @@ pub fn add_weight(i: usize, forces: &mut [DVec3], particles: &ParticleVec) {
 }
 
 
-
-
-
-
 /// Calculates and adds the viscous drag force (Stokes' Law) to a specific particle.
 ///
 /// This function models the drag force exerted on a spherical particle moving through 
@@ -150,7 +149,7 @@ pub fn add_viscous_drag(i: usize, forces: &mut [DVec3], particles: &ParticleVec,
     let rad = particles.radius[i];
     
     // Stokes' Law: F = -6 * pi * eta * r * v
-    let drag = -6.0 * std::f64::consts::PI * viscosity * rad * vel;
+    let drag = -6.0 * PI * viscosity * rad * vel;
     
     forces[i] += drag;
 }
@@ -173,11 +172,11 @@ pub fn active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec, set
 
         // Translational Noise "Force"
         // This represents the random kicks from the surrounding fluid
-        let noise_scale = params.gamma * (2.0 * params.Dt / settings.dt).sqrt();
+        let noise_scale = 0.0;//params.gamma * (2.0 * params.Dt / settings.dt).sqrt();
         
         let f_noise = glam::DVec3::new(
             normal.sample(&mut rng) * noise_scale,
-            0.0, // Keep 2D if that's your constraint, otherwise add Y noise
+            0.0, 
             normal.sample(&mut rng) * noise_scale,
         );
 
@@ -341,6 +340,20 @@ pub fn weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], particles
 
 }
 
+
+pub fn coulomb(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3], _torques: &mut [DVec3], _settings: &SimulationSettings){
+    const EPS0: f64 = 8.85418782e-12;
+
+    let r = particles.position[i] - particles.position[j];
+
+    let r_mag_sq = r.length_squared();
+    let inv_r = 1.0 / r_mag_sq.sqrt(); // One square root
+    let inv_r_cubed = inv_r * inv_r * inv_r;
+
+    
+    forces[i]+=(particles.charge[i] * particles.charge[j] / (4.0 * PI * EPS0)) * r * inv_r_cubed;
+    
+}
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
 //

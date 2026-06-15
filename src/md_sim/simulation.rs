@@ -14,11 +14,13 @@ use std::path::Path;
 use std::collections::HashMap;
 use itertools::izip;
 
+use crate::md_sim::motion::geometry::MoleculeData;
 use crate::md_sim::particle::{ParticleVec};
-use crate::md_sim::neighbours::CellGrid;
-use crate::md_sim::force::Forces;
-use crate::md_sim::motion::Motion;
-use crate::md_sim::models::*;
+use crate::md_sim::force::neighbours::CellGrid;
+use crate::md_sim::force::force::Forces;
+use crate::md_sim::motion::motion::Motion;
+use crate::md_sim::utils::models::*;
+
 
 
 
@@ -138,14 +140,21 @@ pub struct Simulation<S>
     pub current_step: usize,
     pub cell_grid: CellGrid,
     pub time: f64,
-    pub molecule_map: HashMap<usize, Vec<usize>>,
+    pub molecule_map: HashMap<usize, MoleculeData>,
 }
 
-/// Create a look up table that tells you which particle ids are in which molecule
-fn build_molecule_map(particles: &ParticleVec) -> HashMap<usize, Vec<usize>>{
+fn build_molecule_map(particles: &ParticleVec) -> HashMap<usize, MoleculeData> {
+    // group indices by mol_id
+    let mut temp_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (id, &mol_id) in izip!(&particles.id, &particles.molecule_id) {
+        temp_map.entry(mol_id).or_default().push(*id);
+    }
+
+    // Convert to MoleculeData - store inertia
     let mut molecule_map = HashMap::new();
-    for (id, mol_id) in izip!(&particles.id, &particles.molecule_id){
-        molecule_map.entry(*mol_id).and_modify(|current_vec: &mut Vec<usize>| current_vec.push(*id)).or_insert(vec![*id]);
+    for (mol_id, pids) in temp_map {
+        let mol_data = MoleculeData::new(pids, particles);
+        molecule_map.insert(mol_id, mol_data);
     }
 
     molecule_map

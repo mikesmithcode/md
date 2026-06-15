@@ -81,6 +81,8 @@ impl Particle {
         let inertia = (2.0/5.0) * mass * radius.powi(2);
         let ref_pos = DVec3::ZERO;
 
+        
+
         Particle { 
             id, 
             molecule_id,

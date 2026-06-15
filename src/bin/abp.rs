@@ -11,11 +11,11 @@ use std::collections::HashMap;
 
 
 // Imports from simulation library
-use md::md_sim::file_io;
+use md::md_sim::utils::file_io;
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::{Forces, weeks_chandler_andersen, active_force};
-use md::md_sim::motion::{Motion,update_abps};
+use md::md_sim::force::{Forces, force::weeks_chandler_andersen, force::active_force};
+use md::md_sim::motion::{Motion,motion::update_abps};
 use md::md_sim::particle::ParticleVec;
 
 

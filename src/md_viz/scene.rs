@@ -202,11 +202,10 @@ impl Scene {
         let mut colors = std::mem::take(&mut resources.instance_colors);
         transforms.clear();
         colors.clear();
-
+        
         let needs_sorting = particles.color.iter().any(|c| c.a < 255);
 
         if needs_sorting {
-            // Perform the sort as we discussed
             let cam_pos = camera.position();
             let mut indices: Vec<usize> = (0..particles.len()).collect();
             indices.sort_by(|&a, &b| {

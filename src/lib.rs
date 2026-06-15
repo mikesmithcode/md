@@ -1,7 +1,10 @@
 #![doc = include_str!("../README.md")]
 /// Documentation regarding the physics engine logic
 pub mod simulations {
-    #![doc = include_str!("../docs/simulations.md")]
+    #![doc = include_str!("../docs/simulations/Integration.md")]
+    #![doc = include_str!("../docs/simulations/MulticomponentParticles.md")]
+    #![doc = include_str!("../docs/simulations/Quaternions.md")]
+    #![doc = include_str!("../docs/simulations/Simulations.md")]
 }
 
 /// Information on how to use the CLI or config files

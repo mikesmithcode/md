@@ -9,10 +9,12 @@ use std::collections::HashMap;
 use glam::{DVec3,DMat3, DQuat};
 use itertools::izip;
 use three_d::Srgba;
-use rand_distr::Distribution;
+//use rand_distr::Distribution;
 
+use crate::md_sim::motion::geometry::calculate_molecule_com;
 use crate::md_sim::{simulation::SimulationSettings, particle::ParticleVec};
-use crate::md_sim::models::SimulationModel;
+use crate::md_sim::utils::models::SimulationModel;
+use crate::md_sim::motion::geometry::MoleculeData;
 
 /// Defines the integration scheme and kinematic updates for the simulation.
 ///
@@ -42,7 +44,7 @@ pub trait Motion {
         _torques: &[DVec3],
         _particles: &mut ParticleVec, 
         _settings: &SimulationSettings,
-        _molecule_map: &HashMap<usize, Vec<usize>>,
+        _molecule_map: &HashMap<usize, MoleculeData>,
         _time: f64
     );
 
@@ -66,74 +68,34 @@ pub trait Motion {
         _torques: &[DVec3],
         _particles: &mut ParticleVec, 
         _settings: &SimulationSettings,
-        _molecule_map: &HashMap<usize, Vec<usize>>
+        _molecule_map: &HashMap<usize, MoleculeData>
     ) {
         // Optional: No correction by default
     }
 }
 
-/// Active Particles Motion
-/// 
-/// This updates the position of the ABPs and then nudges the orientation before applying periodic boundary conditions.
-/*pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
-    if let SimulationModel::Active(params) = &settings.model {
-        let inv_gamma = 1.0 / params.gamma;
-        let mut rng = rand::thread_rng();
-        let normal = rand_distr::Normal::new(0.0, 1.0).unwrap();
-        
-
-
-        for i in 0..particles.position.len() {
-            
-            // Calculate the scale for rotational noise
-            #[allow(non_snake_case)]
-            let Dr = 3.0*params.Dt/(4.0 * particles.radius[i].powi(2));
-            let theta_noise_scale = (2.0 * Dr * settings.dt).sqrt();
-
-            // Update Linear Velocity and Position (Overdamped)
-            // v = F / gamma
-            particles.velocity[i] = forces[i] * inv_gamma;
-            particles.position[i] += particles.velocity[i] * settings.dt;
-
-            // Apply Rotational Noise to Orientation
-            let d_theta = normal.sample(&mut rng) * theta_noise_scale;
-            let (sin_t, cos_t) = d_theta.sin_cos();
-            let x = particles.orientation[i].x;
-            let z = particles.orientation[i].z;
-            particles.orientation[i].x = x * cos_t - z * sin_t;
-            particles.orientation[i].z = x * sin_t + z * cos_t;
-            //to be safe make sure no floating point errors change magnitude
-            particles.orientation[i] = particles.orientation[i].normalize();
-
-
-            if particles.position[i].x.is_nan() || particles.position[i].x.abs() > 1e6 {
-               println!("Particle exploded! Force: {:?}, Position: {:?}", forces[i], particles.position[i]);
-            }
-            // Apply periodic boundaries
-            check_periodic(&mut particles.position[i], settings.sim_box_size);
-        }
-    }
-}
-*/
 
 pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
+    println!("{:?}", forces);
     if let SimulationModel::Active(params) = &settings.model {
         let inv_gamma = 1.0 / params.gamma;
-        let mut rng = rand::thread_rng();
-        let normal = rand_distr::Normal::new(0.0, 1.0).unwrap();
+        let mut _rng = rand::thread_rng();
+        let _normal = rand_distr::Normal::new(0.0, 1.0).unwrap();
+
+        
 
         for i in 0..particles.position.len() {
-            // 1. Update Linear Velocity and Position (Overdamped)
+            // Update Linear Velocity and Position (Overdamped)
             particles.velocity[i] = forces[i] * inv_gamma;
             particles.position[i] += particles.velocity[i] * settings.dt;
 
-            // 2. Calculate the scale for rotational noise
+            // Calculate the scale for rotational noise
             #[allow(non_snake_case)]
             let Dr = 3.0 * params.Dt / (4.0 * particles.radius[i].powi(2));
-            let theta_noise_scale = (2.0 * Dr * settings.dt).sqrt();
-            let d_theta = normal.sample(&mut rng) * theta_noise_scale;
+            let _theta_noise_scale = (2.0 * Dr * settings.dt).sqrt();
+            let d_theta = 0.0;//normal.sample(&mut rng) * theta_noise_scale;
 
-            // 3. Apply Rotational Noise safely to the 3D Heading Vector
+            // Apply Rotational Noise safely to the 3D Heading Vector
             // We create a clean rotation quaternion around the Y-axis (up-axis for X-Z plane)
             let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, d_theta);
             
@@ -141,7 +103,7 @@ pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &Sim
             particles.orientation[i] = rotation * particles.orientation[i];
             particles.orientation[i] = particles.orientation[i].normalize();
 
-            // 4. Debug Checks
+            // Debug Checks
             if particles.position[i].x.is_nan() || particles.position[i].x.abs() > 1e6 {
                println!("Particle exploded! Force: {:?}, Position: {:?}", forces[i], particles.position[i]);
             }
@@ -167,7 +129,7 @@ pub fn integrate_rigid_bodies(
     forces: &[DVec3], 
     torques: &[DVec3],
     particles: &mut ParticleVec, 
-    molecule_map: &HashMap<usize, Vec<usize>>,
+    molecule_map: &HashMap<usize, MoleculeData>,
     settings: &SimulationSettings
 ) {
     let dt = settings.dt;
@@ -175,53 +137,60 @@ pub fn integrate_rigid_bodies(
     let sim_box_size = settings.sim_box_size;
 
     //Iterate over molecules
-    for (_m_id, pids) in molecule_map {
+    for (mol_id, mol) in molecule_map {   
+        let lead_idx = mol.pids[0];    
+        let (total_mass, com_pos, mut vel) = calculate_molecule_com(&mol.pids, &particles);
+
         let mut total_force = DVec3::ZERO;
         let mut total_torque = DVec3::ZERO;
-        let mut total_mass = 0.0;
-        let mut com_pos = DVec3::ZERO;
-        let mut vel = DVec3::ZERO;
 
-        
-        // Calculate aggregate quantites of molecule
-        for &idx in pids {
+        for &idx in &mol.pids {
             total_force += forces[idx];
-            total_torque += torques[idx] + particles.rel_pos[idx].cross(forces[idx]);
-            total_mass += particles.mass[idx];
+            // torques come from original torque on each particle and forces acting at some distance r around COM.
+            let r = particles.position[idx] - com_pos;
+            total_torque += torques[idx] + r.cross(forces[idx]);
+        }
+
+        //Update velocity
+        let acc = total_force / total_mass;
+        vel += acc * half_dt;
+        particles.velocity[lead_idx] = vel;
         
-            //For calculating COM and vel.
-            com_pos += particles.position[idx]*particles.mass[idx];
-            vel += particles.velocity[idx]*particles.mass[idx];
+        if !acc.x.is_finite() || !acc.y.is_finite() || !acc.z.is_finite() {
+           panic!("Non-finite acc detected for molecule {:?}! Check mass.", mol_id);
         }
 
-        com_pos /= total_mass;
-        vel /= total_mass;
+        //Update omega
+        let rot_mat = DMat3::from_quat(particles.orientation[lead_idx]);
+        let i_global = rot_mat * mol.inertia * rot_mat.transpose();
+        let i_inv = i_global.inverse();
+        let omega = particles.omega[lead_idx];
+        let gyroscopic = omega.cross(i_global * omega);
+        let alpha = i_inv * (total_torque - gyroscopic);
 
-        //Update based on the COM of molecule.
-        let acceleration = total_force / total_mass;
-        // Half-step velocity update
-        vel += acceleration * half_dt;
-        // Full-step position update
-        com_pos += vel * dt;
+        if !alpha.x.is_finite() || !alpha.y.is_finite() || !alpha.z.is_finite() {
+            println!("--- Debugging Molecule 1 ---");
+            println!("Total Torque: {:?}", total_torque);
+            println!("Omega: {:?}", particles.omega[lead_idx]);
+            println!("Inertia Global: {:?}", i_global);
+            println!("Determinant of I: {}", i_global.determinant());
+            panic!("Non-finite alpha detected for molecule 1!");
+        }
+        particles.omega[lead_idx] += alpha * half_dt;
 
-        check_periodic(&mut com_pos, sim_box_size);
+        //update position and orientation
+        let mut new_com = com_pos + vel * dt;
+        check_periodic(&mut new_com, sim_box_size);
+        let delta_q = DQuat::from_scaled_axis(particles.omega[lead_idx] * dt);
+        particles.orientation[lead_idx] = (delta_q * particles.orientation[lead_idx]).normalize();
 
-        let rot_mat = DMat3::from_quat(particles.orientation[pids[0]]);
-    
-
-        for &idx in pids {
-            // Update individual particle positions based on molecule
-            particles.position[idx] = com_pos + (rot_mat*particles.rel_pos[idx]);
-            // Correct formula for particle velocity in a rigid body:
-            particles.velocity[idx] = vel + (particles.omega[pids[0]].cross(rot_mat * particles.rel_pos[idx]));
+        // Update individual particles using local_offsets
+        let rot_mat_new = DMat3::from_quat(particles.orientation[lead_idx]);
+        for &idx in &mol.pids {
+            let offset = particles.rel_pos[idx];
+            particles.position[idx] = new_com + (rot_mat_new * offset);
         }
 
-         //update orientation
-        let delta_q = DQuat::from_scaled_axis(particles.omega[pids[0]] * settings.dt);
-        particles.orientation[pids[0]] = (delta_q * particles.orientation[pids[0]]).normalize();
-
-        //println!("omega {:?}", particles.omega);
-        //println!("omega {:?}", particles.orientation);
 
     }
 }
@@ -236,41 +205,39 @@ pub fn integrate_rigid_bodies_correct(
     forces: &[DVec3], 
     torques: &[DVec3],
     particles: &mut ParticleVec, 
-    molecule_map: &HashMap<usize, Vec<usize>>,
+    molecule_map: &HashMap<usize, MoleculeData>,
     settings: &SimulationSettings
 ) {
     let half_dt = settings.dt * 0.5;
-    //Iterate over molecules
-    for (_m_id, pids) in molecule_map {
+
+    for (_m_id, mol) in molecule_map {
+        let lead_idx = mol.pids[0];
+        
+        // Calculate Aggregate Forces & Torques
+        let (total_mass, com_pos, _) = calculate_molecule_com(&mol.pids, particles);
         let mut total_force = DVec3::ZERO;
         let mut total_torque = DVec3::ZERO;
-        let mut total_mass = 0.0;
-        let mut vel = DVec3::ZERO;
-    
-        // Calculate aggregate quantites of molecule
-        for &idx in pids {
-            total_force += forces[idx];
-            total_torque += torques[idx] + particles.rel_pos[idx].cross(forces[idx]);
-            total_mass += particles.mass[idx];
         
-            //Divide by num particles
-            vel += particles.velocity[idx]*particles.mass[idx];
+        for &idx in &mol.pids {
+            total_force += forces[idx];
+            let r = particles.position[idx] - com_pos;
+            total_torque += torques[idx] + r.cross(forces[idx]);
         }
 
-        vel /= total_mass;
-       
-        let acceleration = total_force / total_mass;
-        // Half-step velocity update
-        vel += acceleration * half_dt;
+        // Correct COM Velocity (dt/2)
+        let acc = total_force / total_mass;
+        particles.velocity[lead_idx] += acc * half_dt;
 
-
-        let rot_mat = DMat3::from_quat(particles.orientation[pids[0]]);
-
-        for &idx in pids {
-            // Update individual particle positions based on molecule
-            particles.velocity[idx] = vel + (particles.omega[pids[0]].cross(rot_mat * particles.rel_pos[idx]));
-        }
-
+        // Correct Angular Velocity (dt/2)
+        let rot_mat = DMat3::from_quat(particles.orientation[lead_idx]);
+        let i_global = rot_mat * mol.inertia * rot_mat.transpose();
+        let i_inv = i_global.inverse();
+        
+        let omega = particles.omega[lead_idx];
+        let gyroscopic = omega.cross(i_global * omega);
+        let alpha = i_inv * (total_torque - gyroscopic);
+        
+        particles.omega[lead_idx] += alpha * half_dt;
        
     }
 }

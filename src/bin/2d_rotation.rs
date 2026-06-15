@@ -1,3 +1,4 @@
+
 /// Explanation of simulation
 /// 
 /// We have two balls with buried charges. We drop one on the other.
@@ -8,15 +9,15 @@ use glam::DVec3;
 use std::collections::HashMap;
 
 // Imports from simulation library
-use md::md_sim::file_io;
+use md::md_sim::utils::file_io;
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::{Forces, granular_collision};
-use md::md_sim::motion::Motion;
+use md::md_sim::force::force::Forces;
+use md::md_sim::motion::motion::Motion;
 use md::md_sim::particle::ParticleVec;
-use md::md_sim::force::add_weight;
-use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
-
+use md::md_sim::force::force::{add_weight,granular_collision,coulomb};
+use md::md_sim::motion::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
+use md::md_sim::motion::geometry::MoleculeData;
 use md::md_viz::scene::Scene;
 
 pub struct SimUpdate;
@@ -38,12 +39,13 @@ impl Forces for SimUpdate{
 
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time: f64) {   
-        add_weight(i, forces, particles);
+        //add_weight(i, forces, particles);
     }
 
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
         granular_collision(i, j, particles, forces, torques, settings);
+        coulomb(i,j, particles, forces, torques, settings);
     }
 
     fn update_internal_forces(&self, _particles: &ParticleVec, _forces: &mut [DVec3], _torques: &mut [DVec3], _settings: &SimulationSettings){
@@ -52,11 +54,11 @@ impl Forces for SimUpdate{
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings,molecule_map: &HashMap<usize,Vec<usize>>, _time:f64) {
+    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings,molecule_map: &HashMap<usize,MoleculeData>, _time:f64) {
         integrate_rigid_bodies(forces, torques, particles, molecule_map, settings);
     }
-    fn correct_motion(&self, forces: &[glam::DVec3],  torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize,Vec<usize>>) {
-        integrate_rigid_bodies_correct(forces,torques,particles,molecule_map, settings)
+    fn correct_motion(&self, forces: &[glam::DVec3],  torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize,MoleculeData>) {
+        integrate_rigid_bodies_correct(forces,torques,particles, molecule_map, settings)
     }
 }
 
