@@ -18,7 +18,7 @@ use crate::md_sim::motion::geometry::MoleculeData;
 use crate::md_sim::particle::{ParticleVec};
 use crate::md_sim::force::neighbours::CellGrid;
 use crate::md_sim::force::force::Forces;
-use crate::md_sim::motion::motion::Motion;
+use crate::md_sim::motion::change::Motion;
 use crate::md_sim::utils::models::*;
 
 

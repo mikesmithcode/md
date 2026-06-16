@@ -13,10 +13,10 @@ use md::md_sim::utils::file_io;
 use md::md_sim::simulation::Simulation;
 use md::md_sim::simulation::SimulationSettings;
 use md::md_sim::force::force::Forces;
-use md::md_sim::motion::motion::Motion;
+use md::md_sim::motion::change::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::force::force::{add_weight,granular_collision,coulomb};
-use md::md_sim::motion::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
+use md::md_sim::motion::change::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::motion::geometry::MoleculeData;
 use md::md_viz::scene::Scene;
 

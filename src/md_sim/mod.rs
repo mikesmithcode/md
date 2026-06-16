@@ -10,7 +10,7 @@ pub use self::particle::Particle;
 pub use self::simulation::{Simulation, SimulationSettings};
 
 //Reexport Traits
-pub use self::force::force::Forces;
-pub use self::motion::motion::Motion;
+pub use self::force::Forces;
+pub use self::motion::Motion;
 
 

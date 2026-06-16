@@ -51,8 +51,7 @@
 pub fn create_molecule_vec() -> ParticleVec {
     let mut particles = ParticleVec::new();
     
-    // COM is at (1.0, 2.0, 3.0)
-    let com = DVec3::new(1.0, 2.0, 3.0);
+    let com = DVec3::new(1.0, 2.0, 3.25);
     
     // Particle 0 is at (1.0, 2.0, 3.5) -> rel_pos = (0, 0, 0.5)
     particles.push(Particle {
@@ -60,12 +59,12 @@ pub fn create_molecule_vec() -> ParticleVec {
         molecule_id: 0,
         ptype: 0,
         position: com + DVec3::new(0.0, 0.0, 0.5),
-        rel_pos: DVec3::new(0.0, 0.0, 0.5),
+        rel_pos: DVec3::new(0.0, 0.0, 0.25),
         velocity: DVec3::new(1.0, 1.0, 1.0), // v_com + (omega x r0)
         orientation: DQuat::IDENTITY,
         omega: DVec3::new(0.0, 1.0, 0.0),
         radius: 0.5,
-        mass: 1.0,
+        mass: 1.5,
         inertia: 1.0,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
@@ -78,12 +77,12 @@ pub fn create_molecule_vec() -> ParticleVec {
         molecule_id: 0,
         ptype: 1,
         position: com + DVec3::new(0.0, 0.0, -0.5),
-        rel_pos: DVec3::new(0.0, 0.0, -0.5),
+        rel_pos: DVec3::new(0.0, 0.0, -0.75),
         velocity: DVec3::new(0.0, 1.0, 1.0),
         orientation: DQuat::IDENTITY,
         omega: DVec3::new(0.0, 1.0, 0.0),
         radius: 0.5,
-        mass: 1.0,
+        mass: 0.5,
         inertia: 1.0,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),

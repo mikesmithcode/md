@@ -1,2 +1,95 @@
-pub mod force;
-pub mod neighbours;
+// 1. Declare the sub-modules
+pub mod single;
+pub mod pairwise;
+pub mod bonds;
+pub mod neighbours; // 'pub' because your main loop needs to access neighbor list methods
+pub mod utils;
+pub mod tests;
+
+// 2. Re-export the traits and key functions for easier access
+// This allows you to call forces::Force instead of forces::force::Force
+pub use single::{add_weight, add_viscous_drag, add_active_force};
+pub use pairwise::{add_granular_collision, add_weeks_chandler_andersen, add_coulomb};
+pub use bonds::*;
+pub use utils::check_delta;
+
+
+
+use glam::DVec3;
+use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::SimulationSettings;
+
+
+
+
+/// Defines the physical interactions and force constraints for a simulation.
+///
+/// The `Forces` trait is the core of the physics engine's dynamics. It separates 
+/// force calculations into unary (single-body), binary (pair-wise), and 
+/// post-processing (constraints) phases.
+pub trait Forces {
+    /// Indicates if the simulation requires pair-wise force calculations.
+    ///
+    /// If `false`, the engine will skip spatial binning and the 
+    /// `update_pair_forces` calls, significantly improving performance.
+    fn has_pair_forces(&self) -> bool { true }
+
+    /// Indicates if the simulation requires single-body force calculations.
+    ///
+    /// If `false`, the engine will skip the `update_single_forces` loop.
+    fn has_single_forces(&self) -> bool { true }
+
+    /// Set this to true if your particle is composite and you need to apply forces and torques to whole.
+    fn has_internal_forces(&self) -> bool {false}
+
+    /// Calculates unary forces acting on a specific particle.
+    ///
+    /// This method is called once per particle in an $O(N)$ loop. It is the 
+    /// ideal location for forces that depend only on an individual particle's 
+    /// state, such as gravity, viscous drag, or self-propulsion.
+    ///
+    /// # Arguments
+    /// * `i` - Index of the particle being updated.
+    /// * `forces` - The force buffer where contributions should be added.
+    /// * `particles` - Reference to the particle data (positions, velocities, etc.).
+    /// * `settings` - Global simulation parameters.
+    fn update_single_forces(
+        &self, 
+        i: usize, 
+        forces: &mut [DVec3], 
+        torques: &mut [DVec3],
+        particles: &ParticleVec, 
+        settings: &SimulationSettings,
+        time: f64
+    );
+
+    /// Calculates binary forces between two particles within the cutoff distance.
+    ///
+    /// This method is called by the `CellGrid` manager for pairs $(i, j)$ found 
+    /// within neighbouring cells. Users should calculate the interaction (e.g., 
+    /// Lennard-Jones or Hertzian contact) and update the force buffer for both 
+    /// particles if Newton's Third Law applies.
+    ///
+    /// # Arguments
+    /// * `i`, `j` - Indices of the interacting particles.
+    /// * `forces` - The force buffer where contributions should be added.
+    fn update_pair_forces(
+        &self, 
+        i: usize, 
+        j: usize, 
+        forces: &mut [DVec3], 
+        torques: &mut [DVec3],
+        particles: &ParticleVec, 
+        settings: &SimulationSettings
+    );
+
+    fn update_internal_forces(
+        &self,
+        _particles: &ParticleVec, 
+        _forces: &mut [DVec3], 
+        _torques: &mut [DVec3],
+        _settings: &SimulationSettings
+    ){
+        // Optional: No Internal Forces by Default
+    }
+}

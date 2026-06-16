@@ -16,7 +16,7 @@ use md::md_sim::force::Forces;
 use md::md_sim::motion::Motion;
 use md::md_sim::particle::ParticleVec;
 use md::md_sim::force::force::{add_weight,granular_collision};
-use md::md_sim::motion::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
+use md::md_sim::motion::change::{integrate_singleparticle_update, integrate_singleparticle_correct};
 
 use md::md_viz::scene::Scene;
 
