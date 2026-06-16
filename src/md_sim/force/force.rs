@@ -416,7 +416,7 @@ pub fn check_delta(delta: &mut DVec3, sim_box_size: &DVec3) {
 mod tests {
     use super::*;
     use crate::test_utils::create_particle_vec;
-    use crate::md_sim::models::CollisionParams;
+    use crate::md_sim::utils::models::CollisionParams;
     
 
     // -----------------------------------------------------------------
@@ -478,7 +478,7 @@ fn test_granular_collision() {
 
     // Initialise the full SimulationSettings struct
     let settings = SimulationSettings {
-        dt: 0.001,             // Placeholder value
+        dt: 0.001,             
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
         cutoff: 2.0,           // Ensure this is large enough for the overlap
         skin:0.2,
@@ -486,7 +486,7 @@ fn test_granular_collision() {
         num_steps: 100,
         dump: 10,
         interaction_ptypes:vec![[0 as u8,0 as u8]],
-        model,                 // Our Solid model
+        model,                 
         active_mask: [true; 32]
     };
 

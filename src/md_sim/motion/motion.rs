@@ -136,65 +136,53 @@ pub fn integrate_rigid_bodies(
     let half_dt = dt * 0.5;
     let sim_box_size = settings.sim_box_size;
 
-    //Iterate over molecules
     for (mol_id, mol) in molecule_map {   
         let lead_idx = mol.pids[0];    
-        let (total_mass, com_pos, mut vel) = calculate_molecule_com(&mol.pids, &particles);
+        
+        // Calculate current COM etc
+        let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, &particles);
 
+        // Calculate aggregate forces and torques
         let mut total_force = DVec3::ZERO;
         let mut total_torque = DVec3::ZERO;
-
         for &idx in &mol.pids {
             total_force += forces[idx];
-            // torques come from original torque on each particle and forces acting at some distance r around COM.
             let r = particles.position[idx] - com_pos;
             total_torque += torques[idx] + r.cross(forces[idx]);
         }
 
-        //Update velocity
+        // Update COM Velocity and Angular Velocity
         let acc = total_force / total_mass;
-        vel += acc * half_dt;
-        particles.velocity[lead_idx] = vel;
+        let new_com_vel = com_vel + (acc * half_dt);
         
-        if !acc.x.is_finite() || !acc.y.is_finite() || !acc.z.is_finite() {
-           panic!("Non-finite acc detected for molecule {:?}! Check mass.", mol_id);
-        }
-
-        //Update omega
         let rot_mat = DMat3::from_quat(particles.orientation[lead_idx]);
         let i_global = rot_mat * mol.inertia * rot_mat.transpose();
-        let i_inv = i_global.inverse();
         let omega = particles.omega[lead_idx];
         let gyroscopic = omega.cross(i_global * omega);
-        let alpha = i_inv * (total_torque - gyroscopic);
+        let alpha = i_global.inverse() * (total_torque - gyroscopic);
+        let new_omega = omega + (alpha * half_dt);
 
-        if !alpha.x.is_finite() || !alpha.y.is_finite() || !alpha.z.is_finite() {
-            println!("--- Debugging Molecule 1 ---");
-            println!("Total Torque: {:?}", total_torque);
-            println!("Omega: {:?}", particles.omega[lead_idx]);
-            println!("Inertia Global: {:?}", i_global);
-            println!("Determinant of I: {}", i_global.determinant());
-            panic!("Non-finite alpha detected for molecule 1!");
-        }
-        particles.omega[lead_idx] += alpha * half_dt;
-
-        //update position and orientation
-        let mut new_com = com_pos + vel * dt;
-        check_periodic(&mut new_com, sim_box_size);
-        let delta_q = DQuat::from_scaled_axis(particles.omega[lead_idx] * dt);
-        particles.orientation[lead_idx] = (delta_q * particles.orientation[lead_idx]).normalize();
-
-        // Update individual particles using local_offsets
-        let rot_mat_new = DMat3::from_quat(particles.orientation[lead_idx]);
+        // Update Orientation and COM Position
+        let new_com_pos = com_pos + (new_com_vel * dt);
+        let delta_q = DQuat::from_scaled_axis(new_omega * dt);
+        let new_orientation = (delta_q * particles.orientation[lead_idx]).normalize();
+        
+        // Update every particle's state
+        let rot_mat_new = DMat3::from_quat(new_orientation);
         for &idx in &mol.pids {
-            let offset = particles.rel_pos[idx];
-            particles.position[idx] = new_com + (rot_mat_new * offset);
+            // Update individual velocity: v_i = v_com + (omega x r_global)
+            let r_global = rot_mat_new * particles.rel_pos[idx];
+            particles.velocity[idx] = new_com_vel + new_omega.cross(r_global);
+            
+            // Update individual position
+            particles.position[idx] = new_com_pos + r_global;
+            
+            // Sync orientation and omega (if stored per-particle)
+            particles.orientation[idx] = new_orientation;
+            particles.omega[idx] = new_omega;
         }
-
-
     }
 }
-
 
 /// Performs the second half of the Velocity Verlet integration for rigid bodies (Correction).
 ///
@@ -213,35 +201,37 @@ pub fn integrate_rigid_bodies_correct(
     for (_m_id, mol) in molecule_map {
         let lead_idx = mol.pids[0];
         
-        // Calculate Aggregate Forces & Torques
-        let (total_mass, com_pos, _) = calculate_molecule_com(&mol.pids, particles);
+        // Calculate new Force/Torque at the new position
+        let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, particles);
         let mut total_force = DVec3::ZERO;
         let mut total_torque = DVec3::ZERO;
-        
         for &idx in &mol.pids {
             total_force += forces[idx];
             let r = particles.position[idx] - com_pos;
             total_torque += torques[idx] + r.cross(forces[idx]);
         }
 
-        // Correct COM Velocity (dt/2)
+        // Calculate COM velocity (v_new = v_half + a_new * dt/2)
         let acc = total_force / total_mass;
-        particles.velocity[lead_idx] += acc * half_dt;
+        let new_com_vel = com_vel + (acc * half_dt);
 
-        // Correct Angular Velocity (dt/2)
+        // Finalise angular velocity (w_new = w_half + alpha_new * dt/2)
         let rot_mat = DMat3::from_quat(particles.orientation[lead_idx]);
         let i_global = rot_mat * mol.inertia * rot_mat.transpose();
         let i_inv = i_global.inverse();
-        
         let omega = particles.omega[lead_idx];
         let gyroscopic = omega.cross(i_global * omega);
         let alpha = i_inv * (total_torque - gyroscopic);
-        
-        particles.omega[lead_idx] += alpha * half_dt;
-       
+        let new_omega = omega + (alpha * half_dt);
+
+        for &idx in &mol.pids {
+            particles.omega[idx] = new_omega;
+            // Re-sync all particles with the new COM velocity and new Omega
+            let r_global = particles.position[idx] - com_pos;
+            particles.velocity[idx] = new_com_vel + new_omega.cross(r_global);
+        }
     }
 }
-
 
 
 /// Performs the first half of the Velocity Verlet integration (Prediction).
@@ -399,8 +389,8 @@ pub fn change_colour(particles: &mut ParticleVec, _settings: &SimulationSettings
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::create_particle_vec;
-
+    use crate::test_utils::{create_particle_vec, create_molecule_vec, setup_single_molecule_data};
+    
     #[test]
     fn test_integrate_singleparticle_update() {
         let mut particles = create_particle_vec(); // Particles at (1,2,3)
@@ -489,8 +479,99 @@ mod tests {
         assert!((particles.radius[1] - expected).abs() < 1e-9);
     }
 
-    
+    // Checking that zero force does nothing
+    #[test]
+    fn test_integrate_rigid_body_conservation() {
+        
+        let settings = SimulationSettings { dt: 0.1, ..Default::default() };
+        let mut particles = create_molecule_vec();
+        let mol_data = setup_single_molecule_data(&particles); 
+        
+        // Calculate Initial State
+        let (mass,com,initial_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);
+        println!("com_vel {:?}", initial_com_vel);
+        
+        
+        let initial_omega = particles.omega[0];
 
+        // Perform one step with zero forces
+        integrate_rigid_bodies(&vec![DVec3::ZERO; 2], &vec![DVec3::ZERO; 2], &mut particles, &mol_data, &settings);
+        integrate_rigid_bodies_correct(&vec![DVec3::ZERO; 2], &vec![DVec3::ZERO; 2], &mut particles, &mol_data, &settings);
+
+        
+        // Verify Conservation
+        let (_,_,final_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);
+        
+
+        assert!((final_com_vel - initial_com_vel).length() < 1e-12, "COM Velocity changed!");
+        assert!((particles.omega[0] - initial_omega).length() < 1e-12, "Omega changed!");
+    }
+
+    #[test]
+    fn test_integrate_rigid_body_gravity() {
+        let dt = 0.1;
+        let settings = SimulationSettings { dt, ..Default::default() };
+
+        let mut particles = create_molecule_vec();
+        let mol_data = setup_single_molecule_data(&particles);
+        
+        // Gravity acting only on Z
+        let gravity = DVec3::new(0.0, 0.0, -9.81);
+        let particle_mass = 1.0; 
+        let force_vec = gravity * particle_mass;
+        
+        let forces = vec![force_vec; 2];
+        let torques = vec![DVec3::ZERO; 2];
+
+        // Integration
+        integrate_rigid_bodies(&forces, &torques, &mut particles, &mol_data, &settings);
+        integrate_rigid_bodies_correct(&forces, &torques, &mut particles, &mol_data, &settings);
+
+        // Verify: Only Z-velocity should be affected by gravity
+        // Initial velocity was (1.0, 1.0, 1.0) and (0.0, 1.0, 1.0)
+        // Average X-velocity = (1.0 + 0.0) / 2 = 0.5
+        // Average Z-velocity = (1.0 + 1.0) / 2 = 1.0
+        let expected_z_vel = 1.0 + (gravity.z * dt);
+        
+        let (_, _, final_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);
+
+        assert!((final_com_vel[2] - expected_z_vel).abs() < 1e-12, "Z-axis gravity integration failed!");
+        assert!((final_com_vel[0] - 0.5).abs() < 1e-12, "X-axis velocity should remain unchanged!");
+    }
+
+    #[test]
+    fn test_molecule_rotation_torque() {
+        let dt = 0.1;
+        let settings = SimulationSettings { dt, ..Default::default() };
+        let mut particles = create_molecule_vec();
+        let mol_data = setup_single_molecule_data(&particles);
+        let molecule=mol_data.get(&0).expect("0 should exist");
+
+        // Apply a force couple: P0 pushed in +X, P1 pushed in -X
+        // This creates rotation around the Y-axis.
+        let forces = vec![DVec3::new(0.5, 0.0, 0.0), DVec3::new(-0.5, 0.0, 0.0)];
+        let torques = vec![DVec3::ZERO, DVec3::ZERO];
+
+        let init_omega = particles.omega[0];
+        // Integration
+        integrate_rigid_bodies(&forces, &torques, &mut particles, &mol_data, &settings);
+        integrate_rigid_bodies_correct(&forces, &torques, &mut particles, &mol_data, &settings);
+
+        let pids = &molecule.pids;
+        let lead_idx = pids[0];
+        let final_omega = particles.omega[0];
+
+        let (_, _, final_com_vel) = calculate_molecule_com(&molecule.pids, &particles);
+        
+        println!("omega final {:?}", final_omega);
+        println!("com_vel final {:?}", final_com_vel);
+        // Check the omega values.
+        assert!((final_omega.y - 1.071237188301297).abs() < 1e-12, "Angular velocity change failed!");
+        
+        // Verify COM velocity conservation
+        
+        assert!((final_com_vel.x - 0.5).abs() < 1e-12, "COM X-velocity should be conserved!");       
+    }
 
 
 }

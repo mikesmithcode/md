@@ -116,7 +116,7 @@ mod tests {
         let id = 1;
         let position = DVec3::new(1.0, 2.0, 3.0);
         let velocity = DVec3::new(0.1, 0.2, 0.3);
-        let orientation= DVec3::ZERO;
+        let orientation= DQuat::IDENTITY;
         let omega= DVec3::ZERO;
         let color = Srgba::new(255, 0, 0, 255);
         let radius: f64 = 0.5;

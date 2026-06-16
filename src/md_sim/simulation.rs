@@ -47,8 +47,8 @@ pub struct SimulationSettings{
     pub num_steps: usize,
     pub dump: usize,
     pub interaction_ptypes: Vec<[u8;2]>,
-    #[serde(default)]
-    pub head_ptypes: Vec<u8>,
+    //#[serde(default)]
+    //pub head_ptypes: Vec<u8>,
     pub model: SimulationModel,
     #[serde(skip)] // Don't try to load this from JSON
     pub active_mask: [bool; 32],
@@ -95,9 +95,9 @@ impl SimulationSettings {
         ptype < 32 && self.active_mask[ptype]
     }
 
-    pub fn is_head(&self, ptype: u8) -> bool {
-        self.head_ptypes.contains(&ptype)
-    }
+    //pub fn is_head(&self, ptype: u8) -> bool {
+    //    self.head_ptypes.contains(&ptype)
+    //}
 }
 
 /// Largely used for testing
@@ -112,7 +112,7 @@ impl Default for SimulationSettings {
             num_steps: 15,
             dump: 1000,
             interaction_ptypes: vec![[0,0]],
-            head_ptypes: vec![],
+            //head_ptypes: vec![],
             model: SimulationModel::Solid(CollisionParams{
                 stiffness: 1000.0, 
                 damping: 50.0}),

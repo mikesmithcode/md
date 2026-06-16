@@ -39,7 +39,7 @@ impl Forces for SimUpdate{
 
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time: f64) {   
-        //add_weight(i, forces, particles);
+        add_weight(i, forces, particles);
     }
 
     // forces that operate between pairs of particles

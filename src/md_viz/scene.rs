@@ -283,6 +283,7 @@ impl Scene {
         event_loop.run_return(|event, _, control_flow| {
             match event {
                 WinitEvent::WindowEvent { event, window_id } => {
+                    println!("Window event {:?}", &event);
                     if let Some(window) = &self.winit_window {
                         if window.id() == window_id {
                             self.camera_control.handle_event(&event);
