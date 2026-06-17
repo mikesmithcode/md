@@ -11,14 +11,11 @@ use std::collections::HashMap;
 
 
 // Imports from simulation library
-use md::md_sim::utils::file_io;
-use md::md_sim::simulation::Simulation;
-use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::{Forces, force::weeks_chandler_andersen, force::active_force};
-use md::md_sim::motion::{Motion,change::update_abps};
-use md::md_sim::particle::ParticleVec;
-
-
+use md::md_sim::utils::{filepaths, save_snapshot, load_latest_snapshot};
+use md::md_sim::{Simulation, SimulationSettings, Forces, Motion, ParticleVec};
+use md::md_sim::force::{add_weeks_chandler_andersen, add_active_force};
+use md::md_sim::motion::update_abps;
+use md::md_sim::particle::MoleculeData;
 use md::md_viz::scene::Scene;
 
 
@@ -29,12 +26,12 @@ impl Forces for SimUpdate{
 
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings, _time: f64) {   
-       active_force(i, forces, particles, settings);
+       add_active_force(i, forces, particles, settings);
     }
 
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3], _torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
-        weeks_chandler_andersen(i, j, forces, particles, settings);
+        add_weeks_chandler_andersen(i, j, forces, particles, settings);
     }
 
 }
@@ -43,7 +40,7 @@ impl Forces for SimUpdate{
 
 /// Add any changes to the motion e.g particles changing size, being created or disappearing. Then integrate the equations of motion.
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, Vec<usize>>, _time:f64) {
+    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
         if forces.iter().all(|&f| f == DVec3::ZERO) {
             return;
         }
@@ -57,7 +54,7 @@ impl Motion for SimUpdate{
 pub fn main() {    
 
     // Construct filepaths from script name.
-    let [sim_config_path, scene_config_path, snapshot_path, video_path] = file_io::filepaths(file!());
+    let [sim_config_path, scene_config_path, snapshot_path, video_path] = filepaths(file!());
     
 
     //------------------------------------------------------------
@@ -65,7 +62,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (_particles, start_step, mut _time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (_particles, start_step, mut _time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
 
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
@@ -96,7 +93,7 @@ pub fn main() {
     // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
     //--------------------------------------------------------------
   
-    let (particles, start_step, time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (particles, start_step, time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
     let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone(), time);
     
     println!("Simulation started...");
@@ -127,7 +124,7 @@ pub fn main() {
             let _ = scene.save_frame(&sim.get_particles());
 
             //save a snapshot of particle positions etc
-            file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+            save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
         }
         
     }

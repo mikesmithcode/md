@@ -1,13 +1,17 @@
-pub mod change;
-pub mod geometry;
-
-
-
 use std::collections::HashMap;
-
 use glam::DVec3;
-use crate::md_sim::{simulation::SimulationSettings, particle::ParticleVec};
-use crate::md_sim::motion::geometry::MoleculeData;
+
+mod change;
+mod integration;
+
+pub use change::{check_periodic, change_rad, move_sinwave, change_colour};
+pub use integration::{integrate_singleparticle_update,integrate_singleparticle_correct, integrate_rigid_bodies, integrate_rigid_bodies_correct, update_abps};
+
+pub use crate::md_sim::{SimulationSettings, ParticleVec};
+pub use super::particle::MoleculeData;
+
+#[cfg(test)]
+mod tests;
 
 /// Defines the integration scheme and kinematic updates for the simulation.
 ///

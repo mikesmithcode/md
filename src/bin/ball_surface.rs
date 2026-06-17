@@ -11,16 +11,12 @@ use std::collections::HashMap;
 use md::md_viz::scene::Scene;
 
 // Imports from simulation library
-use md::md_sim::simulation::Simulation;
-use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::Forces;
-use md::md_sim::motion::Motion;
-use md::md_sim::particle::ParticleVec;
-use md::md_sim::force::force::add_weight;
-use md::md_sim::motion::change::{integrate_singleparticle_update, integrate_singleparticle_correct};
+use md::md_sim::{Simulation, SimulationSettings, Forces, Motion, ParticleVec};
+use md::md_sim::force::add_weight;
+use md::md_sim::motion::{MoleculeData, integrate_singleparticle_correct, integrate_singleparticle_update};
 
-use md::md_sim::utils::file_io;
-use md::md_sim::models::SimulationModel;
+use md::md_sim::utils::{filepaths, save_snapshot, load_latest_snapshot};
+use md::md_sim::particle::SimulationModel;
 
 
 
@@ -92,11 +88,11 @@ impl Forces for SimUpdate{
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, Vec<usize>>, _time:f64) {
+    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
         integrate_singleparticle_update(forces, _torques, particles, settings);
     }
 
-    fn correct_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, Vec<usize>>) {
+    fn correct_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>) {
         integrate_singleparticle_correct(forces, _torques, particles, settings);
     }
 }
@@ -104,7 +100,7 @@ impl Motion for SimUpdate{
 
 pub fn main() {    
     // Construct filepaths
-    let [sim_config_path, scene_config_path, snapshot_path, video_path] = file_io::filepaths(file!());
+    let [sim_config_path, scene_config_path, snapshot_path, video_path] = filepaths(file!());
     
 
     //------------------------------------------------------------
@@ -112,7 +108,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (_particles, start_step, mut _time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (_particles, start_step, mut _time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
 
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
@@ -140,7 +136,7 @@ pub fn main() {
     // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
     //--------------------------------------------------------------
   
-    let (particles, start_step, time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (particles, start_step, time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
     let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone(), time);
     
     println!("Simulation started...");
@@ -165,7 +161,7 @@ pub fn main() {
 
             //save a snapshot of particle positions etc
             {
-                file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+                save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
 
             }
         }

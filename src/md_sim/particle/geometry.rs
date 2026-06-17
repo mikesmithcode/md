@@ -1,6 +1,6 @@
 use glam::{DVec3,DMat3};
 
-use crate::md_sim::particle::ParticleVec;
+use super::ParticleVec;
 
 #[derive(Debug)]
 pub struct MoleculeData{
@@ -68,3 +68,6 @@ pub fn calculate_molecule_inertia(pids: &[usize], particles: &ParticleVec, com: 
     }
     total_inertia
 }
+
+
+

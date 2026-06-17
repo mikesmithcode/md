@@ -1,7 +1,8 @@
 use glam::DVec3;
-use crate::md_sim::particle::ParticleVec;
-use crate::md_sim::simulation::SimulationSettings;
-use crate::md_sim::force::{check_delta,Forces};
+use super::super::particle::ParticleVec;
+use super::super::simulation::SimulationSettings;
+use super::Forces;
+use super::utils::check_delta;
 
 
 /// Optimising finding neighbours for calculation of forces

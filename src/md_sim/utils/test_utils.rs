@@ -2,11 +2,7 @@
     use glam::{DVec3, DQuat};
     use std::collections::HashMap;
 
-    use crate::md_sim::particle::Particle;
-    use crate::md_sim::particle::ParticleVec;
-    use crate::md_sim::motion::geometry::MoleculeData;
-
-    const NULL_ID: usize = usize::MAX;
+    use crate::md_sim::particle::{Particle, ParticleVec, MoleculeData};
 
     pub fn create_particle_vec()-> ParticleVec{
         let mut particles = ParticleVec::new();
@@ -95,11 +91,9 @@ pub fn create_molecule_vec() -> ParticleVec {
 pub fn setup_single_molecule_data(particles: &ParticleVec) -> HashMap<usize, MoleculeData> {
     let mut map = HashMap::new();
     
-    // We define the molecule as containing particles 0 and 1
+    // molecule contains 2 particles
     let pids = vec![0, 1];
     
-    // The 'new' method automatically calculates COM and the inertia tensor 
-    // based on the current positions in the ParticleVec
     let mol_data = MoleculeData::new(pids, particles);
     
     // Map molecule ID 0 to this data

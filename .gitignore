@@ -13,4 +13,9 @@ output/*
 *.png
 *.mp4
 
-
+# Rust build and flycheck outputs
+/target/
+**/target/
+temp/rust-builds/
+.rustc_info.json
+.cargo-lock

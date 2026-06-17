@@ -9,16 +9,12 @@ use glam::DVec3;
 use std::collections::HashMap;
 
 // Imports from simulation library
-use md::md_sim::utils::file_io;
-use md::md_sim::simulation::Simulation;
-use md::md_sim::simulation::SimulationSettings;
-use md::md_sim::force::force::Forces;
-use md::md_sim::motion::change::Motion;
-use md::md_sim::particle::ParticleVec;
-use md::md_sim::force::force::{add_weight,granular_collision,coulomb};
-use md::md_sim::motion::change::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
-use md::md_sim::motion::geometry::MoleculeData;
-use md::md_viz::scene::Scene;
+use md::md_sim::{Simulation, SimulationSettings, Forces, Motion, ParticleVec};
+use md::md_sim::force::{add_weight,add_granular_collision,add_coulomb};
+use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
+use md::md_sim::particle::MoleculeData;
+use md::md_sim::utils::{save_snapshot, load_latest_snapshot, filepaths};
+use md::md_viz::Scene;
 
 pub struct SimUpdate;
 
@@ -44,8 +40,8 @@ impl Forces for SimUpdate{
 
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
-        granular_collision(i, j, particles, forces, torques, settings);
-        coulomb(i,j, particles, forces, torques, settings);
+        add_granular_collision(i, j, particles, forces, torques, settings);
+        add_coulomb(i,j, particles, forces, settings);
     }
 
     fn update_internal_forces(&self, _particles: &ParticleVec, _forces: &mut [DVec3], _torques: &mut [DVec3], _settings: &SimulationSettings){
@@ -67,7 +63,7 @@ impl Motion for SimUpdate{
 pub fn main() {    
 
     // Construct filepaths
-    let [sim_config_path, scene_config_path, snapshot_path, video_path] = file_io::filepaths(file!());
+    let [sim_config_path, scene_config_path, snapshot_path, video_path] = filepaths(file!());
     
 
     //------------------------------------------------------------
@@ -75,7 +71,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (_particles, start_step, mut _time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (_particles, start_step, mut _time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
 
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
@@ -103,7 +99,7 @@ pub fn main() {
     // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
     //--------------------------------------------------------------
   
-    let (particles, start_step, time) = file_io::load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (particles, start_step, time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
     let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone(), time);
     
     println!("Simulation started...");
@@ -130,11 +126,11 @@ pub fn main() {
             
             //Handle graphics
             //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
-            scene.display(&sim.get_particles()).expect("Error updating display");
-            let _ = scene.save_frame(&sim.get_particles());
+            scene.display(sim.get_particles()).expect("Error updating display");
+            let _ = scene.save_frame(sim.get_particles());
 
             //save a snapshot of particle positions etc
-            file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+            save_snapshot(&snapshot_path, step, sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
         }
         
     }

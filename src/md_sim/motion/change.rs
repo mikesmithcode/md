@@ -2,7 +2,7 @@ use glam::DVec3;
 use itertools::izip;
 use three_d::Srgba;
 
-use crate::md_sim::{simulation::SimulationSettings, particle::ParticleVec};
+use crate::md_sim::{SimulationSettings, particle::ParticleVec};
 
 
 //-------------------------------------------------------------------------------------------------------

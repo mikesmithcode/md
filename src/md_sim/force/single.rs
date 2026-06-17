@@ -6,9 +6,9 @@ use glam::DVec3;
 use rand_distr::{Normal, Distribution};
 use std::f64::consts::PI;
 
-use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::particle::{ParticleVec, SimulationModel};
 use crate::md_sim::SimulationSettings;
-use crate::md_sim::utils::models::SimulationModel;
+
 
 /// Calculates and adds the gravitational weight to a specific particle.
 ///

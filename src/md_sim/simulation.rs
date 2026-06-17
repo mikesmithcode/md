@@ -14,12 +14,12 @@ use std::path::Path;
 use std::collections::HashMap;
 use itertools::izip;
 
-use crate::md_sim::motion::geometry::MoleculeData;
-use crate::md_sim::particle::{ParticleVec};
-use crate::md_sim::force::neighbours::CellGrid;
-use crate::md_sim::force::force::Forces;
-use crate::md_sim::motion::change::Motion;
-use crate::md_sim::utils::models::*;
+use crate::md_sim::particle::MoleculeData;
+use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::force::CellGrid;
+use crate::md_sim::Forces;
+use crate::md_sim::Motion;
+use crate::md_sim::particle::{SimulationModel, CollisionParams};
 
 
 

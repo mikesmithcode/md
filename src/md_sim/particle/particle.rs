@@ -103,35 +103,3 @@ impl Particle {
 }
 
 
-
-//Tests
-#[cfg(test)]
-mod tests {
-    use super::*;
-    const NULL_ID: usize = usize::MAX;
-
-    #[test]
-    fn test_particle_new() {
-
-        let id = 1;
-        let position = DVec3::new(1.0, 2.0, 3.0);
-        let velocity = DVec3::new(0.1, 0.2, 0.3);
-        let orientation= DQuat::IDENTITY;
-        let omega= DVec3::ZERO;
-        let color = Srgba::new(255, 0, 0, 255);
-        let radius: f64 = 0.5;
-        let density: f64=1.0;
-        
-        let ptype = 1;
-        
-        let mass = (4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density;
-        let particle = Particle::new(id, NULL_ID, ptype, position,DVec3::ZERO, velocity, orientation, omega, radius, density, 0.0, color);
-
-        assert_eq!(particle.id, id);
-        assert_eq!(particle.position, position);
-        assert_eq!(particle.velocity, velocity);
-        assert_eq!(particle.color, color);
-        assert_eq!(particle.radius, radius);
-        assert_eq!(particle.mass, mass);
-    }
-}

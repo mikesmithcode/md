@@ -9,9 +9,8 @@
 use glam::DVec3;
 use std::f64::consts::PI;
 
-use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
-use crate::md_sim::utils::models::SimulationModel;
+use crate::md_sim::particle::{ParticleVec, SimulationModel};
 use crate::md_sim::force::check_delta;
 
 
@@ -125,7 +124,7 @@ pub fn add_weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], parti
     let mut delta = particles.position[i] - particles.position[j];
     check_delta(&mut delta, &settings.sim_box_size);
 
-    let r2 = delta.x * delta.x + delta.z * delta.z;
+    let r2 = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
     if r2 > 1e-12{
         let r = r2.sqrt();
 
@@ -146,9 +145,9 @@ pub fn add_weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], parti
                 let f_mag = (48.0 * epsilon / r) * (s6_r6 * s6_r6 - 0.5 * s6_r6);
 
                 // Create the force vector
-                let force_vec = glam::DVec3::new(delta.x * f_mag / r, 0.0, delta.z * f_mag / r);
+                let force_vec = glam::DVec3::new(delta.x * f_mag / r, delta.y * f_mag / r, delta.z * f_mag / r);
 
-                // Apply Newton's Third Law (Equal and Opposite)
+                // Add force (equal and opposite occurs because we enter this function with both particles as the i if appropriate.)
                 forces[i] += force_vec;
 
             }
@@ -159,7 +158,7 @@ pub fn add_weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], parti
 }
 
 
-pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3], _torques: &mut [DVec3], _settings: &SimulationSettings){
+pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3],_settings: &SimulationSettings){
     const EPS0: f64 = 8.85418782e-12;
 
     let r = particles.position[i] - particles.position[j];
