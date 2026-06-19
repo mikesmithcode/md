@@ -306,7 +306,7 @@ pub struct CellGrid {
 */
 
     // This returns None if particle outside simulation box and Some(ix,iy,iz) if valid.
-    fn 1818get_neighbour_1d_idx(&self, ix: usize, iy: usize, iz: usize, offset: (i32, i32, i32), periodic: [bool; 3]) -> Option<usize> {
+    fn get_neighbour_1d_idx(&self, ix: usize, iy: usize, iz: usize, offset: (i32, i32, i32), periodic: [bool; 3]) -> Option<usize> {
         let coords = [ix as i32, iy as i32, iz as i32];
         let offsets = [offset.0, offset.1, offset.2];
         let mut new_coords = [0usize; 3];
