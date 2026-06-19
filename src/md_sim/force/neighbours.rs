@@ -1,8 +1,8 @@
 use glam::DVec3;
-use super::super::particle::ParticleVec;
-use super::super::simulation::SimulationSettings;
-use super::Forces;
-use super::utils::check_delta;
+use crate::md_sim::Simulation;
+use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::simulation::SimulationSettings;
+use crate::md_sim::force::{check_delta,Forces};
 
 
 /// Optimising finding neighbours for calculation of forces
@@ -44,13 +44,37 @@ pub struct CellGrid {
     pub last_particle_count: usize,
 }
 
-impl CellGrid {
-    pub fn new(box_size: DVec3, cell_size: f64, particle_count: usize, skin: f64) -> Self {
-        let nx = ((box_size.x / cell_size).floor() as usize).max(1);
-        let ny = ((box_size.y / cell_size).floor() as usize).max(1);
-        let nz = ((box_size.z / cell_size).floor() as usize).max(1);
-        let total_cells = nx * ny * nz;
+    impl CellGrid {
+        pub fn new(box_size: DVec3, cell_size: f64, particle_count: usize, skin: f64, settings: &SimulationSettings) -> Self {
+            let nx = ((box_size.x / cell_size).floor() as usize).max(1);
+            let ny = ((box_size.y / cell_size).floor() as usize).max(1);
+            let nz = ((box_size.z / cell_size).floor() as usize).max(1);
+            let total_cells = nx * ny * nz;
 
+
+            let mut grid = Self {
+                num_cells: [nx, ny, nz],
+                cell_size,
+                heads: vec![None; total_cells],
+                next: vec![None; particle_count],
+                stride_y: nx,
+                stride_z: nx * ny,
+                neighbour_table: vec![Vec::new(); total_cells],
+                // Initialise verlet_table with one empty Vec per particle
+                verlet_table: vec![Vec::with_capacity(20); particle_count],
+                skin,
+                last_particle_count: 0,            
+            };
+
+            grid.build_neighbour_table(settings);
+
+            grid
+        }
+
+    ///Create adjacency table. Takes into account whether periodic in a particular dimension
+    // Populate the neighbour_table. Makes it easy in a 1d array to find the 
+    // valid neighbours.
+    fn build_neighbour_table(&mut self, settings: &SimulationSettings){
         // All 26 possible neighbour directions in a 3D grid
         const OFFSETS: [(i32, i32, i32); 26] = [
             (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1), // Faces
@@ -61,38 +85,25 @@ impl CellGrid {
             (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1)                  // Corners
         ];
 
+        let (nx,ny,nz) = (self.num_cells[0], self.num_cells[1], self.num_cells[2]);
 
-        let mut grid = Self {
-            num_cells: [nx, ny, nz],
-            cell_size,
-            heads: vec![None; total_cells],
-            next: vec![None; particle_count],
-            stride_y: nx,
-            stride_z: nx * ny,
-            neighbour_table: vec![Vec::new(); total_cells],
-            // Initialise verlet_table with one empty Vec per particle
-            verlet_table: vec![Vec::with_capacity(20); particle_count],
-            skin,
-            last_particle_count: 0,            
-        };
-
-        // Populate the neighbour_table (Broad-phase map)
         for iz in 0..nz {
             for iy in 0..ny {
                 for ix in 0..nx {
-                    let current_1d = grid.get_1d_idx(ix, iy, iz);
+                    let current_1d = self.get_1d_idx(ix, iy, iz);
                     let mut unique_neighbours = Vec::new();
+                    
                     for offset in OFFSETS {
-                        let n_idx = grid.get_wrapped_1d_idx(ix, iy, iz, offset);
-                        if n_idx != current_1d && !unique_neighbours.contains(&n_idx) {
-                            unique_neighbours.push(n_idx);
+                        if let Some(n_idx) = self.get_neighbour_1d_idx(ix, iy, iz, offset, periodic) {
+                            if n_idx != current_1d && !unique_neighbours.contains(&n_idx) {
+                                unique_neighbours.push(n_idx);
+                            }
                         }
                     }
-                    grid.neighbour_table[current_1d] = unique_neighbours;
+                    self.neighbour_table[current_1d] = unique_neighbours;
                 }
             }
         }
-        grid
     }
 
     /// check and rebuild neighbours
@@ -111,7 +122,7 @@ impl CellGrid {
                 .zip(particles.ref_pos.iter())
                 .any(|(p, r)| {
                     let mut delta = *p - *r;
-                    check_delta(&mut delta, &settings.sim_box_size);
+                    check_delta(&mut delta, settings);
                     delta.length_squared() > threshold_sq
                 })
         } else {
@@ -124,7 +135,7 @@ impl CellGrid {
                 self.resize_buffers(particles.len());
             }
             
-            self.bin(particles);
+            self.bin(particles, settings);
             self.rebuild_verlet_table(particles, settings);
             
             // Update the count tracker
@@ -138,11 +149,11 @@ impl CellGrid {
     }
 
     // Put particles into cells and build linked lists associated with each cell
-    fn bin(&mut self, particles: &ParticleVec) {
+    fn bin(&mut self, particles: &ParticleVec, settings: &SimulationSettings) {
         self.heads.fill(None);
         for (i, pos) in particles.position.iter().enumerate() {
-            let (ix, iy, iz) = self.get_3d_cell_idx(*pos);
-            let cell_idx = self.get_1d_idx(ix, iy, iz);
+            let (ix, iy, iz) = self.get_3d_cell_idx(*pos, settings.periodic);
+            let cell_idx = self.get_neighbour_1d_idx(ix, iy, iz, (0,0,0),settings.periodic).expect("Particle outside simulation grid");
             self.next[i] = self.heads[cell_idx];
             self.heads[cell_idx] = Some(i);
         }
@@ -212,9 +223,10 @@ impl CellGrid {
         // If both are static ignore
         if !active_i && !active_j { return; }
 
-        // Calculate wrapped distance
+        // Calculate distance
         let mut delta = p.position[i] - p.position[j];
-        check_delta(&mut delta, &settings.sim_box_size);
+        check_delta(&mut delta, &settings);
+        
         
         if delta.length_squared() < r_sq {
             // If i active add to j verlet list
@@ -245,7 +257,7 @@ impl CellGrid {
         for i in 0..particles.len() {
             for &j in &self.verlet_table[i] {
                 let mut delta = particles.position[i] - particles.position[j];
-                check_delta(&mut delta, &settings.sim_box_size);
+                check_delta(&mut delta, &settings);
                 
                 let dist_sq = delta.length_squared();
                 if dist_sq < cutoff_sq {
@@ -255,29 +267,35 @@ impl CellGrid {
         }
     }
 
-/// Transforms 3D grid coords to 1D memory index
-    #[inline]
+    /// Transforms 3D grid coords to 1D memory index
+   #[inline]
     fn get_1d_idx(&self, ix: usize, iy: usize, iz: usize) -> usize {
         ix + iy * self.stride_y + iz * self.stride_z
     }
 
     /// Position to Coords: Transforms floating point position to 3D grid coords
     /// Includes a modulo check to ensure safety with periodic boundaries
-    fn get_3d_cell_idx(&self, pos: DVec3) -> (usize, usize, usize) {
-        let x_cells = self.num_cells[0];
-        let y_cells = self.num_cells[1];
-        let z_cells = self.num_cells[2];
+    fn get_3d_cell_idx(&self, pos: DVec3, periodic: [bool; 3]) -> (usize, usize, usize) {
+    let dims = [self.num_cells[0], self.num_cells[1], self.num_cells[2]];
+    let pos_arr = [pos.x, pos.y, pos.z];
+    let mut indices = [0usize; 3];
 
-        // Ensure we handle potential negative positions or edge cases with modulo
-        let idx = ((pos.x / self.cell_size).floor() as i32).rem_euclid(x_cells as i32) as usize;
-        let idy = ((pos.y / self.cell_size).floor() as i32).rem_euclid(y_cells as i32) as usize;
-        let idz = ((pos.z / self.cell_size).floor() as i32).rem_euclid(z_cells as i32) as usize;
-
-        (idx, idy, idz)
+    for i in 0..3 {
+        let max_val = dims[i] as f64 * self.cell_size;
+        if periodic[i] {
+            // Apply modulo for periodic axes
+            indices[i] = ((pos_arr[i] / self.cell_size).floor() as i32)
+                .rem_euclid(dims[i] as i32) as usize;
+        } else {
+            // Clamp for non-periodic axes
+            indices[i] = (pos_arr[i].clamp(0.0, max_val - 0.0001) / self.cell_size) as usize;
+        }
     }
+    (indices[0], indices[1], indices[2])
+}
 
     /// The Neighbour Indexer: Handles offsets (dx, dy, dz) across periodic boundaries
-    fn get_wrapped_1d_idx(&self, ix: usize, iy: usize, iz: usize, offset:(i32,i32,i32)) -> usize {
+/*     fn get_wrapped_1d_idx(&self, ix: usize, iy: usize, iz: usize, offset:(i32,i32,i32)) -> usize {
         let (dx,dy,dz) = offset;
         let nx = (ix as i32 + dx).rem_euclid(self.num_cells[0] as i32) as usize;
         let ny = (iy as i32 + dy).rem_euclid(self.num_cells[1] as i32) as usize;
@@ -285,12 +303,243 @@ impl CellGrid {
         
         self.get_1d_idx(nx, ny, nz)
     }
+*/
+
+    // This returns None if particle outside simulation box and Some(ix,iy,iz) if valid.
+    fn 1818get_neighbour_1d_idx(&self, ix: usize, iy: usize, iz: usize, offset: (i32, i32, i32), periodic: [bool; 3]) -> Option<usize> {
+        let coords = [ix as i32, iy as i32, iz as i32];
+        let offsets = [offset.0, offset.1, offset.2];
+        let mut new_coords = [0usize; 3];
+
+        for i in 0..3 {
+            let val = coords[i] + offsets[i];
+            if periodic[i] {
+                new_coords[i] = val.rem_euclid(self.num_cells[i] as i32) as usize;
+            } else {
+                if val < 0 || val >= self.num_cells[i] as i32 {
+                    return None; // Boundary reached, no neighbor here
+                }
+                new_coords[i] = val as usize;
+            }
+        }
+        Some(self.get_1d_idx(new_coords[0], new_coords[1], new_coords[2]))
+    }
 
     /// Used during the binning phase
-    pub fn get_cell_idx_from_pos(&self, pos: DVec3) -> usize {
-        let (ix, iy, iz) = self.get_3d_cell_idx(pos);
-        self.get_1d_idx(ix, iy, iz)
-    }
+    //pub fn get_cell_idx_from_pos(&self, pos: DVec3, settings: &SimulationSettings) -> usize {
+    //    let (ix, iy, iz) = self.get_3d_cell_idx(pos, settings.periodic);
+    //    self.get_1d_idx(ix, iy, iz)
+    //}
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::md_sim::utils::create_particle_vec;
+
+    #[test]
+    fn test_first_frame_rebuild() {
+        let box_size = DVec3::splat(10.0);
+        let settings = SimulationSettings {
+            sim_box_size: box_size,
+            cutoff: 2.0, // Increased cutoff to be safe
+            skin: 0.2,
+            ..Default::default()
+        };
+
+        let mut particles = create_particle_vec();
+        
+        // Place them very close together
+        particles.position[0] = DVec3::new(1.0, 1.0, 1.0);
+        particles.position[1] = DVec3::new(1.1, 1.1, 1.1);
+        particles.ref_pos.copy_from_slice(&particles.position);
+
+        let mut grid = CellGrid::new(box_size, 2.0, particles.len(), settings.skin);
+
+        // Move particle 0 past the threshold (0.15 > 0.1)
+        particles.position[0] += DVec3::new(0.15, 0.0, 0.0);
+
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+        assert_eq!(particles.ref_pos[0], particles.position[0]);
+        assert!(grid.verlet_table[0].contains(&1));
+    }
+
+
+    #[test]
+    fn test_skin_displacement_trigger() {
+        // Setup
+        let box_size = DVec3::splat(10.0);
+        let settings = SimulationSettings {
+            sim_box_size: box_size,
+            cutoff: 1.0,
+            skin: 0.4, // Displacement threshold is skin * 0.5 = 0.2
+            ..Default::default()
+        };
+
+        // initialise particles
+        let mut particles = create_particle_vec();//p1.pos and p2.pos = (1.0,2.0,3.0), p1.vel = (1.0, 1.0, 1.0), p2.vel = (0.1, 0.2, 0.3)
+        particles.ref_pos.copy_from_slice(&particles.position);
+
+        let mut grid = CellGrid::new(box_size, settings.cutoff + settings.skin, particles.len(), settings.skin);
+
+        // PRIME THE GRID: This sets last_particle_count and syncs ref_pos
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+        // Move particle[0].x slightly (0.1 units)
+        // 0.1 < skin/2 threshold -> Should NOT rebuild
+        particles.position[0] += DVec3::new(0.1, 0.0, 0.0);
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+        
+        assert_ne!(
+            particles.ref_pos[0], 
+            particles.position[0], 
+            "ref_pos should still be the old position (no rebuild yet)."
+        );
+
+        // Move particle 0 further (another 0.2 units, total 0.3)
+        // 0.3 > 0.2 threshold -> Should trigger a rebuild
+        particles.position[0] += DVec3::new(0.2, 0.0, 0.0);
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+        
+        assert_eq!(
+            particles.ref_pos[0], 
+            particles.position[0], 
+            "ref_pos should now match position because a rebuild was triggered."
+        );
+    }
+
+    #[test]
+    fn test_periodic_neighbours() {
+        // Setup
+        let box_size = DVec3::splat(10.0);
+        let settings = SimulationSettings {
+            sim_box_size: box_size,
+            cutoff: 1.5,
+            skin: 0.1, // Small skin to ensure we test the "Wide Search"
+            ..Default::default()
+        };
+
+        // initialise particles
+        let mut particles = create_particle_vec();
+        
+        // Reposition particles to opposite sides of the X-axis
+        // Particle 0 is near the "left" wall
+        particles.position[0] = DVec3::new(0.1, 5.0, 5.0);
+        // Particle 1 is near the "right" wall
+        particles.position[1] = DVec3::new(9.9, 5.0, 5.0);
+
+        // Initialise the grid
+        let mut grid = CellGrid::new(box_size, 2.0, particles.len(), settings.skin);
+        
+        // Trigger the build
+        // Because ref_pos is still (0,0,0) from the utility, 
+        // this will definitely trigger a rebuild.
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+        // Assertions
+        // The direct distance is 9.8, but the wrapped distance across the boundary is 0.2.
+        // Since 0.2 < (cutoff + skin), they must be neighbours.
+        assert!(
+            grid.verlet_table[0].contains(&1), 
+            "Particles should be identified as neighbours across the periodic boundary."
+        );
+        
+        // Verify that the table only contains the pair once (i < j logic)
+        assert_eq!(grid.verlet_table[0].len(), 1);
+        
+    }
+
+    #[test]
+    fn test_active_ghost_interaction() {
+        let box_size = DVec3::splat(10.0);
+        // Setup: Type 0 is active, Type 1 is a ghost (not in active_mask)
+        let mut settings = SimulationSettings {
+            sim_box_size: box_size,
+            cutoff: 1.0,
+            skin: 0.2,
+            active_mask: [false; 32],
+            ..Default::default()
+        };
+        settings.active_mask[0] = true; // Only 0 is active
+
+        let mut particles = create_particle_vec();
+        particles.ptype[0] = 0; // Ball
+        particles.ptype[1] = 1; // Floor
+        particles.position[0] = DVec3::new(5.0, 5.0, 5.0);
+        particles.position[1] = DVec3::new(5.0, 5.0, 5.5); // 0.5 distance
+
+        let mut grid = CellGrid::new(box_size, 1.2, particles.len(), 0.2);
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+        // Ball (0) should have Floor (1) in its list because 0 is active
+        assert!(grid.verlet_table[0].contains(&1), "Active particle should see the ghost particle");
+        
+        // Floor (1) should NOT have Ball (0) in its list because 1 is inactive
+        assert!(!grid.verlet_table[1].contains(&0), "Ghost particle should not have its own verlet list populated");
+    }
+
+
+    #[test]
+    fn test_ghost_ghost_invisibility() {
+        let box_size = DVec3::splat(10.0);
+        let settings = SimulationSettings {
+            sim_box_size: box_size,
+            cutoff: 1.0,
+            skin: 0.2,
+            active_mask: [false; 32],
+            ..Default::default()
+        };
+        // Neither 1 nor 2 are active
+
+        let mut particles = create_particle_vec();
+        particles.ptype[0] = 1; 
+        particles.ptype[1] = 2; 
+        particles.position[0] = DVec3::new(5.0, 5.0, 5.0);
+        particles.position[1] = DVec3::new(5.0, 5.0, 5.2);
+
+        let mut grid = CellGrid::new(box_size, 1.2, particles.len(), 0.2);
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+        assert!(grid.verlet_table[0].is_empty());
+        assert!(grid.verlet_table[1].is_empty());
+    }
+
+    #[test]
+    fn test_active_mask_derivation_from_json_logic() {
+        // 1. Simulate the JSON structure for interaction_ptypes = [[0, 0]]
+        let interaction_ptypes = vec![[0 as u8, 0 as u8]];
+
+        // 2. Create settings (using a dummy box/cutoff)
+        let mut settings = SimulationSettings {
+            interaction_ptypes,
+            sim_box_size: DVec3::splat(10.0),
+            cutoff: 1.0,
+            ..Default::default()
+        };
+
+        // 3. Manually trigger the mask building logic from your 'new' function
+        // (If this logic is inside SimulationSettings::new, you could also test by 
+        // writing a temp JSON file, but testing the loop logic directly is cleaner)
+        settings.active_mask = [false; 32];
+        for pair in &settings.interaction_ptypes {
+            let ptype = pair[0] as usize; // First element defines the searcher
+            if ptype < 32 {
+                settings.active_mask[ptype] = true;
+            }
+        }
+
+        // 4. Assertions
+        assert!(
+            settings.is_active(0), 
+            "ptype 0 should be active because it appears as pair[0] in [[0,0]]"
+        );
+        
+        assert!(
+            !settings.is_active(1), 
+            "ptype 1 should NOT be active as it isn't in the interaction list"
+        );
+    }
+}
 

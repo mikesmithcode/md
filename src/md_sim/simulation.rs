@@ -41,6 +41,7 @@ use crate::md_sim::particle::{SimulationModel, CollisionParams};
 pub struct SimulationSettings{
     pub dt: f64,
     pub sim_box_size: DVec3, 
+    pub periodic: [bool; 3],
     pub cutoff: f64,
     pub skin: f64,
     pub start: usize,
@@ -106,6 +107,7 @@ impl Default for SimulationSettings {
         Self {
             dt: 0.1,
             sim_box_size: DVec3::new(10.0, 0.1, 10.0),
+            periodic: [true;3],
             cutoff: 1.0,
             skin:0.2,
             start: 0,
