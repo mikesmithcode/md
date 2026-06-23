@@ -7,8 +7,6 @@
 // -------------------------------------------------------------------------------------------------
 use glam::DVec3;
 
-use crate::md_sim::SimulationSettings;
-
 /// Applies the Minimum Image Convention to a displacement vector.
 ///
 /// In a periodic simulation box, a particle can interact with either the real 
@@ -33,11 +31,8 @@ use crate::md_sim::SimulationSettings;
 ///   handling in periodic systems.
 /// * It assumes the initial displacement was calculated using coordinates 
 ///   already mapped (or "wrapped") within the primary simulation box.
-pub fn check_delta(delta: &mut DVec3, settings: &SimulationSettings) {
+pub fn check_delta(delta: &mut DVec3, sim_box_size: DVec3,periodic:[bool;3]) {
     // Check X-axis wrapping
-    let sim_box_size = settings.sim_box_size;
-    let periodic = settings.periodic;
-
     if periodic[0]{
         if delta.x > sim_box_size.x * 0.5 { 
             delta.x -= sim_box_size.x; 

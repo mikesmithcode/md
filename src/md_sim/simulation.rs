@@ -179,7 +179,7 @@ impl<S> Simulation<S>
                 sim_update,
                 settings: settings.clone(),
                 current_step: settings.start,
-                cell_grid: CellGrid::new(settings.sim_box_size,settings.cutoff,n, settings.skin),
+                cell_grid: CellGrid::new(settings.sim_box_size, n, &settings),
                 time,
                 molecule_map
             }
