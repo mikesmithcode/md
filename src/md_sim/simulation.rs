@@ -48,12 +48,7 @@ pub struct SimulationSettings{
     pub num_steps: usize,
     pub dump: usize,
     pub interaction_ptypes: Vec<[u8;2]>,
-    //#[serde(default)]
-    //pub head_ptypes: Vec<u8>,
-    pub model: SimulationModel,
-    #[serde(skip)] // Don't try to load this from JSON
-    pub active_mask: [bool; 32],
-    
+    pub model: SimulationModel,  
 }
 
 impl SimulationSettings {
@@ -70,17 +65,7 @@ impl SimulationSettings {
         })?;
         
         let reader = BufReader::new(file);
-        let mut sim_settings: SimulationSettings = serde_json::from_reader(reader)?;
-
-        // Build the active mask from interaction_ptypes
-        // A ptype is active if it appears as the first element in any pair
-        sim_settings.active_mask = [false; 32];
-        for pair in &sim_settings.interaction_ptypes {
-            let ptype = pair[0] as usize;
-            if ptype < 32 {
-                sim_settings.active_mask[ptype] = true;
-            }
-        }
+        let sim_settings: SimulationSettings = serde_json::from_reader(reader)?;
 
         Ok(sim_settings)
     }
@@ -89,12 +74,7 @@ impl SimulationSettings {
         self.sim_box_size.as_vec3().to_array()
     }
 
-    /// Helper to check if a type should have forces calculated
-    #[inline]
-    pub fn is_active(&self, ptype: usize) -> bool {
-        //check bounds if we only use 32
-        ptype < 32 && self.active_mask[ptype]
-    }
+    
 
     //pub fn is_head(&self, ptype: u8) -> bool {
     //    self.head_ptypes.contains(&ptype)
@@ -118,7 +98,6 @@ impl Default for SimulationSettings {
             model: SimulationModel::Solid(CollisionParams{
                 stiffness: 1000.0, 
                 damping: 50.0}),
-            active_mask:[true;32]
         }
 
     }
@@ -167,10 +146,11 @@ impl<S> Simulation<S>
         S: Forces + Motion,
     {
         /// Create a new simulation
-        pub fn new(particles: ParticleVec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
+        pub fn new(mut particles: ParticleVec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
             let n = particles.len();
             let molecule_map = build_molecule_map(&particles);
-
+            let mut cell_grid=CellGrid::new( n, &settings);
+            cell_grid.init(&mut particles, &settings);
 
             Self {
                 particles,
@@ -179,7 +159,7 @@ impl<S> Simulation<S>
                 sim_update,
                 settings: settings.clone(),
                 current_step: settings.start,
-                cell_grid: CellGrid::new(settings.sim_box_size, n, &settings),
+                cell_grid,
                 time,
                 molecule_map
             }
@@ -212,9 +192,7 @@ impl<S> Simulation<S>
             if self.sim_update.has_single_forces(){
                 // Single forces apply to individual particles
                 for i in 0..self.particles.len(){
-                    if self.settings.is_active(self.particles.ptype[i]){
-                        self.sim_update.update_single_forces(i, &mut self.forces, &mut self.torques, &self.particles, &self.settings, self.time);
-                    }
+                    self.sim_update.update_single_forces(i, &mut self.forces, &mut self.torques, &self.particles, &self.settings, self.time);
                 }
             }
 

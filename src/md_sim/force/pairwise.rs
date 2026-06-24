@@ -65,7 +65,7 @@ pub fn add_granular_collision(i: usize, j: usize, particles: &ParticleVec, force
 
     // Calc overlap etc
     let mut delta = particles.position[i] - particles.position[j];
-    check_delta(&mut delta, &settings);
+    check_delta(&mut delta, settings.sim_box_size, settings.periodic);
 
     let combined_rad = particles.radius[i] + particles.radius[j];
     let dist_sq = delta.length_squared();
@@ -122,7 +122,7 @@ pub fn add_granular_collision(i: usize, j: usize, particles: &ParticleVec, force
 pub fn add_weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
 
     let mut delta = particles.position[i] - particles.position[j];
-    check_delta(&mut delta, &settings);
+    check_delta(&mut delta, settings.sim_box_size, settings.periodic);
 
     let r2 = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
     if r2 > 1e-12{

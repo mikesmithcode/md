@@ -1,10 +1,11 @@
 
 
 use glam::DVec3;
+
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::force::add_weeks_chandler_andersen;
 use crate::md_sim::particle::{ActiveParams, CollisionParams, SimulationModel};
-use crate::md_sim::utils::{create_particle_vec,create_molecule_vec};
+use crate::md_sim::utils::{create_particle_vec,create_molecule_vec, create_grid_and_settings};
 
 use super::{add_weight,add_viscous_drag, add_granular_collision, add_coulomb};
 use super::utils::check_delta;
@@ -84,7 +85,6 @@ fn test_granular_collision() {
         dump: 10,
         interaction_ptypes:vec![[0 as u8,0 as u8]],
         model,                 
-        active_mask: [true; 32]
     };
 
     let mut forces = vec![DVec3::ZERO; particles.len()];
@@ -134,13 +134,13 @@ fn test_weeks_chandler_andersen() {
         dt: 0.001,             
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
         cutoff: 2.0,           // Ensure this is large enough for the overlap
+        periodic: [true;3],
         skin:0.2,
         start: 0,
         num_steps: 100,
         dump: 10,
         interaction_ptypes:vec![[0 as u8,0 as u8]],
         model,                 
-        active_mask: [true; 32]
     };
 
     let mut forces = vec![DVec3::ZERO; particles.len()];
@@ -174,6 +174,7 @@ fn test_coulomb() {
     let settings = SimulationSettings {
         dt: 0.001,             
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
+        periodic: [true;3],
         cutoff: 2.0,           // Ensure this is large enough for the overlap
         skin:0.2,
         start: 0,
@@ -181,7 +182,6 @@ fn test_coulomb() {
         dump: 10,
         interaction_ptypes:vec![[0 as u8,0 as u8]],
         model,                 
-        active_mask: [true; 32]
     };
 
     let mut forces = vec![DVec3::ZERO; particles.len()];
@@ -210,22 +210,22 @@ fn test_coulomb() {
 #[test]
 fn test_check_delta() {
     let sim_box_size = DVec3::new(10.0, 10.0, 10.0);
-    
+    let periodic = [true;3];
     // Case 1: X is far apart (0.9L), should wrap to a small negative distance (-0.1L)
     // Example: Particle A at 0.5, Particle B at 9.5. Delta = 9.0
     let mut delta_x = DVec3::new(9.0, 0.0, 0.0);
-    check_delta(&mut delta_x, &sim_box_size);
+    check_delta(&mut delta_x, sim_box_size, periodic);
     assert!((delta_x.x + 1.0).abs() < 1e-6); // 9.0 - 10.0 = -1.0
 
     // Case 2: Y is negative and far apart, should wrap to a small positive distance
     // Example: Particle A at 9.5, Particle B at 0.5. Delta = -9.0
     let mut delta_y = DVec3::new(0.0, -9.0, 0.0);
-    check_delta(&mut delta_y, &settings);
+    check_delta(&mut delta_y, sim_box_size, periodic);
     assert!((delta_y.y - 1.0).abs() < 1e-6); // -9.0 + 10.0 = 1.0
 
     // Case 3: Z is already the shortest path, should remain unchanged
     let mut delta_z = DVec3::new(0.0, 0.0, 2.0);
-    check_delta(&mut delta_z, &settings);
+    check_delta(&mut delta_z, sim_box_size, periodic);
     assert!((delta_z.z - 2.0).abs() < 1e-6);
 }
 
@@ -236,19 +236,47 @@ fn test_check_delta() {
 //--------------------------------------------------------------------------------------------------
 // neighbours tests
 // -----------------------------------------------------------------------------------------------
+    // check neighbours in 3x3x3 grid with and without periodic boundary conditions give correct values.
+    #[test]
+    fn test_build_neighbour_table(){
+        
+        let (mut grid, _settings) = create_grid_and_settings();
+        
+        //periodic
+        grid.periodic = [true;3];
+        grid.build_neighbour_table();
+
+        assert!(grid.neighbour_table.len() == 27, "Should be 27 boxes in grid");
+        assert_eq!(grid.neighbour_table[0], [1, 2, 3, 6, 9, 18, 4, 7, 5, 8, 10, 19, 11, 20, 12, 21, 15, 24, 13, 22, 16, 25, 14, 23, 17, 26], "Neighbours incorrect under periodic boundary conditions");
+
+        // non-periodic. 
+        grid.periodic = [false;3];
+        grid.neighbour_table = vec![[usize::MAX; 26]; 27];
+        grid.build_neighbour_table();
+
+    
+        assert!(grid.neighbour_table.len() == 27, "Should be 27 boxes in grid");
+        let correct_neighbours: Vec<usize> = vec![1, 3, 9, 4, 10, 12, 13];
+        assert!(grid.neighbour_table[0].iter().copied().filter(|&x| x!=usize::MAX).collect::<Vec<usize>>() == correct_neighbours, "Should be 7 boxes in non-periodic grid for (0,0,0)");
+
+    }
+
 
    #[test]
-    fn test_get_neighbour_1d_idx(){
-        let box_size = DVec3::splat(9.0);
-        let settings = SimulationSettings {
-            cutoff:3.0,
-            skin: 0.2,
-            sim_box_size: box_size,
-            periodic:[true;3],
-            ..Default::default()
-        };
+    fn test_get_1d_idx(){
+        let (grid, _settings)=create_grid_and_settings();
 
-        let mut grid = CellGrid::new(box_size, 10 as usize, &settings);
+        let ix: usize=2;
+        let iy: usize=2;
+        let iz: usize=2;
+
+        let idx = grid.get_1d_idx(ix,iy,iz);
+        assert_eq!(idx, 26, "(2,2,2) should be 26");
+    }
+    
+   #[test]
+    fn test_get_neighbour_1d_idx(){
+        let (mut grid, _settings)=create_grid_and_settings();
 
         let ix: usize=0;
         let iy: usize=0;
@@ -261,218 +289,164 @@ fn test_check_delta() {
 
         //test values in periodic box.
         grid.periodic = [true;3];
+        grid.neighbour_table = vec![[usize::MAX; 26]; 27];
+
         let new_coords = grid.get_neighbour_1d_idx(ix,iy,iz, (-1,0,0));
-        println!("{:?}",new_coords);
-        assert_eq!(new_coords, Some(8) , "x coord should have wrapped");
+        assert_eq!(new_coords, Some(2) , "x coord should have wrapped");
 
     }
 
-#[test]
-fn test_first_frame_rebuild() {
-    let box_size = DVec3::splat(10.0);
-    let settings = SimulationSettings {
-        sim_box_size: box_size,
-        cutoff: 2.0, // Increased cutoff to be safe
-        skin: 0.2,
-        ..Default::default()
-    };
+    #[test]
+    fn test_get_3d_cell_idx(){
+        let (mut grid, _settings)=create_grid_and_settings();
+        grid.periodic = [false;3];
+        grid.neighbour_table = vec![[usize::MAX; 26]; 27];
 
-    let mut particles = create_particle_vec();
-    
-    // Place them very close together
-    particles.position[0] = DVec3::new(1.0, 1.0, 1.0);
-    particles.position[1] = DVec3::new(1.1, 1.1, 1.1);
-    particles.ref_pos.copy_from_slice(&particles.position);
+        let illegal_position = DVec3::new(-1.0, 0.0, 0.0);
+        let return_val = grid.get_3d_cell_idx(illegal_position);
+        assert_eq!(return_val, None, "func should return None if particle outside simulation box");
 
-    
-    let mut grid = CellGrid::new(box_size, particles.len(), &settings);
-
-    // Move particle 0 past the threshold (0.15 > 0.1)
-    particles.position[0] += DVec3::new(0.15, 0.0, 0.0);
-
-    grid.check_and_rebuild_neighbours(&mut particles, &settings);
-
-    assert_eq!(particles.ref_pos[0], particles.position[0]);
-    assert!(grid.verlet_table[0].contains(&1));
-}
-
-
-#[test]
-fn test_skin_displacement_trigger() {
-    // Setup
-    let box_size = DVec3::splat(10.0);
-    let settings = SimulationSettings {
-        sim_box_size: box_size,
-        cutoff: 1.0,
-        skin: 0.4, // Displacement threshold is skin * 0.5 = 0.2
-        ..Default::default()
-    };
-
-    // initialise particles
-    let mut particles = create_particle_vec();//p1.pos and p2.pos = (1.0,2.0,3.0), p1.vel = (1.0, 1.0, 1.0), p2.vel = (0.1, 0.2, 0.3)
-    particles.ref_pos.copy_from_slice(&particles.position);
-
-    let mut grid = CellGrid::new(box_size, particles.len(), &settings);
-
-    // PRIME THE GRID: This sets last_particle_count and syncs ref_pos
-    grid.check_and_rebuild_neighbours(&mut particles, &settings);
-
-    // Move particle[0].x slightly (0.1 units)
-    // 0.1 < skin/2 threshold -> Should NOT rebuild
-    particles.position[0] += DVec3::new(0.1, 0.0, 0.0);
-    grid.check_and_rebuild_neighbours(&mut particles, &settings);
-    
-    assert_ne!(
-        particles.ref_pos[0], 
-        particles.position[0], 
-        "ref_pos should still be the old position (no rebuild yet)."
-    );
-
-    // Move particle 0 further (another 0.2 units, total 0.3)
-    // 0.3 > 0.2 threshold -> Should trigger a rebuild
-    particles.position[0] += DVec3::new(0.2, 0.0, 0.0);
-    grid.check_and_rebuild_neighbours(&mut particles, &settings);
-    
-    assert_eq!(
-        particles.ref_pos[0], 
-        particles.position[0], 
-        "ref_pos should now match position because a rebuild was triggered."
-    );
-}
-
-#[test]
-fn test_periodic_neighbours() {
-    // Setup
-    let box_size = DVec3::splat(10.0);
-    let settings = SimulationSettings {
-        sim_box_size: box_size,
-        cutoff: 1.5,
-        skin: 0.05, // Small skin to ensure we test the "Wide Search"
-        ..Default::default()
-    };
-
-    // initialise particles
-    let mut particles = create_particle_vec();
-    println!("{:?}", particles.position);
-    // Reposition particles to opposite sides of the X-axis
-    // Particle 0 is near the "left" wall
-    particles.position[0] = DVec3::new(0.1, 5.0, 5.0);
-    // Particle 1 is near the "right" wall
-    particles.position[1] = DVec3::new(9.9, 5.0, 5.0);
-    println!("{:?}", particles.position);
-    println!("{:?}", particles.ref_pos);
-
-    // Initialise the grid
-    let mut grid = CellGrid::new(box_size,particles.len(), &settings);
-    // Trigger the build
-    // Because ref_pos is still (0,0,0) from the utility, 
-    // this will definitely trigger a rebuild.
-    grid.check_and_rebuild_neighbours(&mut particles, &settings);
-    println!("{:?}", particles.position);
-    println!("{:?}", particles.ref_pos);
-    // Assertions
-    // The direct distance is 9.8, but the wrapped distance across the boundary is 0.2.
-    // Since 0.2 < (cutoff + skin), they must be neighbours.
-    println!("{:?}", grid.verlet_table);
-    assert!(
-        grid.verlet_table[0].contains(&1), 
-        "Particles should be identified as neighbours across the periodic boundary."
-    );
-    
-    // Verify that the table only contains the pair once (i < j logic)
-    assert_eq!(grid.verlet_table[0].len(), 1);
-    
-}
-
-#[test]
-fn test_active_ghost_interaction() {
-    let box_size = DVec3::splat(10.0);
-    // Setup: Type 0 is active, Type 1 is a ghost (not in active_mask)
-    let mut settings = SimulationSettings {
-        sim_box_size: box_size,
-        cutoff: 1.0,
-        skin: 0.2,
-        active_mask: [false; 32],
-        ..Default::default()
-    };
-    settings.active_mask[0] = true; // Only 0 is active
-
-    let mut particles = create_particle_vec();
-    particles.ptype[0] = 0; // Ball
-    particles.ptype[1] = 1; // Floor
-    particles.position[0] = DVec3::new(5.0, 5.0, 5.0);
-    particles.position[1] = DVec3::new(5.0, 5.0, 5.5); // 0.5 distance
-
-    let mut grid = CellGrid::new(box_size,  particles.len(), &settings);
-    grid.check_and_rebuild_neighbours(&mut particles, &settings);
-
-    // Ball (0) should have Floor (1) in its list because 0 is active
-    assert!(grid.verlet_table[0].contains(&1), "Active particle should see the ghost particle");
-    
-    // Floor (1) should NOT have Ball (0) in its list because 1 is inactive
-    assert!(!grid.verlet_table[1].contains(&0), "Ghost particle should not have its own verlet list populated");
-}
-
-
-#[test]
-fn test_ghost_ghost_invisibility() {
-    let box_size = DVec3::splat(10.0);
-    let settings = SimulationSettings {
-        sim_box_size: box_size,
-        cutoff: 1.0,
-        skin: 0.2,
-        active_mask: [false; 32],
-        ..Default::default()
-    };
-    // Neither 1 nor 2 are active
-
-    let mut particles = create_particle_vec();
-    particles.ptype[0] = 1; 
-    particles.ptype[1] = 2; 
-    particles.position[0] = DVec3::new(5.0, 5.0, 5.0);
-    particles.position[1] = DVec3::new(5.0, 5.0, 5.2);
-
-    let mut grid = CellGrid::new(box_size, 1.2, , 0.2, particles.len(), &settings);
-    grid.check_and_rebuild_neighbours(&mut particles, &settings);
-
-    assert!(grid.verlet_table[0].is_empty());
-    assert!(grid.verlet_table[1].is_empty());
-}
-
-#[test]
-fn test_active_mask_derivation_from_json_logic() {
-    // Simulate the JSON structure for interaction_ptypes = [[0, 0]]
-    let interaction_ptypes = vec![[0 as u8, 0 as u8]];
-
-    // Create settings (using a dummy box/cutoff)
-    let mut settings = SimulationSettings {
-        interaction_ptypes,
-        sim_box_size: DVec3::splat(10.0),
-        cutoff: 1.0,
-        ..Default::default()
-    };
-
-    // Trigger the mask building logic from your 'new' function
-    // (If this logic is inside SimulationSettings::new, you could also test by 
-    // writing a temp JSON file, but testing the loop logic directly is cleaner)
-    settings.active_mask = [false; 32];
-    for pair in &settings.interaction_ptypes {
-        let ptype = pair[0] as usize; // First element defines the searcher
-        if ptype < 32 {
-            settings.active_mask[ptype] = true;
-        }
+        let allowed_position = DVec3::new(1.0,1.0,1.0);
+        let return_val = grid.get_3d_cell_idx(allowed_position);
+        assert_eq!(return_val, Some((0,0,0)), "func should return indices Some((0,0,0))");
     }
 
-    assert!(
-        settings.is_active(0), 
-        "ptype 0 should be active because it appears as pair[0] in [[0,0]]"
-    );
+    // tests that particles are added to cells and then linked lists correctly created.
+    #[test]
+    fn test_bin(){
+        let (mut grid, _settings)=create_grid_and_settings();
+        let particles = create_particle_vec();
+        grid.bin(&particles);
+
+        assert_eq!(grid.next, [None, Some(0), None, None, Some(3), None],"the next array has the wrong values");
+        assert_eq!(grid.heads, [None, None, None, None, None, None, None, None, None, Some(1), None, None, None, Some(5), None, None, None, Some(4), None, None, None, None, None, None, None, None, Some(2)],"The heads array in the grid is incorrectly populated");
+    }
+
+    #[test]
+    fn test_try_add_pair_conditions() {
+        let (mut grid, settings) = create_grid_and_settings();
+        let particles = create_molecule_vec();
+        
+        // Define allowed interactions based on config
+        let interaction_ptypes = vec![[0, 1]]; 
+        let search_radius_sq = (settings.cutoff + settings.skin).powi(2);
+
+        // Same molecule_id (should be ignored)
+        // Particle 0 and 1 are both molecule_id: 0
+        grid.try_add_pair(0, 1, search_radius_sq, &particles, &interaction_ptypes);
+        assert!(grid.verlet_table[0].is_empty());
+
+        // Different molecules, valid types, close proximity (should be added)
+        // Particle 0 (mol 0, type 0) and Particle 2 (mol 1, type 0) - wait, type mismatch!
+        // Try Particle 0 (mol 0, type 0) and Particle 3 (mol 1, type 1)
+        grid.try_add_pair(0, 3, search_radius_sq, &particles, &interaction_ptypes);
+        assert!(grid.verlet_table[0].contains(&3), "Valid pair should have been added");
+
+        // Different molecules, invalid types (should be ignored)
+        // Particle 0 (type 0) and Particle 2 (type 0) - type [0,0] is not in interaction_ptypes
+        grid.try_add_pair(0, 2, search_radius_sq, &particles, &interaction_ptypes);
+        assert!(!grid.verlet_table[0].contains(&2));
+    }
+
+
+
+
+
+    #[test]
+    fn test_resize_buffers(){
+        let (mut grid, _settings)=create_grid_and_settings();
+
+        assert!(grid.verlet_table.len()==6);
+        grid.resize_buffers(7);
+        assert!(grid.verlet_table.len()==7);
+    }
+
+
+    //Verlet tests
+    #[test]
+    fn test_first_frame_rebuild() {
+        let (mut grid, settings) = create_grid_and_settings();
+        let mut particles = create_particle_vec();
+        
+        particles.position[0] = DVec3::new(1.0,1.0,1.0);
+        particles.ref_pos[0] = DVec3::new(5.0,5.0,5.0);
     
-    assert!(
-        !settings.is_active(1), 
-        "ptype 1 should NOT be active as it isn't in the interaction list"
-    );
-}
+        grid.init(&mut particles, &settings);
+
+        assert_eq!(particles.ref_pos[0], particles.position[0]);
+        // Verify index 0 and 2 are neighbours (based on create_molecule_vec layout)
+        assert!(grid.verlet_table[0].contains(&1));
+    }
+
+    #[test]
+    fn test_skin_displacement_trigger() {
+        let (mut grid, settings) = create_grid_and_settings();
+        let mut particles = create_molecule_vec();
+        
+
+        //pos and ref_pos should be the same
+        grid.init(&mut particles, &settings);
+
+        // Move 0.09 (less than skin/2 = 0.1), shouldn't rebuild
+        particles.position[0] += DVec3::new(0.09, 0.0, 0.0);
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+        assert_ne!(particles.ref_pos[0], particles.position[0], "Should not have rebuilt");
+
+        // Move another 0.02 (total 0.11 > skin/2 = 0.2/2)
+        particles.position[0] += DVec3::new(0.2, 0.0, 0.0);
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+        
+        assert_eq!(particles.ref_pos[0], particles.position[0], "Should have triggered rebuild");
+    }
+
+    #[test]
+    fn test_molecular_exclusion() {
+        let (mut grid, _settings) = create_grid_and_settings();
+        let particles = create_molecule_vec();
+        
+        // Particles 0 and 1 belong to molecule 0 so shouldn't be in each other's verlet table
+        let i = 0;
+        let j = 1;
+        
+        // Attempt to add a pair that is physically close but within the same molecule
+        grid.try_add_pair(i, j, 5.0, &particles, &[[0,0]]);
+        
+        assert!(grid.verlet_table[i].is_empty(), "Particles in same molecule must be excluded");
+    }
+
+    #[test]
+    fn test_periodic_neighbours() {
+        let (mut grid, settings) = create_grid_and_settings();
+        let mut particles = create_particle_vec();
+        
+        // Place particles across periodic boundary
+        particles.position[0] = DVec3::new(0.1, 5.0, 5.0);
+        particles.position[1] = DVec3::new(8.9, 5.0, 5.0); // 1.2 distance, within cutoff 3.0
+        
+
+        grid.check_and_rebuild_neighbours(&mut particles, &settings);
+        
+        assert!(grid.verlet_table[0].contains(&1), "Should detect periodic neighbour");
+    }
+
+    #[test]
+    fn test_ptype_interactions() {
+        let (mut grid, settings) = create_grid_and_settings();
+        let mut particles = create_particle_vec();
+        grid.init(&mut particles, &settings);
+
+        // Ball (id=0) should have ball (id=1) in its list because interaction_ptype = vec![[0,1]]
+        assert!(grid.verlet_table[0].contains(&1), "0 should see 1");
+        
+        // Ball (id=1) should NOT have Ball (id=0) in its list because interaction_ptype not specified.
+        assert!(!grid.verlet_table[1].contains(&0), "1 should not see 0");
+    }
+
+
+
+
+
+
 
 
 
