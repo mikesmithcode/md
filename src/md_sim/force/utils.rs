@@ -31,25 +31,31 @@ use glam::DVec3;
 ///   handling in periodic systems.
 /// * It assumes the initial displacement was calculated using coordinates 
 ///   already mapped (or "wrapped") within the primary simulation box.
-pub fn check_delta(delta: &mut DVec3, sim_box_size: &DVec3) {
+pub fn check_delta(delta: &mut DVec3, sim_box_size: DVec3,periodic:[bool;3]) {
     // Check X-axis wrapping
-    if delta.x > sim_box_size.x * 0.5 { 
-        delta.x -= sim_box_size.x; 
-    } else if delta.x < -sim_box_size.x * 0.5 { 
-        delta.x += sim_box_size.x; 
+    if periodic[0]{
+        if delta.x > sim_box_size.x * 0.5 { 
+            delta.x -= sim_box_size.x; 
+        } else if delta.x < -sim_box_size.x * 0.5 { 
+            delta.x += sim_box_size.x; 
+        }
     }
 
     // Check Y-axis wrapping
-    if delta.y > sim_box_size.y * 0.5 { 
-        delta.y -= sim_box_size.y; 
-    } else if delta.y < -sim_box_size.y * 0.5 { 
-        delta.y += sim_box_size.y; 
+    if periodic[1]{
+        if delta.y > sim_box_size.y * 0.5 { 
+            delta.y -= sim_box_size.y; 
+        } else if delta.y < -sim_box_size.y * 0.5 { 
+            delta.y += sim_box_size.y; 
+        }
     }
 
     // Check Z-axis wrapping
-    if delta.z > sim_box_size.z * 0.5 { 
-        delta.z -= sim_box_size.z; 
-    } else if delta.z < -sim_box_size.z * 0.5 { 
-        delta.z += sim_box_size.z; 
+    if periodic[2]{
+        if delta.z > sim_box_size.z * 0.5 { 
+            delta.z -= sim_box_size.z; 
+        } else if delta.z < -sim_box_size.z * 0.5 { 
+            delta.z += sim_box_size.z; 
+        }
     }
 }

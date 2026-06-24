@@ -1,8 +1,8 @@
 use glam::DVec3;
-use super::super::particle::ParticleVec;
-use super::super::simulation::SimulationSettings;
-use super::Forces;
-use super::utils::check_delta;
+use crate::md_sim::Simulation;
+use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::simulation::SimulationSettings;
+use crate::md_sim::force::{check_delta,Forces};
 
 
 /// Optimising finding neighbours for calculation of forces
@@ -35,22 +35,52 @@ pub struct CellGrid {
     pub cell_size: f64,
     pub heads: Vec<Option<usize>>, 
     pub next: Vec<Option<usize>>,  
+    pub periodic: [bool;3],
     pub stride_y: usize, 
     pub stride_z: usize,
     pub neighbour_table: Vec<Vec<usize>>,
     // For the verlet lists
-    pub verlet_table: Vec<Vec<usize>>,
     pub skin: f64,
+    pub verlet_table: Vec<Vec<usize>>,
     pub last_particle_count: usize,
 }
 
-impl CellGrid {
-    pub fn new(box_size: DVec3, cell_size: f64, particle_count: usize, skin: f64) -> Self {
-        let nx = ((box_size.x / cell_size).floor() as usize).max(1);
-        let ny = ((box_size.y / cell_size).floor() as usize).max(1);
-        let nz = ((box_size.z / cell_size).floor() as usize).max(1);
-        let total_cells = nx * ny * nz;
+    impl CellGrid {
+        pub fn new(box_size: DVec3, particle_count: usize, settings: &SimulationSettings) -> Self {
+            let cell_size = settings.cutoff;
+            let skin = settings.skin;
+            
+            let nx = ((box_size.x / cell_size).floor() as usize).max(1);
+            let ny = ((box_size.y / cell_size).floor() as usize).max(1);
+            let nz = ((box_size.z / cell_size).floor() as usize).max(1);
+            let total_cells = nx * ny * nz;
+            let periodic = settings.periodic;
 
+
+            let mut grid = Self {
+                num_cells: [nx, ny, nz],
+                cell_size,
+                heads: vec![None; total_cells],
+                next: vec![None; particle_count],
+                periodic: periodic,
+                stride_y: nx,
+                stride_z: nx * ny,
+                neighbour_table: vec![Vec::new(); total_cells],
+                // Initialise verlet_table with one empty Vec per particle
+                verlet_table: vec![Vec::with_capacity(20); particle_count],
+                skin,
+                last_particle_count: 0,            
+            };
+
+            grid.build_neighbour_table();
+
+            grid
+        }
+
+    ///Create adjacency table. Takes into account whether periodic in a particular dimension
+    // Populate the neighbour_table. Makes it easy in a 1d array to find the 
+    // valid neighbours.
+    pub(super) fn build_neighbour_table(&mut self){
         // All 26 possible neighbour directions in a 3D grid
         const OFFSETS: [(i32, i32, i32); 26] = [
             (1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1), // Faces
@@ -61,38 +91,25 @@ impl CellGrid {
             (-1, 1, 1), (-1, 1, -1), (-1, -1, 1), (-1, -1, -1)                  // Corners
         ];
 
+        let (nx,ny,nz) = (self.num_cells[0], self.num_cells[1], self.num_cells[2]);
 
-        let mut grid = Self {
-            num_cells: [nx, ny, nz],
-            cell_size,
-            heads: vec![None; total_cells],
-            next: vec![None; particle_count],
-            stride_y: nx,
-            stride_z: nx * ny,
-            neighbour_table: vec![Vec::new(); total_cells],
-            // Initialise verlet_table with one empty Vec per particle
-            verlet_table: vec![Vec::with_capacity(20); particle_count],
-            skin,
-            last_particle_count: 0,            
-        };
-
-        // Populate the neighbour_table (Broad-phase map)
         for iz in 0..nz {
             for iy in 0..ny {
                 for ix in 0..nx {
-                    let current_1d = grid.get_1d_idx(ix, iy, iz);
+                    let current_1d = self.get_1d_idx(ix, iy, iz);
                     let mut unique_neighbours = Vec::new();
+                    
                     for offset in OFFSETS {
-                        let n_idx = grid.get_wrapped_1d_idx(ix, iy, iz, offset);
-                        if n_idx != current_1d && !unique_neighbours.contains(&n_idx) {
-                            unique_neighbours.push(n_idx);
+                        if let Some(n_idx) = self.get_neighbour_1d_idx(ix, iy, iz, offset) {
+                            if n_idx != current_1d && !unique_neighbours.contains(&n_idx) {
+                                unique_neighbours.push(n_idx);
+                            }
                         }
                     }
-                    grid.neighbour_table[current_1d] = unique_neighbours;
+                    self.neighbour_table[current_1d] = unique_neighbours;
                 }
             }
         }
-        grid
     }
 
     /// check and rebuild neighbours
@@ -111,7 +128,7 @@ impl CellGrid {
                 .zip(particles.ref_pos.iter())
                 .any(|(p, r)| {
                     let mut delta = *p - *r;
-                    check_delta(&mut delta, &settings.sim_box_size);
+                    check_delta(&mut delta, settings.sim_box_size, self.periodic);
                     delta.length_squared() > threshold_sq
                 })
         } else {
@@ -138,18 +155,18 @@ impl CellGrid {
     }
 
     // Put particles into cells and build linked lists associated with each cell
-    fn bin(&mut self, particles: &ParticleVec) {
+    pub(super) fn bin(&mut self, particles: &ParticleVec) {
         self.heads.fill(None);
         for (i, pos) in particles.position.iter().enumerate() {
-            let (ix, iy, iz) = self.get_3d_cell_idx(*pos);
-            let cell_idx = self.get_1d_idx(ix, iy, iz);
+            let (ix, iy, iz) = self.get_3d_cell_idx(*pos, self.periodic);
+            let cell_idx = self.get_neighbour_1d_idx(ix, iy, iz, (0,0,0),).expect("Particle outside simulation grid");
             self.next[i] = self.heads[cell_idx];
             self.heads[cell_idx] = Some(i);
         }
     }
 
-    fn rebuild_verlet_table(&mut self, particles: &mut ParticleVec, settings: &SimulationSettings) {
-        let search_radius = settings.cutoff + self.skin;
+    pub(super) fn rebuild_verlet_table(&mut self, particles: &mut ParticleVec, settings: &SimulationSettings) {
+        let search_radius = self.cell_size + self.skin;
         let search_radius_sq = search_radius * search_radius;
 
         for list in &mut self.verlet_table {
@@ -187,7 +204,7 @@ impl CellGrid {
         }
 
     // Check if pair should be added to particles verlet list.
-    fn try_add_pair(&mut self, i: usize, j: usize, r_sq: f64, p: &ParticleVec, settings: &SimulationSettings) {
+    pub(super) fn try_add_pair(&mut self, i: usize, j: usize, r_sq: f64, p: &ParticleVec, settings: &SimulationSettings) {
         // This prevents self-interaction (i == j) and double counting
         if i >= j {
             return;
@@ -212,9 +229,10 @@ impl CellGrid {
         // If both are static ignore
         if !active_i && !active_j { return; }
 
-        // Calculate wrapped distance
+        // Calculate distance
         let mut delta = p.position[i] - p.position[j];
-        check_delta(&mut delta, &settings.sim_box_size);
+        check_delta(&mut delta, settings.sim_box_size, self.periodic);
+        
         
         if delta.length_squared() < r_sq {
             // If i active add to j verlet list
@@ -245,7 +263,7 @@ impl CellGrid {
         for i in 0..particles.len() {
             for &j in &self.verlet_table[i] {
                 let mut delta = particles.position[i] - particles.position[j];
-                check_delta(&mut delta, &settings.sim_box_size);
+                check_delta(&mut delta,settings.sim_box_size, self.periodic);
                 
                 let dist_sq = delta.length_squared();
                 if dist_sq < cutoff_sq {
@@ -255,42 +273,53 @@ impl CellGrid {
         }
     }
 
-/// Transforms 3D grid coords to 1D memory index
-    #[inline]
-    fn get_1d_idx(&self, ix: usize, iy: usize, iz: usize) -> usize {
+    /// Transforms 3D grid coords to 1D memory index
+   #[inline]
+    pub(super) fn get_1d_idx(&self, ix: usize, iy: usize, iz: usize) -> usize {
         ix + iy * self.stride_y + iz * self.stride_z
+    }
+
+    // This returns None if particle outside simulation box and Some(ix,iy,iz) if valid. If periodic is true in a particular dimension
+    // then the value will wrap.
+    pub(super) fn get_neighbour_1d_idx(&self, ix: usize, iy: usize, iz: usize, offset: (i32, i32, i32)) -> Option<usize> {
+        let coords = [ix as i32, iy as i32, iz as i32];
+        let offsets = [offset.0, offset.1, offset.2];
+        let mut new_coords = [0usize; 3];
+
+        for i in 0..3 {
+            let val = coords[i] + offsets[i];
+            if self.periodic[i] {
+                new_coords[i] = val.rem_euclid(self.num_cells[i] as i32) as usize;
+            } else {
+                if val < 0 || val >= self.num_cells[i] as i32 {
+                    return None; // Boundary reached, no neighbour here
+                }
+                new_coords[i] = val as usize;
+            }
+        }
+        Some(self.get_1d_idx(new_coords[0], new_coords[1], new_coords[2]))
     }
 
     /// Position to Coords: Transforms floating point position to 3D grid coords
     /// Includes a modulo check to ensure safety with periodic boundaries
-    fn get_3d_cell_idx(&self, pos: DVec3) -> (usize, usize, usize) {
-        let x_cells = self.num_cells[0];
-        let y_cells = self.num_cells[1];
-        let z_cells = self.num_cells[2];
+    fn get_3d_cell_idx(&self, pos: DVec3, periodic: [bool; 3]) -> (usize, usize, usize) {
+    let dims = [self.num_cells[0], self.num_cells[1], self.num_cells[2]];
+    let pos_arr = [pos.x, pos.y, pos.z];
+    let mut indices = [0usize; 3];
 
-        // Ensure we handle potential negative positions or edge cases with modulo
-        let idx = ((pos.x / self.cell_size).floor() as i32).rem_euclid(x_cells as i32) as usize;
-        let idy = ((pos.y / self.cell_size).floor() as i32).rem_euclid(y_cells as i32) as usize;
-        let idz = ((pos.z / self.cell_size).floor() as i32).rem_euclid(z_cells as i32) as usize;
-
-        (idx, idy, idz)
+    for i in 0..3 {
+        let max_val = dims[i] as f64 * self.cell_size;
+        if periodic[i] {
+            // Apply modulo for periodic axes
+            indices[i] = ((pos_arr[i] / self.cell_size).floor() as i32)
+                .rem_euclid(dims[i] as i32) as usize;
+        } else {
+            // Clamp for non-periodic axes
+            indices[i] = (pos_arr[i].clamp(0.0, max_val - 0.0001) / self.cell_size) as usize;
+        }
     }
-
-    /// The Neighbour Indexer: Handles offsets (dx, dy, dz) across periodic boundaries
-    fn get_wrapped_1d_idx(&self, ix: usize, iy: usize, iz: usize, offset:(i32,i32,i32)) -> usize {
-        let (dx,dy,dz) = offset;
-        let nx = (ix as i32 + dx).rem_euclid(self.num_cells[0] as i32) as usize;
-        let ny = (iy as i32 + dy).rem_euclid(self.num_cells[1] as i32) as usize;
-        let nz = (iz as i32 + dz).rem_euclid(self.num_cells[2] as i32) as usize;
-        
-        self.get_1d_idx(nx, ny, nz)
-    }
-
-    /// Used during the binning phase
-    pub fn get_cell_idx_from_pos(&self, pos: DVec3) -> usize {
-        let (ix, iy, iz) = self.get_3d_cell_idx(pos);
-        self.get_1d_idx(ix, iy, iz)
-    }
+    (indices[0], indices[1], indices[2])
 }
 
+}
 

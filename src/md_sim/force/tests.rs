@@ -76,6 +76,7 @@ fn test_granular_collision() {
     let settings = SimulationSettings {
         dt: 0.001,             
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
+        periodic: [true;3],
         cutoff: 2.0,           // Ensure this is large enough for the overlap
         skin:0.2,
         start: 0,
@@ -219,12 +220,12 @@ fn test_check_delta() {
     // Case 2: Y is negative and far apart, should wrap to a small positive distance
     // Example: Particle A at 9.5, Particle B at 0.5. Delta = -9.0
     let mut delta_y = DVec3::new(0.0, -9.0, 0.0);
-    check_delta(&mut delta_y, &sim_box_size);
+    check_delta(&mut delta_y, &settings);
     assert!((delta_y.y - 1.0).abs() < 1e-6); // -9.0 + 10.0 = 1.0
 
     // Case 3: Z is already the shortest path, should remain unchanged
     let mut delta_z = DVec3::new(0.0, 0.0, 2.0);
-    check_delta(&mut delta_z, &sim_box_size);
+    check_delta(&mut delta_z, &settings);
     assert!((delta_z.z - 2.0).abs() < 1e-6);
 }
 
@@ -236,6 +237,35 @@ fn test_check_delta() {
 // neighbours tests
 // -----------------------------------------------------------------------------------------------
 
+   #[test]
+    fn test_get_neighbour_1d_idx(){
+        let box_size = DVec3::splat(9.0);
+        let settings = SimulationSettings {
+            cutoff:3.0,
+            skin: 0.2,
+            sim_box_size: box_size,
+            periodic:[true;3],
+            ..Default::default()
+        };
+
+        let mut grid = CellGrid::new(box_size, 10 as usize, &settings);
+
+        let ix: usize=0;
+        let iy: usize=0;
+        let iz: usize=0;
+
+        //test value outside grid in non-periodic results in None
+        grid.periodic = [false;3];
+        let new_coords = grid.get_neighbour_1d_idx(ix,iy,iz, (-1,0,0));
+        assert_eq!(new_coords, None, "coords should have returned None because outside box");
+
+        //test values in periodic box.
+        grid.periodic = [true;3];
+        let new_coords = grid.get_neighbour_1d_idx(ix,iy,iz, (-1,0,0));
+        println!("{:?}",new_coords);
+        assert_eq!(new_coords, Some(8) , "x coord should have wrapped");
+
+    }
 
 #[test]
 fn test_first_frame_rebuild() {
@@ -254,7 +284,8 @@ fn test_first_frame_rebuild() {
     particles.position[1] = DVec3::new(1.1, 1.1, 1.1);
     particles.ref_pos.copy_from_slice(&particles.position);
 
-    let mut grid = CellGrid::new(box_size, 2.0, particles.len(), settings.skin);
+    
+    let mut grid = CellGrid::new(box_size, particles.len(), &settings);
 
     // Move particle 0 past the threshold (0.15 > 0.1)
     particles.position[0] += DVec3::new(0.15, 0.0, 0.0);
@@ -281,7 +312,7 @@ fn test_skin_displacement_trigger() {
     let mut particles = create_particle_vec();//p1.pos and p2.pos = (1.0,2.0,3.0), p1.vel = (1.0, 1.0, 1.0), p2.vel = (0.1, 0.2, 0.3)
     particles.ref_pos.copy_from_slice(&particles.position);
 
-    let mut grid = CellGrid::new(box_size, settings.cutoff + settings.skin, particles.len(), settings.skin);
+    let mut grid = CellGrid::new(box_size, particles.len(), &settings);
 
     // PRIME THE GRID: This sets last_particle_count and syncs ref_pos
     grid.check_and_rebuild_neighbours(&mut particles, &settings);
@@ -332,7 +363,7 @@ fn test_periodic_neighbours() {
     println!("{:?}", particles.ref_pos);
 
     // Initialise the grid
-    let mut grid = CellGrid::new(box_size, 2.0, particles.len(), settings.skin);
+    let mut grid = CellGrid::new(box_size,particles.len(), &settings);
     // Trigger the build
     // Because ref_pos is still (0,0,0) from the utility, 
     // this will definitely trigger a rebuild.
@@ -372,7 +403,7 @@ fn test_active_ghost_interaction() {
     particles.position[0] = DVec3::new(5.0, 5.0, 5.0);
     particles.position[1] = DVec3::new(5.0, 5.0, 5.5); // 0.5 distance
 
-    let mut grid = CellGrid::new(box_size, 1.2, particles.len(), 0.2);
+    let mut grid = CellGrid::new(box_size,  particles.len(), &settings);
     grid.check_and_rebuild_neighbours(&mut particles, &settings);
 
     // Ball (0) should have Floor (1) in its list because 0 is active
@@ -401,7 +432,7 @@ fn test_ghost_ghost_invisibility() {
     particles.position[0] = DVec3::new(5.0, 5.0, 5.0);
     particles.position[1] = DVec3::new(5.0, 5.0, 5.2);
 
-    let mut grid = CellGrid::new(box_size, 1.2, particles.len(), 0.2);
+    let mut grid = CellGrid::new(box_size, 1.2, , 0.2, particles.len(), &settings);
     grid.check_and_rebuild_neighbours(&mut particles, &settings);
 
     assert!(grid.verlet_table[0].is_empty());

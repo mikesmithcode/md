@@ -99,6 +99,7 @@ pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path)
 /// pub struct SimulationSettings{
 /// pub dt: f64,
 /// pub sim_box_size: DVec3, 
+/// pub periodic: [true;3],
 /// pub cutoff: f64,
 /// pub skin: f64,
 /// pub start: usize,
@@ -113,6 +114,7 @@ pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path)
 /// {
 ///  "dt": 3e-6,
 ///  "sim_box_size": [0.05, 0.01, 0.05],
+///  "periodic": [true,true,true],
 ///  "cutoff": 0.01,
 ///  "skin": 0.002,
 ///  "start": 0,
