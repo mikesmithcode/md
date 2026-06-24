@@ -84,3 +84,65 @@ The `position` always defines the absolute position in the global coordinate spa
 The `rel_pos` is in the local frame of the molecule. So each particle in a composite particle has a relative position compared with the centre of mass of the molecule. No matter how the particle rotates in the global frame this stays the same.
 
 The `orientation` is the quaternion which transforms between local and global positions.
+
+### 5. Integration of Quaternions in Molecular Dynamics Simulations
+
+In molecular dynamics simulations, quaternions are often used to update the orientation of rigid bodies over time. The orientation quaternion can be updated based on angular velocity and time step using quaternion algebra.
+
+To do this we need to calculate the torque acting on the body. This consists of the forces acting on constituent particles about the centre of mass, the sum of torques acting on each constituent particle.
+
+$$\mathbf{\tau}_{total} = \sum_{i=1}^{n} \mathbf{\tau}_i + \sum_{i=1}^{n} \mathbf{r}_i \times \mathbf{F}_i$$
+
+```rust
+    for &idx in &mol.pids {
+            let r = particles.position[idx] - com_pos;
+            total_torque += torques[idx] + r.cross(forces[idx]);
+        }
+```
+Since we are using a half-step verlet integration scheme, we need to update the orientation quaternion using the angular velocity at the half-step. This takes place in the Motion Trait function `update_motion`.
+
+The Quaternion `particle.orientation` specifies the orientation of the molecule in the global frame. This is the same for all constituent particles of the molecule. We use this to calculate the rotation matrix ($R$). This matrix can take a local vector defining where each particle in a molecule is relative to the centre of mass and transform it into the global frame.
+
+The moment of inertia in the global frame may not be the same as in the local frame. This is because it can be rotating around an arbitrary axis. 
+
+$$I_{global} = R I_{local} R^T$$
+
+```rust
+        let rot_mat = DMat3::from_quat(particles.orientation[lead_idx]);
+        let i_global = rot_mat * mol.inertia * rot_mat.transpose();
+```
+
+The angular acceleration is calculated using the total torque and the $I_global$.
+
+```rust
+        let omega = particles.omega[lead_idx];
+        let gyroscopic = omega.cross(i_global * omega);
+        let alpha = i_global.inverse() * (total_torque - gyroscopic);
+```
+We then use the angular acceleration to update the angular velocity $\omega$ at the half-step and then use this to update the orientation quaternion.
+
+```rust
+        let new_omega = omega + (alpha * half_dt);
+
+        // Update Orientation and COM Position
+        let new_com_pos = com_pos + (new_com_vel * dt);
+        let delta_q = DQuat::from_scaled_axis(new_omega * dt);
+        let new_orientation = (delta_q * particles.orientation[lead_idx]).normalize();
+
+        // Update every particle's state
+        let rot_mat_new = DMat3::from_quat(new_orientation);
+        for &idx in &mol.pids {
+            // Update individual velocity: v_i = v_com + (omega x r_global)
+            let r_global = rot_mat_new * particles.rel_pos[idx];
+            particles.velocity[idx] = new_com_vel + new_omega.cross(r_global);
+            
+            // Update individual position
+            particles.position[idx] = new_com_pos + r_global;
+            
+            // Sync orientation and omega (if stored per-particle)
+            particles.orientation[idx] = new_orientation;
+            particles.omega[idx] = new_omega;
+        }
+```
+
+The simulation loop then updates forces and torques based on the new positions and orientations. We then complete the final half-step integration of the angular velocity using these new values of the force and torque. This is in the Motion trait function `correct_motion`.
