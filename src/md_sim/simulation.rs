@@ -221,7 +221,7 @@ impl<S> Simulation<S>
             if self.sim_update.has_pair_forces(){
                 //Check if grid and verlet lists need recalculating
                 self.cell_grid.check_and_rebuild_neighbours(&mut self.particles, &self.settings);
-                //appy pairwise forces
+                //apply pairwise forces
                 self.cell_grid.apply_pair_forces(
                     &mut self.forces, 
                     &mut self.torques,
