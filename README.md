@@ -63,35 +63,33 @@ To handle the details of a simulation you must create a unit struct (I've called
             // If there are no pair forces then call this method returning false. If you do have pair forces this defaults to true and you 
             // need not implement it.
         
-        fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3],particles: &ParticleVec,settings: &SimulationSettings); {
+        fn update_pair_forces(&self,i: usize,j: usize,force: DVec3,torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings); {
             // In here you define all the functions that require forces to be applied between pairs of particles.
             // forces.rs has a load of pre-built functions that you can import and use. The Simulation handles finding 
             // particle pairs according to the cutoff distance and iterates over them. i and j are indices which specify the pair of particles.
             // You then calculate the interaction between these particles and update the forces on each particle accordingly.
-            inelastic_collision(i, j, particles, forces, collision_params);
+            (force, torque)=inelastic_collision(i, j, particles, force, collision_params);
+            
+            (force, torque)
         }
 
         fn has_single_forces(&self) -> bool { false }
             // If there are no single particle forces then call this method returning false. If you do have single particle forces this defaults to true and you 
             // need not implement it.
 
-        fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], particles: &ParticleVec, _settings: &SimulationSettings, time: f64) {
+        fn update_single_forces(&self,i:usize, force: glam::DVec3, torque: glam:DVec3, particles: &ParticleVec, _settings: &SimulationSettings, time: f64)->(DVec3, DVec3) {
             // In here you define all the functions that require forces to be applied to particles.
             // forces.rs has a load of pre-built functions that you can import and use. 
             
             // If the force acts on all particles then pass the mutable reference to forces and an immutable reference to particles.
             //just call the function like this:
-            add_weight(forces, particles);
+            force = add_weight(force, particles);
 
             // If you need to calculate things such as collisions where you need to loop over particle pairs
             //Forces between particles - starting with checking all pairs.
+            (force, torque)
         }                    
         
-        // For particles that shouldn't follow the calculated forces e.g walls etc.
-        fn update_ptype_no_forces(&self, forces: &mut [DVec3], particles: &ParticleVec){
-            let immobile = &[1, 2];
-            zero_forces_for_ptypes(forces, particles, immobile);
-        }
     }
     
     
@@ -135,7 +133,7 @@ Alternatively, you can just record data output during the simulation and later c
 
 ## Data input / output
 
-A json config file (in input) defines the simulation parameters and an initial state file (.parquet in output) defines the starting positions and velocities etc of the particles. The simulation parameters are used to construct a SimSettings struct. If you are using graphics there is also a SceneSettings struct read from a separate config file. The initial state file is a parquet file which can be read from polars. Each particle is a Particle struct which is stored in a `Vec<Particle>` in the Simulation struct. The parquet file is either the output of a previous simulation or constructed using a python script.
+A json config file (in input) defines the simulation parameters and an initial state file (.parquet in output) defines the starting positions and velocities etc of the particles. The simulation parameters are used to construct a SimSettings struct. If you are using graphics there is also a SceneSettings struct read from a separate config file. The initial state file is a parquet file which can be read from polars. Each particle is a Particle struct which is stored in a `Vec<Particle>` in the Simulation struct. However, we use the #soa_derive which converts this to a struct of vecs. So that you have things like particle.position[i] referring to the particle i's position. This is a performance thing. The parquet file is either the output of a previous simulation or constructed using a python script.
 
 Periodically the simulation should write output files containing the current state of the system. These files can then be used for analysis or visualization. The same file can also be used as an input file to restart a simulation. Restarting a simulation looks for the latest file in the output folder and uses that as the input file. This is why the simsettings specifies the number of steps to advance the simulation rather than a start and stop.
 
@@ -144,7 +142,7 @@ Periodically the simulation should write output files containing the current sta
 Simulation has two main methods: [`md_sim::simulation::Simulation::new`] which creates a new simulation and [`md_sim::simulation::Simulation::update`] which advances the simulation by one step.
 
 [`md_sim::simulation::Simulation::new`]
-This takes a SimSettings struct as input and creates a new Simulation struct. It reads the initial state from file and creates the cell grid for efficient finding of neighbouring particles. It also takes a SimUpdate unit struct which contains the details of the simulation. This implements the traits [`md_sim::motion::Motion`] and [`md_sim::force::Forces`]. Each of these traits needs to be implemented for your specific simulation. You can use the pre-built functions in motion.rs and forces.rs or write your own.
+This takes a SimSettings struct as input and creates a new Simulation struct. It reads the initial state from file and creates the [`md_sim::forces::CellGrid`] for efficient finding of neighbouring particles. It also takes a SimUpdate unit struct which contains the details of the simulation. This implements the traits [`md_sim::motion::Motion`] and [`md_sim::force::Forces`]. Each of these traits needs to be implemented for your specific simulation. You can use the pre-built functions in motion.rs and forces.rs or write your own.
 
 [`md_sim::motion::Motion`] defines the [`md_sim::motion::Motion::update_motion`] and [`md_sim::motion::Motion::correct_motion`] functions. [`md_sim::motion::Motion::update_motion`] is where you would implement your integration scheme to update the positions and velocities of the particles based on the forces. [`md_sim::motion::Motion::correct_motion`] is where you would implement any correction step of your integration scheme if you are using one. This method is optional and can be left blank.
 

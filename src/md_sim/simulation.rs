@@ -6,6 +6,7 @@
 //! 
 
 use glam::DVec3;
+use rayon::prelude::*;
 
 use serde::{Serialize, Deserialize};
 use std::fs::File;
@@ -143,7 +144,7 @@ fn build_molecule_map(particles: &ParticleVec) -> HashMap<usize, MoleculeData> {
 
 impl<S> Simulation<S> 
     where 
-        S: Forces + Motion,
+        S: Forces + Motion + Sync,
     {
         /// Create a new simulation
         pub fn new(mut particles: ParticleVec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
@@ -191,8 +192,11 @@ impl<S> Simulation<S>
 
             if self.sim_update.has_single_forces(){
                 // Single forces apply to individual particles
+                let (mut force, mut torque);
                 for i in 0..self.particles.len(){
-                    self.sim_update.update_single_forces(i, &mut self.forces, &mut self.torques, &self.particles, &self.settings, self.time);
+                    (force, torque) = self.sim_update.update_single_forces(i, DVec3::ZERO, DVec3::ZERO, &self.particles, &self.settings, self.time);
+                    self.forces[i] += force;
+                    self.torques[i] += torque;
                 }
             }
 

@@ -5,11 +5,7 @@ pub mod simulations {
     #![doc = include_str!("../docs/simulations/MulticomponentParticles.md")]
     #![doc = include_str!("../docs/simulations/Quaternions.md")]
     #![doc = include_str!("../docs/simulations/Simulations.md")]
-}
-
-/// Information on how to use the CLI or config files
-pub mod knowhow {
-    #![doc = include_str!("../docs/knowhow.md")]
+    #![doc = include_str!("../docs/simulations/Models.md")]
 }
 
 /// Information on how to use the CLI or config files

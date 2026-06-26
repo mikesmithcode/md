@@ -52,18 +52,19 @@ pub trait Forces {
     ///
     /// # Arguments
     /// * `i` - Index of the particle being updated.
-    /// * `forces` - The force buffer where contributions should be added.
     /// * `particles` - Reference to the particle data (positions, velocities, etc.).
     /// * `settings` - Global simulation parameters.
+    /// 
+    /// Returns force and torque for a single particle
     fn update_single_forces(
         &self, 
         i: usize, 
-        forces: &mut [DVec3], 
-        torques: &mut [DVec3],
+        force: DVec3, 
+        torque: DVec3,
         particles: &ParticleVec, 
         settings: &SimulationSettings,
         time: f64
-    );
+    )->(DVec3, DVec3);
 
     /// Calculates binary forces between two particles within the cutoff distance.
     ///
@@ -74,22 +75,24 @@ pub trait Forces {
     ///
     /// # Arguments
     /// * `i`, `j` - Indices of the interacting particles.
-    /// * `forces` - The force buffer where contributions should be added.
+    /// 
+    /// # Returns
+    /// * (force,torque)` - The force and torque acting on a single particle
     fn update_pair_forces(
         &self, 
         i: usize, 
         j: usize, 
-        forces: &mut [DVec3], 
-        torques: &mut [DVec3],
+        force: DVec3,
+        torque: DVec3,
         particles: &ParticleVec, 
         settings: &SimulationSettings
-    );
+    )->(DVec3, DVec3);
 
     fn update_internal_forces(
         &self,
         _particles: &ParticleVec, 
-        _forces: &mut [DVec3], 
-        _torques: &mut [DVec3],
+        _force: DVec3, 
+        _torque: DVec3,
         _settings: &SimulationSettings
     ){
         // Optional: No Internal Forces by Default

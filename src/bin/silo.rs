@@ -33,13 +33,17 @@ impl Forces for SimUpdate{
 
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time: f64) {   
-        add_weight(i, forces, particles);
+    fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
+        if particles.ptype[i] == 0{
+            force=add_weight(i, force, particles);
+        }
+        (force, _torque)
     }
 
     // forces that operate between pairs of particles
-    fn update_pair_forces(&self,i: usize,j: usize,forces: &mut [DVec3], _torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
-        add_granular_collision(i, j, particles, forces, _torques, settings);
+    fn update_pair_forces(&self,i: usize,j: usize,mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
+        (force, torque)=add_granular_collision(i, j, particles, force, torque, settings);
+        (force, torque)
     }
 
 }

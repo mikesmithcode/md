@@ -31,12 +31,13 @@ use crate::md_sim::SimulationSettings;
 ///
 /// This function will panic if the index `i` is out of bounds for either `forces` 
 /// or `particles.mass`.
-pub fn add_weight(i: usize, forces: &mut [DVec3], particles: &ParticleVec) {
+pub fn add_weight(i: usize, mut force: DVec3, particles: &ParticleVec)-> DVec3 {
     let gravity = -9.81;
     let mass = particles.mass[i];
 
     let weight = gravity * mass;
-    forces[i].z += weight;
+    force.z += weight;
+    force
 }
 
 
@@ -63,14 +64,15 @@ pub fn add_weight(i: usize, forces: &mut [DVec3], particles: &ParticleVec) {
 ///
 /// This function will panic if the index `i` is out of bounds for `forces`, 
 /// `particles.velocity`, or `particles.radius`.
-pub fn add_viscous_drag(i: usize, forces: &mut [DVec3], particles: &ParticleVec, viscosity: f64) {
+pub fn add_viscous_drag(i: usize, particles: &ParticleVec, mut force: DVec3, viscosity: f64) -> DVec3{
     let vel = particles.velocity[i];
     let rad = particles.radius[i];
     
     // Stokes' Law: F = -6 * pi * eta * r * v
     let drag = -6.0 * PI * viscosity * rad * vel;
     
-    forces[i] += drag;
+    force += drag;
+    force
 }
 
 /// An active force for use with ABPs
@@ -78,7 +80,7 @@ pub fn add_viscous_drag(i: usize, forces: &mut [DVec3], particles: &ParticleVec,
 /// For each particle i we generate some random numbers. We then calculate the noise scale.
 /// The variance of the random displacement in time dt is 2*Dt*dt but we will multiply this by 
 /// dt when we calculate the displacement in motion part. Friction F is gamma * v. The noise must be (2*gamma**2 * Dt/dt)**0.5
-pub fn add_active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec, settings: &SimulationSettings){
+pub fn add_active_force(i: usize, mut force: DVec3, particles: &ParticleVec, settings: &SimulationSettings){
     let mut rng = rand::thread_rng();
     let normal = Normal::new(0.0, 1.0).unwrap();
 
@@ -100,7 +102,7 @@ pub fn add_active_force(i: usize, forces: &mut [DVec3], particles: &ParticleVec,
         );
 
         // Add force
-        forces[i] += f_active + f_noise;
+        force += f_active + f_noise;
     }
     
 }

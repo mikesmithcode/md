@@ -68,6 +68,16 @@ def get_config(script_name):
 
     return config, snapshot_filepath
 
+colours = {
+    0: 'red',
+    1: 'blue',
+    2: 'green',
+    3: 'cyan',
+    4: 'magenta',
+    5: 'yellow'
+}
+
+
 def plot_circles_orientation(df, ax, offset=(0, 10)):
     # Create a list of Circle patches using the actual radius from the data
     circles = [
@@ -83,7 +93,7 @@ def plot_circles_orientation(df, ax, offset=(0, 10)):
     for x, z, ptype in zip(df["x"], df["z"], df["ptype"]):
         ax.text(
             x, z, str(int(ptype)), 
-            color='blue', 
+            color=colours.get(ptype, "black"), 
             fontsize=8, 
             ha='center', 
             va='center',

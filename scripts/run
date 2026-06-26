@@ -2,19 +2,19 @@
 
 # --- Help Instructions ---
 show_help() {
-    echo "Usage: run [-c] [-r] [-h] <simulation_name>"
+    echo "Usage: run [-c] [-r] [-b] [-h] <simulation_name>"
     echo ""
     echo "Options:"
     echo "  -c    Clean & Setup: Runs cleanup, creates directories, and executes the Python setup."
     echo "  -r    Release Mode: Compiles the Rust simulation with heavy optimizations."
+    echo "  -b    Build Only: Compiles the code but skips launching the simulation."
     echo "  -h    Help: Displays this help message."
     echo ""
-    echo "Example:"
-    echo "  run -c -r 2d_rotation"
     exit 0
 }
 
 # 1. Configuration - Detect OS/Venv
+# (Kept original logic)
 if [ -f ".venv/Scripts/python.exe" ]; then
     PYTHON_EXEC=".venv/Scripts/python.exe"
 elif [ -f ".venv/bin/python" ]; then
@@ -26,12 +26,14 @@ fi
 
 RUN_CLEAN=false
 RELEASE_FLAG=""
+BUILD_ONLY=false
 
-# 2. Process flags
-while getopts "crh" opt; do
+# 2. Process flags - Added 'b'
+while getopts "crbh" opt; do
   case $opt in
     c) RUN_CLEAN=true ;;
     r) RELEASE_FLAG="--release" ;;
+    b) BUILD_ONLY=true ;;
     h) show_help ;;
     \?) echo "Invalid option: -$OPTARG. Use -h for help." >&2; exit 1 ;;
   esac
@@ -41,7 +43,7 @@ shift $((OPTIND-1))
 TARGET_NAME="$1"
 
 if [ -z "$TARGET_NAME" ]; then
-    echo "Error: No simulation name provided. Use -h for help."
+    echo "Error: No simulation name provided."
     exit 1
 fi
 
@@ -53,15 +55,20 @@ if [ "$RUN_CLEAN" = true ]; then
     "$PYTHON_EXEC" python_scripts/"$TARGET_NAME".py "$TARGET_NAME" || { echo "Python setup failed"; exit 1; }
 fi
 
-# 4. Build/Run Logic
+# 4. Build Logic
 echo "--- Compiling $TARGET_NAME $RELEASE_FLAG ---"
 cargo build $RELEASE_FLAG --bin "$TARGET_NAME" || { echo "Compilation failed"; exit 1; }
 
-echo "--- Launching Simulation ---"
-BINARY="./target/$([ "$RELEASE_FLAG" == "--release" ] && echo "release" || echo "debug")/$TARGET_NAME"
-
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY"
+# 5. Conditional Launch Logic
+if [ "$BUILD_ONLY" = true ]; then
+    echo "--- Build complete. Skipping execution. ---"
 else
-    "$BINARY"
+    echo "--- Launching Simulation ---"
+    BINARY="./target/$([ "$RELEASE_FLAG" == "--release" ] && echo "release" || echo "debug")/$TARGET_NAME"
+    
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY"
+    else
+        "$BINARY"
+    fi
 fi

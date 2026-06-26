@@ -1,8 +1,7 @@
-use std::cell;
-
 use glam::DVec3;
+use rayon::prelude::*;
 
-use crate::md_sim::particle::{self, ParticleVec};
+use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::simulation::SimulationSettings;
 use crate::md_sim::force::{check_delta,Forces};
 
@@ -130,7 +129,7 @@ pub struct CellGrid {
         }
 
         /// This is used by the Force trait to apply pairwise forces to potentially valid pairs.
-        pub fn apply_pair_forces<F: Forces>(
+        pub fn apply_pair_forces<F: Forces + Sync>(
             &self,
             f_buf: &mut [DVec3],
             t_buf: &mut [DVec3],
@@ -138,19 +137,20 @@ pub struct CellGrid {
             user_impl: &F,
             settings: &SimulationSettings,
         ) {
-            let cutoff_sq = settings.cutoff * settings.cutoff;
+            f_buf.par_iter_mut().zip(t_buf.par_iter_mut()).enumerate().for_each(|(i, (f_out, t_out))| {
 
-            for i in 0..particles.len() {
+                let mut local_force= DVec3::ZERO;
+                let mut local_torque = DVec3::ZERO;
+                
                 for &j in &self.verlet_table[i] {
-                    let mut delta = particles.position[i] - particles.position[j];
-                    check_delta(&mut delta,settings.sim_box_size, self.periodic);
-                    
-                    let dist_sq = delta.length_squared();
-                    if dist_sq < cutoff_sq {
-                        user_impl.update_pair_forces(i, j, f_buf, t_buf, particles, settings);
-                    }
+                    let (f, t)=user_impl.update_pair_forces(i, j, DVec3::ZERO, DVec3::ZERO, particles, settings);
+                    local_force += f;
+                    local_torque += t;
                 }
-            }
+
+                *f_out += local_force;
+                *t_out += local_torque;
+            });
         }
 
         //-----------------------------------------------------------------------------------
@@ -173,7 +173,7 @@ pub struct CellGrid {
 
             let (nx,ny,nz) = (self.num_cells[0], self.num_cells[1], self.num_cells[2]);
             
-            let mut count=0 as usize;
+            let mut count: usize;
             for iz in 0..nz {
                 for iy in 0..ny {
                     for ix in 0..nx {

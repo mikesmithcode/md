@@ -9,7 +9,6 @@ use crate::md_sim::utils::{create_particle_vec,create_molecule_vec, create_grid_
 
 use super::{add_weight,add_viscous_drag, add_granular_collision, add_coulomb};
 use super::utils::check_delta;
-use super::CellGrid;
 use std::f64::consts::PI;
 
 // -----------------------------------------------------------------
@@ -20,17 +19,15 @@ use std::f64::consts::PI;
 #[test]
 fn test_add_weight() {
     let particles = create_particle_vec();
-    let mut forces = vec![DVec3::ZERO; particles.len()];
+    let mut force = DVec3::ZERO;
     
     // Apply weight to the first particle
-    add_weight(0, &mut forces, &particles);
+    force = add_weight(0, force, &particles);
 
     // Assuming gravity is -9.81 and mass is 1.0 (mass = 1.0)
     // Force should be exactly -9.81 in the Z direction
-    assert!((forces[0].z + 9.81).abs() < 1e-6);
-    
-    // Ensure the second particle hasn't been touched
-    assert_eq!(forces[1], DVec3::ZERO);
+    assert!((force.z + 9.81).abs() < 1e-6);
+
 }
 
 #[test]
@@ -38,20 +35,19 @@ fn test_add_drag() {
     use std::f64::consts::PI;
     
     let particles = create_particle_vec();
-    let mut forces = vec![DVec3::ZERO; particles.len()];
+    let mut force = DVec3::ZERO;
     let viscosity = 0.1;
 
     // Apply drag to the first particle
-    add_viscous_drag(0, &mut forces, &particles, viscosity);
+    force = add_viscous_drag(0, &particles,force, viscosity);
     
     // Expected: -6 * PI * eta * r * v
     // Assuming create_particle_vec sets radius=0.5 and velocity.x=1.0 for particle 0
     let expected_drag_x = -6.0 * PI * viscosity * 0.5 * 1.0;
     
-    assert!((forces[0].x - expected_drag_x).abs() < 1e-10);
+    assert!((force.x - expected_drag_x).abs() < 1e-10);
     
-    // Ensure the second particle remains at zero force
-    assert_eq!(forces[1], DVec3::ZERO);
+
 }
 
 fn test_add_active_force(){
@@ -87,8 +83,7 @@ fn test_granular_collision() {
         model,                 
     };
 
-    let mut forces = vec![DVec3::ZERO; particles.len()];
-    let mut torques = vec![DVec3::ZERO; particles.len()];
+    let mut force = DVec3::ZERO;
 
     // Create a controlled overlap (Combined rad = 1.0, distance = 0.8, overlap = 0.2)
     let mut particles = particles; 
@@ -99,18 +94,18 @@ fn test_granular_collision() {
     particles.velocity[0] = DVec3::new(1.0, 0.0, 0.0);
     particles.velocity[1] = DVec3::new(-1.0, 0.0, 0.0);
 
-    add_granular_collision(0, 1, &particles, &mut forces, &mut torques, &settings);
+    (force, _) = add_granular_collision(0, 1, &particles, force, DVec3::ZERO, &settings);
 
-    assert!(forces[0].x < 0.0, "Force should be repulsive for particle 0");
-    let force_with_damping = forces[0].length();
+    assert!(force.x < 0.0, "Force should be repulsive for particle 0");
+    let force_with_damping = force.length();
 
     // --- Case B: Restitution (Moving away) ---
-    forces = vec![DVec3::ZERO; particles.len()]; // Reset force buffer
+    force = DVec3::ZERO; // Reset force buffer
     particles.velocity[0] = DVec3::new(-1.0, 0.0, 0.0);
     particles.velocity[1] = DVec3::new(1.0, 0.0, 0.0);
 
-    add_granular_collision(0, 1, &particles, &mut forces,&mut torques, &settings);
-    let force_no_damping = forces[0].length();
+    (force, _ )=add_granular_collision(0, 1, &particles, force,DVec3::ZERO, &settings);
+    let force_no_damping = force.length();
 
     // force_with_damping (Compression) should be > force_no_damping (Restitution).
     assert!(force_with_damping > force_no_damping, "Damping must increase total force magnitude during compression");
@@ -143,10 +138,10 @@ fn test_weeks_chandler_andersen() {
         model,                 
     };
 
-    let mut forces = vec![DVec3::ZERO; particles.len()];
+    let mut force = DVec3::ZERO;
 
-    add_weeks_chandler_andersen(0, 1, &mut forces, &particles,  &settings);
-    let calc_force = forces[0];
+    force = add_weeks_chandler_andersen(0, 1, &particles, force, &settings);
+    let calc_force = force;
 
     let epsilon: f64 = 100.0;
     let sigma: f64 = 1.0;
@@ -184,16 +179,16 @@ fn test_coulomb() {
         model,                 
     };
 
-    let mut forces = vec![DVec3::ZERO; particles.len()];
+    let mut force = DVec3::ZERO;
 
-    add_coulomb(0, 1, &particles, &mut forces, &settings);
+    force = add_coulomb(0, 1, &particles, force, &settings);
 
     const EPS0: f64 = 8.85418782e-12;
     let separation = particles.position[0]-particles.position[1];
     //forces the right are positive
     let coulomb_force = -(1.0/(4.0*PI*EPS0))*-1.0*1.0/separation.length_squared();
     
-    assert_eq!(forces[0].length(), coulomb_force);
+    assert_eq!(force.length(), coulomb_force);
 
 }
 

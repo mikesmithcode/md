@@ -34,17 +34,19 @@ impl Forces for SimUpdate{
 
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, forces: &mut [glam::DVec3], _torques: &mut [DVec3], particles: &ParticleVec, _settings: &SimulationSettings, _time: f64) {   
-        add_weight(i, forces, particles);
+    fn update_single_forces(&self,i:usize, mut force: DVec3,torque:DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
+        force = add_weight(i, force, particles);
+        (force, torque)
     }
 
     // forces that operate between pairs of particles
-    fn update_pair_forces(&self,i: usize,j: usize, forces: &mut [DVec3], torques: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
-        add_granular_collision(i, j, particles, forces, torques, settings);
-        add_coulomb(i,j, particles, forces, settings);
+    fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3,DVec3){
+        (force, torque)=add_granular_collision(i, j, particles, force, torque, settings);
+        force = add_coulomb(i,j, particles, force, settings);
+        (force, torque)
     }
 
-    fn update_internal_forces(&self, _particles: &ParticleVec, _forces: &mut [DVec3], _torques: &mut [DVec3], _settings: &SimulationSettings){
+    fn update_internal_forces(&self, _particles: &ParticleVec, _force: DVec3, _torque: DVec3, _settings: &SimulationSettings){
         
     }
 }

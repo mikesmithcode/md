@@ -55,7 +55,7 @@ use crate::md_sim::force::check_delta;
 /// search loops. For models without friction, the tangential and torque logic is 
 /// bypassed to maintain high execution speeds.
 #[inline(always)]
-pub fn add_granular_collision(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3], torques: &mut [DVec3], settings: &SimulationSettings) {   
+pub fn add_granular_collision(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3, mut torque: DVec3, settings: &SimulationSettings)->(DVec3, DVec3) {   
     // Extract params
     let (stiffness, damping, mu_opt) = match &settings.model {
             SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
@@ -104,22 +104,24 @@ pub fn add_granular_collision(i: usize, j: usize, particles: &ParticleVec, force
                     };
 
                 // Apply Tangential Forces and Torques
-                forces[i] += f_t_vec;
+                force += f_t_vec;
                 //forces[j] -= f_t_vec;
-                torques[i] += r_i.cross(f_t_vec);
+                torque += r_i.cross(f_t_vec);
                 //torques[j] -= r_j.cross(f_t_vec);
             }
         }
 
         // Apply Normal Force (Shared)
-        forces[i] += f_normal_vec;
+        force += f_normal_vec;
     }
+
+    (force, torque)
 }
 
 /// This implements the WCA between particles i and j. 
 /// 
 /// WCA is a truncated lennards-Jones potential that stops at the minimum of the potential.
-pub fn add_weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], particles: &ParticleVec,settings: &SimulationSettings){
+pub fn add_weeks_chandler_andersen(i: usize,j: usize, particles: &ParticleVec, mut force: DVec3,settings: &SimulationSettings)->DVec3{
 
     let mut delta = particles.position[i] - particles.position[j];
     check_delta(&mut delta, settings.sim_box_size, settings.periodic);
@@ -148,17 +150,17 @@ pub fn add_weeks_chandler_andersen(i: usize,j: usize,forces: &mut [DVec3], parti
                 let force_vec = glam::DVec3::new(delta.x * f_mag / r, delta.y * f_mag / r, delta.z * f_mag / r);
 
                 // Add force (equal and opposite occurs because we enter this function with both particles as the i if appropriate.)
-                forces[i] += force_vec;
+                force += force_vec;
 
             }
         }
 
     }
-
+    force
 }
 
 
-pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DVec3],_settings: &SimulationSettings){
+pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3,_settings: &SimulationSettings)-> DVec3{
     const EPS0: f64 = 8.85418782e-12;
 
     let r = particles.position[i] - particles.position[j];
@@ -168,6 +170,8 @@ pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, forces: &mut [DV
     let inv_r_cubed = inv_r * inv_r * inv_r;
 
     
-    forces[i]+=(particles.charge[i] * particles.charge[j] / (4.0 * PI * EPS0)) * r * inv_r_cubed;
+    force+=(particles.charge[i] * particles.charge[j] / (4.0 * PI * EPS0)) * r * inv_r_cubed;
+    
+    force
     
 }

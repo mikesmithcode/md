@@ -41,7 +41,18 @@ Run a python script with name "script_name.py" in the "python_scripts" folder.
     setup script_name
 ```
 
-Run runs a simulation. If the optional flag c is provided it will cleanup any existing files under that script_name in output. It then runs the appropriate python script before building and running the simulation.
+Run runs a simulation. If the optional flag c is provided it will cleanup any existing files under that script_name in output. If the optional flag -r is provided it will build everything in the optimised release mode. It then runs the appropriate python script before building and running the simulation.
 ```bash
     run -c script_name
 ```
+
+Video will run the script video.rs which takes all the .parquet data files and uses them to create a video.
+```bash
+    video script_name
+```
+
+Benchmarking with the Samply add on. We have setup a load of particles falling into a silo.
+```bash
+    benchmark
+```
+

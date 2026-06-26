@@ -10,7 +10,7 @@ import sys
 print(f"DEBUG: Using Python at {sys.executable}")
 import polars as pl
 
-path_to_snapshots = "output/silo/snapshots/"
+path_to_snapshots = "output/benchmark/snapshots/"
 
 os.makedirs(path_to_snapshots, exist_ok=True)
 root_path = Path(__file__).parent.parent
@@ -95,11 +95,11 @@ for xval, zval in zip(x,z):
 df = df.with_columns(pl.col("ptype").cast(pl.UInt64))
 df = df.with_columns(pl.col("id").cast(pl.UInt64))
 
-print("max", df.select(pl.max("ptype")))
+#print("max", df.select(pl.max("ptype")))
 print(df)
 
 df.write_parquet(filepath)
         
 
-display(df, box)
+#display(df, box)
 

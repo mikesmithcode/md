@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# Get the directory of this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Define the root as one level up from the scripts directory
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+echo $SCRIPT_DIR
+# Path to the run script
+RUN_SCRIPT="$SCRIPT_DIR/run"
+
+# Check if the run script exists
+if [ ! -f "$RUN_SCRIPT" ]; then
+    echo "Error: Could not find 'run' script at $RUN_SCRIPT"
+    exit 1
+fi
+
+echo "--- Building Benchmark ---"
+# Execute the run script
+"$RUN_SCRIPT" -c -r -b "benchmark" || { echo "Build failed"; exit 1; }
+
+echo "--- Recording with samply ---"
+BINARY="$ROOT_DIR/target/release/benchmark"
+
+if [ -f "$BINARY" ]; then
+    samply record "$BINARY"
+else
+    echo "Error: Binary not found at $BINARY"
+    exit 1
+fi
