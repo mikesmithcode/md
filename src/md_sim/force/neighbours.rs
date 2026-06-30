@@ -1,7 +1,7 @@
 use glam::DVec3;
 use rayon::prelude::*;
 
-use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::particle::{self, ParticleVec};
 use crate::md_sim::simulation::SimulationSettings;
 use crate::md_sim::force::{check_delta,Forces};
 
@@ -34,9 +34,13 @@ use crate::md_sim::force::{check_delta,Forces};
 pub struct CellGrid {
     pub num_cells: [usize; 3],
     pub cell_size: f64,
+    pub inv_cell_size: f64,
     pub sim_box_size: DVec3,
-    pub heads: Vec<Option<usize>>, 
-    pub next: Vec<Option<usize>>,  
+    //pub heads: Vec<Option<usize>>, 
+    //pub next: Vec<Option<usize>>,  
+    pub cell_offsets: Vec<usize>,       // Size: num_cells + 1
+    pub sorted_particle_indices: Vec<usize>, // Size: total_particles
+
     pub periodic: [bool;3],
     pub stride_y: usize, 
     pub stride_z: usize,
@@ -54,6 +58,7 @@ pub struct CellGrid {
         
         pub fn new(particle_count: usize, settings: &SimulationSettings) -> Self {
             let cell_size = settings.cutoff;
+            let inv_cell_size = 1.0/cell_size;
             let skin = settings.skin;
             let sim_box_size = settings.sim_box_size;
             
@@ -62,14 +67,19 @@ pub struct CellGrid {
             let nz = ((sim_box_size.z / cell_size).floor() as usize).max(1);
             let total_cells = nx * ny * nz;
             let periodic = settings.periodic;
-
+            
+            let cell_offsets = vec![0; total_cells + 1];  
+            let sorted_particle_indices = Vec::with_capacity(particle_count);
 
             let mut grid = Self {
                 num_cells: [nx, ny, nz],
                 cell_size,
+                inv_cell_size,
                 sim_box_size,
-                heads: vec![None; total_cells],
-                next: vec![None; particle_count],
+                //heads: vec![None; total_cells],
+                //next: vec![None; particle_count],
+                cell_offsets,
+                sorted_particle_indices,
                 periodic,
                 stride_y: nx,
                 stride_z: nx * ny,
@@ -193,20 +203,53 @@ pub struct CellGrid {
             }
         }
 
-        // Put particles into cells and build linked lists associated with each cell
+        // Put particles into cells and build CSR array
         pub(super) fn bin(&mut self, particles: &ParticleVec) {
-            self.heads.fill(None);
-            for (i, pos) in particles.position.iter().enumerate() {
-                let Some((ix, iy, iz)) = self.get_3d_cell_idx(*pos) else {
-                    panic!("Particle at {:?} is outside the simulation box", pos);
-                };
-
-                let cell_idx = self.get_neighbour_1d_idx(ix, iy, iz, (0,0,0)).expect("particle outside grid");
-    
-                self.next[i] = self.heads[cell_idx];
-                self.heads[cell_idx] = Some(i);
+            // Reset cell counts (reuse a temporary buffer or use self.cell_offsets)
+            let mut cell_counts = vec![0; self.num_cells[0] * self.num_cells[1] * self.num_cells[2]];
             
+            // Count particles in each cell
+            for pos in particles.position.iter() {
+                let cell_idx = self.get_cell_idx_from_pos(pos); 
+                cell_counts[cell_idx] += 1;
             }
+
+            // Prefix sum to get the starting offset for each cell
+            self.cell_offsets[0] = 0;
+            for i in 0..cell_counts.len() {
+                self.cell_offsets[i + 1] = self.cell_offsets[i] + cell_counts[i];
+            }
+
+            // Populate sorted_particle_indices
+            // Create a local tracker to fill slots within the pre-calculated ranges
+            let mut current_pos = self.cell_offsets.clone(); 
+            
+            // Ensure the array is sized correctly
+            self.sorted_particle_indices.resize(particles.position.len(), 0);
+
+            for (i, pos) in particles.position.iter().enumerate() {
+                let cell_idx = self.get_cell_idx_from_pos(pos);
+                
+                // Write particle index into the reserved block for this cell
+                let target_idx = current_pos[cell_idx];
+                self.sorted_particle_indices[target_idx] = i;
+                
+                // Increment the tracker for the next particle in this same cell
+                current_pos[cell_idx] += 1;
+            }
+        }
+
+        #[inline]
+        pub(super) fn get_cell_idx_from_pos(&self, pos: &DVec3) -> usize {
+            let x = (pos.x * self.inv_cell_size) as usize;
+            let y = (pos.y * self.inv_cell_size) as usize;
+            let z = (pos.z * self.inv_cell_size) as usize;
+            
+            let ix = x.min(self.num_cells[0] - 1);
+            let iy = y.min(self.num_cells[1] - 1);
+            let iz = z.min(self.num_cells[2] - 1);
+
+            ix + iy * self.stride_y + iz * self.stride_z
         }
 
         /// Transforms 3D grid coords to 1D memory index
@@ -250,7 +293,7 @@ pub struct CellGrid {
                     indices[i] = ((pos_arr[i] / self.cell_size).floor() as i32)
                         .rem_euclid(dims[i] as i32) as usize;
                 } else {
-                    // Check boundaries for non-periodic axes and panic if unallowed position found
+                    // Check boundaries for non-periodic axes
                     if pos_arr[i] < 0.0 || pos_arr[i] >= max_val {
                         return None
                     }
@@ -267,48 +310,58 @@ pub struct CellGrid {
         // particles that will have pairwise interactions
         //------------------------------------------------------------------------------------
 
-        pub(super) fn rebuild_verlet_table(&mut self, particles: &mut ParticleVec, interaction_ptypes: &[[u8;2]]) {
-            //clear previous lists
+        pub(super) fn rebuild_verlet_table(&mut self, particles: &ParticleVec, interaction_ptypes: &[[u8;2]]) {
+            // 1. Just clear the table in place
             for list in &mut self.verlet_table {
                 list.clear();
             }
 
-            let search_radius = self.cell_size + self.skin;
-            let search_radius_sq = search_radius * search_radius;
+            let search_radius_sq = (self.cell_size + self.skin).powi(2);
 
+            // 2. Extract references so the borrow checker doesn't see us borrowing 'self'
+            // in the loop. 
+            let offsets = &self.cell_offsets;
+            let indices = &self.sorted_particle_indices;
+            let neighbours = &self.neighbour_table;
+            let verlet = &mut self.verlet_table; // Borrow only the table
 
-            // for each cell in the grid look at other particles in the linked list
-            // and check if they should be added to that particles verlet list. Then repeat
-            // process for particles in the neighbouring cells. The neighbouring cell
-            // might be wrapped since sim box boundaries are periodic.
-            for cell_idx in 0..self.heads.len() {
-                let mut i_opt = self.heads[cell_idx];
-                while let Some(i) = i_opt {
-                    // Look at next possible particle in same cell
-                    let mut j_opt = self.heads[cell_idx]; 
-                    while let Some(j) = j_opt {
-                        // try_add_pair rejects particles in same molecule or wrong ptypes or the same particle or too far apart.
-                        self.try_add_pair(i, j, search_radius_sq, particles, interaction_ptypes);
-                        
-                        j_opt = self.next[j];
+            for cell_idx in 0..offsets.len() - 1 {
+                let start = offsets[cell_idx];
+                let end = offsets[cell_idx + 1];
+
+                for &i in &indices[start..end] {
+                    // Same cell
+                    for &j in &indices[start..end] {
+                        // Pass the mutable reference to the table
+                        Self::add_to_verlet(verlet, i, j, search_radius_sq, particles, interaction_ptypes);
                     }
 
-                    // Look at neighbour cells
-                    for neighbour_idx in self.neighbour_table[cell_idx] {
-                        //Since this is a different cell start with the head particle
-                        let mut j_opt = self.heads[neighbour_idx];
-                        while let Some(j) = j_opt {
-                            self.try_add_pair(i, j, search_radius_sq, particles, interaction_ptypes);
-                            j_opt = self.next[j];
+                    // Neighbor cells
+                    for &n_idx in &neighbours[cell_idx] {
+                        let n_start = offsets[n_idx];
+                        let n_end = offsets[n_idx + 1];
+                        for &j in &indices[n_start..n_end] {
+                            Self::add_to_verlet(verlet, i, j, search_radius_sq, particles, interaction_ptypes);
                         }
-                    }
-                    i_opt = self.next[i];
                     }
                 }
             }
+        }
+
+// Helper function now accepts a mutable reference to the table, not 'self'
+fn add_to_verlet(
+    verlet_table: &mut Vec<Vec<usize>>,
+    i: usize,
+    j: usize,
+    search_radius_sq: f64,
+    particles: &ParticleVec,
+    interaction_ptypes: &[[u8;2]]
+) {
+    // ... your logic ...
+}
 
         // Check if pair should be added to particles verlet list.
-        pub(super) fn try_add_pair(&mut self, i: usize, j: usize, r_sq: f64, p: &ParticleVec, interaction_ptypes: &[[u8;2]]) {
+        pub(super) fn try_add_pair(verlet_table: &mut Vec<Vec<usize>>, i: usize, j: usize, r_sq: f64, p: &ParticleVec, interaction_ptypes: &[[u8;2]]) {
             // This prevents self-interaction (i == j) and double counting
 
             //if index is in same molecule ignore, which also prevents self interacting with self.
