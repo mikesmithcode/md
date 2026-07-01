@@ -10,6 +10,37 @@ use crate::md_sim::{Particle, ParticleVec};
 
 const NULL_ID: usize = usize::MAX;
 
+
+// -----------------------------------------------------------------
+// Test utility functions
+// -----------------------------------------------------------------
+
+#[test]
+fn test_check_delta() {
+    let sim_box_size = DVec3::new(10.0, 10.0, 10.0);
+    let periodic = [true;3];
+    // Case 1: X is far apart (0.9L), should wrap to a small negative distance (-0.1L)
+    // Example: Particle A at 0.5, Particle B at 9.5. Delta = 9.0
+    let mut delta_x = DVec3::new(9.0, 0.0, 0.0);
+    check_delta(&mut delta_x, sim_box_size, periodic);
+    assert!((delta_x.x + 1.0).abs() < 1e-6); // 9.0 - 10.0 = -1.0
+
+    // Case 2: Y is negative and far apart, should wrap to a small positive distance
+    // Example: Particle A at 9.5, Particle B at 0.5. Delta = -9.0
+    let mut delta_y = DVec3::new(0.0, -9.0, 0.0);
+    check_delta(&mut delta_y, sim_box_size, periodic);
+    assert!((delta_y.y - 1.0).abs() < 1e-6); // -9.0 + 10.0 = 1.0
+
+    // Case 3: Z is already the shortest path, should remain unchanged
+    let mut delta_z = DVec3::new(0.0, 0.0, 2.0);
+    check_delta(&mut delta_z, sim_box_size, periodic);
+    assert!((delta_z.z - 2.0).abs() < 1e-6);
+}
+
+// -----------------------------------------------------------------
+// Test file_io functions
+// -----------------------------------------------------------------
+
 #[test]
 fn test_filepath()-> Result<(), Box<dyn std::error::Error>>{
     let [sim_config_path, _scene_config_path, _snapshot_path, _video_path] = filepaths("test.rs");
@@ -39,7 +70,6 @@ fn test_save_and_load_snapshot() -> Result<(), Box<dyn std::error::Error>> {
             omega: DVec3::new(0.0, 0.0, 0.0),
             radius: 0.5,
             mass: 1.0,
-            inertia: 1.0,
             charge: 0.0,
             color: Srgba::new(255, 0, 0, 255),
             ref_pos: DVec3::ZERO,
@@ -84,7 +114,6 @@ fn test_load_latest_snapshot() -> Result<(), Box<dyn std::error::Error>> {
             omega: DVec3::new(0.0, 0.0, 0.0),
             radius: 0.5,
             mass: 1.0,
-            inertia: 1.0,
             charge: 0.0,
             color: Srgba::new(255, 0, 0, 255),
             ref_pos: DVec3::ZERO,

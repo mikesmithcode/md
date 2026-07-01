@@ -20,7 +20,6 @@
                 omega: DVec3::new(0.0, 1.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
-                inertia: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
@@ -37,7 +36,6 @@
                 omega: DVec3::new(0.0, 1.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
-                inertia: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
@@ -54,7 +52,6 @@
                 omega: DVec3::new(0.0, 1.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
-                inertia: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
@@ -71,7 +68,6 @@
                 omega: DVec3::new(0.0, 1.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
-                inertia: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
@@ -88,7 +84,6 @@
                 omega: DVec3::new(0.0, 1.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
-                inertia: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
@@ -105,7 +100,6 @@
                 omega: DVec3::new(0.0, 1.0, 0.0),
                 radius: 0.5,
                 mass: 1.0,
-                inertia: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
                 ref_pos: DVec3::ZERO,
@@ -114,6 +108,49 @@
 
             particles
     }
+
+pub fn create_single_molecule()-> ParticleVec{
+    let mut particles = ParticleVec::new();
+    
+    let com = DVec3::new(1.0, 2.0, 3.25);
+    
+    // Particle 0 is at (1.0, 2.0, 3.5) -> rel_pos = (0, 0, 0.5)
+    particles.push(Particle {
+        id: 0,
+        molecule_id: 0,
+        ptype: 0,
+        position: com + DVec3::new(0.0, 0.0, 0.25),
+        rel_pos: DVec3::new(0.0, 0.0, 0.25),
+        velocity: DVec3::new(1.0, 1.0, 1.0), // v_com + (omega x r0)
+        orientation: DQuat::IDENTITY,
+        omega: DVec3::new(0.0, 0.0, 0.0),
+        radius: 0.5,
+        mass: 1.5,
+        charge: 0.0,
+        color: Srgba::new(255, 0, 0, 255),
+        ref_pos: DVec3::ZERO,
+    });
+    
+    // Particle 1 is at (1.0, 2.0, 2.5) -> rel_pos = (0, 0, -0.5)
+    particles.push(Particle {
+        id: 1,
+        molecule_id: 0,
+        ptype: 1,
+        position: com + DVec3::new(0.0, 0.0, -0.75),
+        rel_pos: DVec3::new(0.0, 0.0, -0.75),
+        velocity: DVec3::new(1.0, 1.0, 1.0),
+        orientation: DQuat::IDENTITY,
+        omega: DVec3::new(0.0, 0.0, 0.0),
+        radius: 0.5,
+        mass: 0.5,
+        charge: 0.0,
+        color: Srgba::new(255, 0, 0, 255),
+        ref_pos: DVec3::ZERO,
+    });
+
+
+    particles
+}
 
 pub fn create_molecule_vec() -> ParticleVec {
     let mut particles = ParticleVec::new();
@@ -132,7 +169,6 @@ pub fn create_molecule_vec() -> ParticleVec {
         omega: DVec3::new(0.0, 1.0, 0.0),
         radius: 0.5,
         mass: 1.5,
-        inertia: 1.0,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
         ref_pos: DVec3::ZERO,
@@ -150,7 +186,6 @@ pub fn create_molecule_vec() -> ParticleVec {
         omega: DVec3::new(0.0, 1.0, 0.0),
         radius: 0.5,
         mass: 0.5,
-        inertia: 1.0,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
         ref_pos: DVec3::ZERO,
@@ -171,7 +206,6 @@ pub fn create_molecule_vec() -> ParticleVec {
         omega: DVec3::new(0.0, 1.0, 0.0),
         radius: 0.5,
         mass: 1.5,
-        inertia: 1.0,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
         ref_pos: DVec3::ZERO,
@@ -189,7 +223,6 @@ pub fn create_molecule_vec() -> ParticleVec {
         omega: DVec3::new(0.0, 1.0, 0.0),
         radius: 0.5,
         mass: 0.5,
-        inertia: 1.0,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
         ref_pos: DVec3::ZERO,
@@ -208,7 +241,6 @@ pub fn create_molecule_vec() -> ParticleVec {
         omega: DVec3::new(0.0, 1.0, 0.0),
         radius: 0.5,
         mass: 1.5,
-        inertia: 1.0,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
         ref_pos: DVec3::ZERO,
@@ -226,7 +258,6 @@ pub fn create_molecule_vec() -> ParticleVec {
         omega: DVec3::new(0.0, 1.0, 0.0),
         radius: 0.5,
         mass: 0.5,
-        inertia: 1.0,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
         ref_pos: DVec3::ZERO,
@@ -254,7 +285,7 @@ pub fn create_grid_and_settings()->(CellGrid, SimulationSettings){
     
     let particle_count = 6;
     let settings = SimulationSettings {
-            cutoff:3.0,
+            cutoff:2.8,
             skin: 0.2,
             sim_box_size: DVec3::splat(9.0),
             periodic:[true;3],

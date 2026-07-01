@@ -4,7 +4,7 @@ use glam::DVec3;
 mod change;
 mod integration;
 
-pub use change::{check_periodic, change_rad, move_sinwave, change_colour};
+pub use change::{enforce_boundary, change_rad, move_sinwave, change_colour};
 pub use integration::{integrate_singleparticle_update,integrate_singleparticle_correct, integrate_rigid_bodies, integrate_rigid_bodies_correct, update_abps};
 
 pub use crate::md_sim::{SimulationSettings, ParticleVec};

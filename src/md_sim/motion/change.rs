@@ -9,25 +9,39 @@ use crate::md_sim::{SimulationSettings, particle::ParticleVec};
 // Special functions
 //-------------------------------------------------------------------------------------------------------
 
-/// Enforces periodic boundary conditions by wrapping a position into the primary simulation box.
-///
-/// This function uses a branchless floored-division approach to map any coordinate 
-/// $(x, y, z)$ to the range $[0, L)$. If a particle exits the right face of the box, 
-/// it "teleports" to the left face, and vice versa.
+/// Enforces boundary conditions
+/// 
+/// periodic specifies either true (periodic) or false (not) for each dimension.
+/// If a BC is periodic it wraps the position in the primary simulation box. (The forces are also wrapped
+/// in the neighbours). If a BC is not periodic the appropriate faces of the simulation box are perfectly elastic
+/// reflecting particles and forces do not wrap.
 ///
 /// # Arguments
 ///
 /// * `pos` - The mutable position vector to be wrapped.
+/// * `vel` - The mutable velocity vector to be reflected.
 /// * `sim_box_size` - The dimensions of the periodic simulation cell.
-///
-/// # Physics Context
-///
-/// The formula used is: $\mathbf{r}_{new} = \mathbf{r} - \mathbf{L} \cdot \lfloor \mathbf{r} / \mathbf{L} \rfloor$.
-/// This ensures that the simulation represents an infinite tiling of the 
-/// primary cell, maintaining a constant particle density.
-pub fn check_periodic(pos: &mut DVec3, sim_box_size: DVec3) {
-    // Branchless wrapping: more efficient than multiple if-statements for large displacements
-    *pos = *pos - sim_box_size * (*pos / sim_box_size).floor();
+/// * `periodic` - true = periodic and false = non-periodic. Each dimension is treated separately
+#[inline(always)]
+pub fn enforce_boundary(pos: &mut DVec3, vel: &mut DVec3, sim_box_size: DVec3, periodic: [bool; 3]) {
+    for i in 0..3 {
+        if periodic[i] {
+            let val = pos[i] / sim_box_size[i];
+            pos[i] -= sim_box_size[i] * val.floor();
+        } else {
+            // Precise Elastic Reflection
+            if pos[i] < 0.0 {
+                pos[i] = -pos[i]; // Reflect from 0
+                vel[i] = -vel[i]; // Reverse velocity
+            } else if pos[i] >= sim_box_size[i] {
+                // Reflect from box_size: 
+                // The distance past the wall is (pos[i] - sim_box_size[i])
+                // We subtract that distance from the wall to bounce back
+                pos[i] = 2.0 * sim_box_size[i] - pos[i];
+                vel[i] = -vel[i];
+            }
+        }
+    }
 }
 
 /// Incrementally increases the radius of particles belonging to a specific type.

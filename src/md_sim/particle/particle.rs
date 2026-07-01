@@ -33,7 +33,6 @@ pub struct Particle {
     pub omega: DVec3,
     pub radius: f64, 
     pub mass: f64,  
-    pub inertia: f64,
     pub charge: f64,
     pub color: Srgba, 
     // Verlet lists tracker fields
@@ -78,7 +77,6 @@ impl Particle {
         // Calculate mass: m = volume * density
         let volume = (4.0 / 3.0) * std::f64::consts::PI * radius.powi(3);
         let mass = volume * density;
-        let inertia = (2.0/5.0) * mass * radius.powi(2);
         let ref_pos = DVec3::ZERO;
 
         
@@ -94,7 +92,6 @@ impl Particle {
             omega,
             radius, 
             mass, 
-            inertia,
             charge,
             color,
             ref_pos

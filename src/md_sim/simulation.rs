@@ -6,7 +6,6 @@
 //! 
 
 use glam::DVec3;
-use rayon::prelude::*;
 
 use serde::{Serialize, Deserialize};
 use std::fs::File;

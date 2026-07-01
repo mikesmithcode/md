@@ -11,7 +11,7 @@ use std::f64::consts::PI;
 
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::{ParticleVec, SimulationModel};
-use crate::md_sim::force::check_delta;
+use crate::md_sim::utils::check_delta;
 
 
 /// Calculates contact forces and torques between two particles using a Linear Spring-Dashpot (LSD) model.

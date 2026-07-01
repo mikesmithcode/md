@@ -34,22 +34,26 @@ pub fn calculate_total_angular_momentum(particles: &ParticleVec, molecules: &Has
     let mut total_l = DVec3::ZERO;
 
     for mol in molecules.values() {
-        let (_, com, v_com) = calculate_molecule_com(&mol.pids, particles);
+        let (total_mass, com_pos, v_com) = calculate_molecule_com(&mol.pids, particles);
         
-        // Orbital Angular Momentum (L = r_cm x p_total)
-        // Here we use the global COM position to define the "orbital" arm
-        let r_com = com; 
-        let p_total = v_com * mol.pids.iter().map(|&i| particles.mass[i]).sum::<f64>();
-        total_l += r_com.cross(p_total);
-
         // Spin Angular Momentum (S = I_global * omega)
         let omega = particles.omega[mol.pids[0]];
         let rot_mat = DMat3::from_quat(particles.orientation[mol.pids[0]]);
         let i_global = rot_mat * mol.inertia * rot_mat.transpose();
         
-        total_l += i_global * omega;
+        let spin_l = i_global * omega;
+        
+        // Orbital Angular Momentum relative to COM
+        // Sum_i ( (r_i - R_com) x m_i * (v_i - V_com) )
+        let mut orbital_l = DVec3::ZERO;
+        for &idx in &mol.pids {
+            let r_rel = particles.position[idx] - com_pos;
+            let v_rel = particles.velocity[idx] - v_com;
+            orbital_l += r_rel.cross(particles.mass[idx] * v_rel);
+        }
+
+        total_l += spin_l + orbital_l;
     }
 
     total_l
 }
-

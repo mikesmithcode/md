@@ -1,5 +1,5 @@
 
-use glam::{DVec3, DQuat};
+use glam::{DVec3, DQuat, DMat3};
 use three_d::Srgba;
 
 use crate::md_sim::utils::{create_molecule_vec, setup_single_molecule_data};
@@ -22,7 +22,9 @@ fn test_rigidbody_ke(){
     let v_com = (p.mass[0]*p.velocity[0] + p.mass[1]*p.velocity[1])/total_mass;
     let ke_t = 0.5*total_mass*v_com.length_squared();
 
-    let i_global = calculate_molecule_inertia(&[0,1], &p, com);
+    let rot_mat = DMat3::from_quat(p.orientation[0]);
+    let mol = molecules.get(&0).unwrap();
+    let i_global = rot_mat * mol.inertia * rot_mat.transpose();
     let ke_rot = 0.5 * p.omega[0].dot(i_global * p.omega[0]);
 
     let expected_ke = ke_t + ke_rot;
@@ -35,12 +37,12 @@ fn test_rigidbody_ke(){
     
     assert!((ke - expected_ke).abs() < 1e-10, 
             "Expected total KE of 4.5 (4.0 trans + 0.5 rot), but got {}", ke);
-
+    assert!(false);
 }
 
 #[test]
 fn test_total_ang_momentum(){
-    
+    assert!(false);
 }
 //-------------------------------------------------------------------------------
 // Tests geometry.rs
@@ -49,12 +51,12 @@ fn test_total_ang_momentum(){
 
 #[test]
 fn test_calculate_com(){
-    
+    assert!(false);
 }
 
 #[test]
 fn test_calc_inertia(){
-    
+    assert!(false);
 }
 //-------------------------------------------------------------------------------
 // Tests particle.rs

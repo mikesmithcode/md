@@ -38,7 +38,6 @@ base_particle = {
         "wz" : 0.0,
         "radius" : 0.04,
         "mass" : 2.35,#density 1000kgm^-3
-        "inertia" : 0.0,
         "r": 255.0,
         "g": 0.0,
         "b" : 0.0,

@@ -26,7 +26,6 @@ use itertools::izip;
 use crate::md_sim::{Particle, ParticleVec, SimulationSettings};
 use crate::md_viz::SceneSetup;
 
-const NULL_ID: usize = usize::MAX;
 
 /// Generate all the filepaths
 /// 
@@ -191,7 +190,6 @@ pub fn save_snapshot(
         "wz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
         "radius" => &particles.radius,
         "mass" => &particles.mass,
-        "inertia" => &particles.inertia,
         "charge" => &particles.charge,
         "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
         "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
@@ -220,8 +218,6 @@ pub fn save_snapshot(
 
 /// Helper to get a column or return a fallback Series of a specific type
 /// 
-/// let molecule_id_series = get_u64_col(&df, "molecule_id", NULL_ID as u64);
-/// let molecule_id_col = molecule_id_series.u64()?;
 /// Specialized helper for ID columns (u64)
 fn get_u64_col_or_id(df: &DataFrame) -> PolarsResult<Series> {
     match df.column("molecule_id") {
@@ -259,10 +255,9 @@ fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
 /// * `file_path` - Path to the snapshot file
 /// 
 /// The input from python script has compulsory params. All optional params
-/// are filled with default values. These may not be physically meaningful. If for example
-/// you need inertia you need to define it.
+/// are filled with default values. These may not be physically meaningful. 
 /// compulsory : id, x,y,z,radius,mass
-/// optional : molecule_id,rel_x,rel_y,rel_z,vx,vy,vz,qx,qy,qz,qw,wx,wy,wz,inertia,r,g,b,a
+/// optional : molecule_id,rel_x,rel_y,rel_z,vx,vy,vz,qx,qy,qz,qw,wx,wy,wz,r,g,b,a
 /// 
 /// # Returns
 /// * `(particles, time)` - Vector of particles and simulation time
@@ -311,8 +306,6 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
     let wz_col = wz_series.f64()?;
     let r_col = df.column("radius")?.f64()?;
     let m_col = df.column("mass")?.f64()?;
-    let j_series = get_f64_col(&df, "inertia", NULL_ID as f64);
-    let j_col = j_series.f64()?;
     let q_series = get_f64_col(&df, "charge", 0.0);
     let q_col = q_series.f64()?;
     let r_series = get_f64_col(&df, "r", 255.0);
@@ -328,7 +321,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,qx, qy, qz, qw, wx ,wy,wz, rad, mass, inertia, charge, r, g, b, a) in izip!(
+    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,qx, qy, qz, qw, wx ,wy,wz, rad, mass, charge, r, g, b, a) in izip!(
         id_col.into_iter(),
         molecule_id_col.into_iter(),
         ptype_col.into_iter(),
@@ -350,7 +343,6 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
         wz_col.into_iter(),
         r_col.into_iter(),
         m_col.into_iter(),
-        j_col.into_iter(),
         q_col.into_iter(),
         col_r.into_iter(),
         col_g.into_iter(),
@@ -390,7 +382,6 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
             ),
             radius: rad.unwrap_or(0.0),
             mass: mass.unwrap_or(0.0),
-            inertia: inertia.unwrap_or(0.0),
             charge: charge.unwrap_or(0.0),
             color: Srgba::new(
                 r.unwrap_or(0.0) as u8,

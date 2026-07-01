@@ -6,8 +6,8 @@ use glam::{DVec3, DMat3, DQuat};
 use itertools::izip;
 use std::collections::HashMap;
 
-use super::check_periodic;
-
+use crate::md_sim::motion::change::enforce_boundary;
+use crate::md_sim::utils::check_delta;
 use crate::md_sim::{SimulationSettings, ParticleVec};
 use crate::md_sim::particle::{SimulationModel, calculate_molecule_com, MoleculeData};
 
@@ -22,25 +22,21 @@ use crate::md_sim::particle::{SimulationModel, calculate_molecule_com, MoleculeD
 /// for new force calculations (e.g., collisions) at $x(t + \Delta t)$.
 pub fn integrate_singleparticle_update(
     forces: &[DVec3], 
-    _torques: &[DVec3],
     particles: &mut ParticleVec, 
     settings: &SimulationSettings
 ) {
     let dt = settings.dt;
     let half_dt = dt * 0.5;
     let sim_box_size = settings.sim_box_size;
+    let periodic = settings.periodic;
 
     let _is_rotating = matches!(settings.model, SimulationModel::SolidFriction(_));
 
-    for (pos, vel, _orientation, _omega, &mass, &_inertia, &force, &_torque) in izip!(
+    for (pos, vel, &mass, &force) in izip!(
         &mut particles.position,
         &mut particles.velocity,
-        &mut particles.orientation,
-        &mut particles.omega,
         &particles.mass,
-        &particles.inertia,
         forces, 
-        _torques,
     ) {
         let acceleration = force / mass;
         
@@ -49,8 +45,8 @@ pub fn integrate_singleparticle_update(
         // Full-step position update
         *pos += *vel * dt;
         
-        // Enforce boundary conditions
-        check_periodic(pos, sim_box_size);
+        // Apply boundary conditions
+        enforce_boundary(pos, vel, sim_box_size, periodic);
     }
 }
 
@@ -61,30 +57,19 @@ pub fn integrate_singleparticle_update(
 /// $v(t + \Delta t) = v(t + \frac{\Delta t}{2}) + \frac{a(t + \Delta t)\Delta t}{2}$
 pub fn integrate_singleparticle_correct(
     forces: &[DVec3], 
-    torques: &[DVec3],
     particles: &mut ParticleVec, 
     settings: &SimulationSettings
 ) {
     let half_dt = settings.dt * 0.5;
 
-    let is_rotating = matches!(settings.model, SimulationModel::SolidFriction(_));
-
-    for (vel, omega, &mass, &inertia, &force, &torque) in izip!(
+    for (vel, &mass,&force) in izip!(
         &mut particles.velocity,
-        &mut particles.omega,
         &particles.mass,
-        &particles.inertia,
-        forces,
-        torques,
+        forces
     ) {
         let acceleration = force / mass;       
         // Final half-step velocity update using new forces
         *vel += acceleration * half_dt;
-
-        if is_rotating{
-            let alpha=torque / inertia;
-            *omega += alpha * half_dt;
-        }
     }
 }
 
@@ -99,6 +84,10 @@ pub fn integrate_singleparticle_correct(
 ///
 /// After this call, positions are finalised for the current step, allowing 
 /// for new force calculations (e.g., collisions) at $x(t + \Delta t)$.
+/// 
+/// N.B If boundary conditions are non-periodic this will only reflect velocities so no losses and no changes
+/// in angular velocity etc. If you require a box with properties you'll need to explicitly update with custom function
+/// in the Motion trait.
 pub fn integrate_rigid_bodies(
     forces: &[DVec3], 
     torques: &[DVec3],
@@ -108,6 +97,8 @@ pub fn integrate_rigid_bodies(
 ) {
     let dt = settings.dt;
     let half_dt = dt * 0.5;
+    let sim_box_size = settings.sim_box_size;
+    let periodic = settings.periodic;
 
     for (_mol_id, mol) in molecule_map {   
         let lead_idx = mol.pids[0];    
@@ -120,9 +111,12 @@ pub fn integrate_rigid_bodies(
         let mut total_torque = DVec3::ZERO;
         for &idx in &mol.pids {
             total_force += forces[idx];
-            let r = particles.position[idx] - com_pos;
-            total_torque += torques[idx] + r.cross(forces[idx]);
+            let mut delta_r = particles.position[idx] - com_pos;
+            check_delta(&mut delta_r, sim_box_size, periodic);
+            total_torque += torques[idx] + delta_r.cross(forces[idx]);
         }
+
+
 
         // Update COM Velocity and Angular Velocity
         let acc = total_force / total_mass;
@@ -140,6 +134,7 @@ pub fn integrate_rigid_bodies(
         let delta_q = DQuat::from_scaled_axis(new_omega * dt);
         let new_orientation = (delta_q * particles.orientation[lead_idx]).normalize();
         
+        
         // Update every particle's state
         let rot_mat_new = DMat3::from_quat(new_orientation);
         for &idx in &mol.pids {
@@ -153,6 +148,8 @@ pub fn integrate_rigid_bodies(
             // Sync orientation and omega (if stored per-particle)
             particles.orientation[idx] = new_orientation;
             particles.omega[idx] = new_omega;
+
+            enforce_boundary(&mut particles.position[idx], &mut particles.velocity[idx], settings.sim_box_size, settings.periodic);
         }
     }
 }
@@ -170,6 +167,8 @@ pub fn integrate_rigid_bodies_correct(
     settings: &SimulationSettings
 ) {
     let half_dt = settings.dt * 0.5;
+    let sim_box_size = settings.sim_box_size;
+    let periodic = settings.periodic;
 
     for (_m_id, mol) in molecule_map {
         let lead_idx = mol.pids[0];
@@ -180,8 +179,9 @@ pub fn integrate_rigid_bodies_correct(
         let mut total_torque = DVec3::ZERO;
         for &idx in &mol.pids {
             total_force += forces[idx];
-            let r = particles.position[idx] - com_pos;
-            total_torque += torques[idx] + r.cross(forces[idx]);
+            let mut delta_r = particles.position[idx] - com_pos;
+            check_delta(&mut delta_r, sim_box_size, periodic);
+            total_torque += torques[idx] + delta_r.cross(forces[idx]);
         }
 
         // Calculate COM velocity (v_new = v_half + a_new * dt/2)
@@ -241,8 +241,8 @@ pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &Sim
                println!("Particle exploded! Force: {:?}, Position: {:?}", forces[i], particles.position[i]);
             }
             
-            // Apply periodic boundaries
-            check_periodic(&mut particles.position[i], settings.sim_box_size);
+            // Apply boundary conditions
+            enforce_boundary(&mut particles.position[i], &mut particles.velocity[i], settings.sim_box_size, settings.periodic);
         }
     }
 }

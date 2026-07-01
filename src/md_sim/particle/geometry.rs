@@ -14,7 +14,7 @@ impl MoleculeData {
         let (_, com, _) = calculate_molecule_com(&pids, particles);
             
         // Calculate constant body-frame inertia tensor
-        let inertia = calculate_molecule_inertia(&pids, particles, com);
+        let inertia = calculate_molecule_inertia(&pids, particles);
         
         Self { pids, inertia}
     }
@@ -39,33 +39,24 @@ pub fn calculate_molecule_com(pids: &[usize], particles: &ParticleVec)-> (f64, D
     return (total_mass, com_pos, vel)
 }
 
-pub fn calculate_molecule_inertia(pids: &[usize], particles: &ParticleVec, com: DVec3) -> DMat3 {
+pub fn calculate_molecule_inertia(pids: &[usize], particles: &ParticleVec) -> DMat3 {
     let mut total_inertia = DMat3::ZERO;
-
+    // Note: Do not pass COM here; use the relative positions directly.
     for &idx in pids {
         let m = particles.mass[idx];
+        let r = particles.rel_pos[idx]; // The static body-frame vector
         
-        // Only massive particles contribute to inertia
-        if m > 0.0 {
-            let r = particles.position[idx] - com;
-            let radius = particles.radius[idx];
-            
-            //Intrinsic inertia of a solid sphere: 2/5 * m * r^2
-            let i_val = 0.4 * m * radius * radius;
-            let i_local = DMat3::from_diagonal(DVec3::new(i_val, i_val, i_val));
+        let i_val = 0.4 * m * particles.radius[idx].powi(2);
+        let i_local = DMat3::from_diagonal(DVec3::splat(i_val));
 
-            //Parallel Axis Theorem
-            let r2 = r.dot(r);
-            let outer_prod = DMat3::from_cols(
-                DVec3::new(r.x * r.x, r.x * r.y, r.x * r.z),
-                DVec3::new(r.y * r.x, r.y * r.y, r.y * r.z),
-                DVec3::new(r.z * r.x, r.z * r.y, r.z * r.z),
-            );
-            
-            let parallel_axis_shift = (DMat3::IDENTITY * r2) - outer_prod;
-            
-            total_inertia += i_local + (parallel_axis_shift * m);
-        }
+        let r2 = r.dot(r);
+        let outer_prod = DMat3::from_cols(
+            DVec3::new(r.x * r.x, r.x * r.y, r.x * r.z),
+            DVec3::new(r.y * r.x, r.y * r.y, r.y * r.z),
+            DVec3::new(r.z * r.x, r.z * r.y, r.z * r.z),
+        );
+        
+        total_inertia += i_local + (DMat3::IDENTITY * r2 - outer_prod) * m;
     }
     total_inertia
 }
