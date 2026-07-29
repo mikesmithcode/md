@@ -23,7 +23,7 @@ use glam::{DVec3,DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
-use crate::md_sim::{Particle, ParticleVec, SimulationSettings};
+use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec, BoxSpec};
 use crate::md_viz::SceneSetup;
 
 
@@ -31,7 +31,7 @@ use crate::md_viz::SceneSetup;
 /// 
 /// use the file!() macro as input. Do this [sim_config,scene_config, snapshot, video]=filepaths(file!());
 /// This returns three filepaths of type Path
-pub fn filepaths(script_name: &str)-> [PathBuf;4]{
+pub fn filepaths(script_name: &str)-> [PathBuf;5]{
     //Specify the folder in which all the output will be stored. Assumes in root of workspace.
     const OUTPUT_PATH: &'static str = "output";
     const INPUT_PATH: &'static str = "input";
@@ -47,11 +47,19 @@ pub fn filepaths(script_name: &str)-> [PathBuf;4]{
     let sim_config_path = Path::new(INPUT_PATH).join(format!("{}.json", simulation_name));
     let scene_config_path = Path::new(INPUT_PATH).join("scene.json");
 
-    let snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("snapshots");
-    if let Err(_e) = fs::create_dir_all(&snapshot_path){
+
+    let particle_snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("particles");
+    if let Err(_e) = fs::create_dir_all(&particle_snapshot_path){
         eprintln!("Error creating directory");
     };
-    let _ = snapshot_path.join("snapshots");
+    let _ = particle_snapshot_path.join("particles");
+
+    let object_snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("objects");
+    if let Err(_e) = fs::create_dir_all(&object_snapshot_path){
+        eprintln!("Error creating directory");
+    };
+    let _ = object_snapshot_path.join("objects");
+
 
     let video_path = Path::new(OUTPUT_PATH).join(simulation_name).join("video");
     if let Err(_e) = fs::create_dir_all(&video_path){
@@ -59,9 +67,13 @@ pub fn filepaths(script_name: &str)-> [PathBuf;4]{
     };
     let video_path = video_path.join(simulation_name).with_extension("mp4");
 
-    [sim_config_path, scene_config_path, snapshot_path, video_path]
+    [sim_config_path, scene_config_path, object_snapshot_path, particle_snapshot_path, video_path]
 }
 
+
+//-------------------------------------------------------------
+// Config of simulation
+//-------------------------------------------------------------
 
 /// saves a json representation of the current [`SimulationSettings`]. 
 /// 
@@ -87,7 +99,6 @@ pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path)
     fs::write(full_filename, json)?;
     Ok(())
 }
-
 
 /// loads a json config file into a SimulationSettings struct
 /// 
@@ -142,111 +153,27 @@ pub fn load_simsettings(input_filepath: &Path, output_path: &Path, index: usize)
     Ok(sim_settings)
 }
 
-/// saves particle snapshot to Parquet file
-/// 
-/// Its taking a `Vec<Particle>` and storing each field as an individual
-/// column in a Parquet file in output/snapshots.
-/// 
-/// # Arguments
-/// * `dir_path` - Directory to save snapshots in
-/// * `step` - the index of the simulation loop
-/// * `particles` - Vector of particles to save
-/// * `time` - Simulation time
-pub fn save_snapshot(
-    dir_path: &Path,
+//---------------------------------------------------------
+// Load and save objects - eg simbox
+//---------------------------------------------------------
+pub fn load_objects(file_path: &Path)-> Result<Vec<ObjectSpec>, Box<dyn std::error::Error>>{
+    let file = std::fs::File::open(file_path)?;
+}
+
+pub fn save_objects(dir_path: &Path,
     step: usize,
-    particles: &ParticleVec,
+    objects: &ObjectVec,
     time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Create directory if it doesn't exist
-    fs::create_dir_all(dir_path)?;
 
-
-    let t: Vec<f64> = vec![time;particles.len()];
-    let id: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
-    let molecule_id: Vec<u64> = particles.molecule_id.iter().map(|&molecule_id| molecule_id as u64).collect();
-    let ptype: Vec<u64> = particles.ptype.iter().map(|&ptype| ptype as u64).collect();
-
-    let mut df = df!(
-        "t" => &t,
-        "id" => &id,
-        "molecule_id" => &molecule_id,
-        "ptype" => &ptype,
-        "x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
-        "y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
-        "z" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
-        "rel_x" => &particles.rel_pos.iter().map(|p| p.x).collect::<Vec<_>>(),
-        "rel_y" => &particles.rel_pos.iter().map(|p| p.y).collect::<Vec<_>>(),
-        "rel_z" => &particles.rel_pos.iter().map(|p| p.z).collect::<Vec<_>>(),
-        "vx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
-        "vy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
-        "vz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
-        "qx" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
-        "qy" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
-        "qz" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
-        "qw" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
-        "wx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
-        "wy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
-        "wz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
-        "radius" => &particles.radius,
-        "mass" => &particles.mass,
-        "charge" => &particles.charge,
-        "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
-        "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
-        "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
-        "a" => &particles.color.iter().map(|c| c.a as f64).collect::<Vec<_>>(),
-    )?;
-
-    // Write to Parquet (with temp file for safety)
-    let filename = format!("snapshot_{:010}.parquet", step);
-    let temp_filename = format!("snapshot_{:010}.parquet.tmp", step);
-
-    let temp_path = dir_path.join(&temp_filename);
-    let final_path = dir_path.join(&filename);
-
-    // Write to temporary file first with metadata
-    {
-        let file = std::fs::File::create(&temp_path)?;
-        ParquetWriter::new(file).finish(&mut df)?;
-    }
-
-    fs::rename(&temp_path, &final_path)?;
-
-    Ok(())
 }
 
 
-/// Helper to get a column or return a fallback Series of a specific type
-/// 
-/// Specialized helper for ID columns (u64)
-fn get_u64_col_or_id(df: &DataFrame) -> PolarsResult<Series> {
-    match df.column("molecule_id") {
-        Ok(col) => Ok(col.clone()),
-        Err(_) => {
-            // Fallback: If "molecule_id" is missing, use the "id" column
-            Ok(df.column("id")?.clone())
-        }
-    }
-}
+//--------------------------------------------------------
+// Load and save particles
+//--------------------------------------------------------
 
-fn get_u64_col_or_filler(df: &DataFrame, name: &str, filler: u64) -> Series {
-    df.column(name)
-        .cloned()
-        .unwrap_or_else(|_| {
-            UInt64Chunked::full(name, filler, df.height()).into_series()
-        })
-}
-
-/// Specialized helper for Physical columns (f64)
-fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
-    df.column(name)
-        .cloned()
-        .unwrap_or_else(|_| {
-            Float64Chunked::full(name, filler, df.height()).into_series()
-        })
-}
-
-/// Load particle snapshot from Parquet file
+/// Load particle from Parquet file
 /// 
 /// Each row in file represents a particle. Each column is a field
 /// to be added the Particle struct. These are combined in a Vec.
@@ -262,7 +189,7 @@ fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
 /// # Returns
 /// * `(particles, time)` - Vector of particles and simulation time
 /// Load particle snapshot from Parquet file into a ParticleVec
-pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std::error::Error>> {
+pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std::error::Error>> {
     let file = std::fs::File::open(file_path)?;
     let df = ParquetReader::new(file).finish()?;
 
@@ -396,7 +323,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
     Ok((particles, t))
 }
 
-/// Load the latest snapshot from a directory
+/// Load the latest particle snapshot from a directory
 /// 
 /// Searches files in output/snapshots for the latest
 /// set of particle positions and then uses load_snapshot to
@@ -407,7 +334,7 @@ pub fn load_snapshot(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std
 /// 
 /// # Returns
 /// * `(particles, step, time)` - Vector of particles, step number, and simulation time
-pub fn load_latest_snapshot(
+pub fn load_latest_particles(
     dir_path: &Path,
 ) -> Result<(ParticleVec, usize, f64), Box<dyn std::error::Error>> {
     let (latest_path, latest_step) = fs::read_dir(dir_path)?
@@ -422,9 +349,86 @@ pub fn load_latest_snapshot(
         .max_by_key(|&(_, step)| step) // Find the entry with the highest step
         .ok_or("No snapshot files found")?;
 
-    let (particles, time) = load_snapshot(&latest_path)?;
+    let (particles, time) = load_particle_snapshot(&latest_path)?;
     Ok((particles, latest_step, time))
 }
+
+/// saves particle snapshot to Parquet file
+/// 
+/// Its taking a `Vec<Particle>` and storing each field as an individual
+/// column in a Parquet file in output/snapshots.
+/// 
+/// # Arguments
+/// * `dir_path` - Directory to save snapshots in
+/// * `step` - the index of the simulation loop
+/// * `particles` - Vector of particles to save
+/// * `time` - Simulation time
+pub fn save_particles(
+    dir_path: &Path,
+    step: usize,
+    particles: &ParticleVec,
+    time: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Create directory if it doesn't exist
+    fs::create_dir_all(dir_path)?;
+
+
+    let t: Vec<f64> = vec![time;particles.len()];
+    let id: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
+    let molecule_id: Vec<u64> = particles.molecule_id.iter().map(|&molecule_id| molecule_id as u64).collect();
+    let ptype: Vec<u64> = particles.ptype.iter().map(|&ptype| ptype as u64).collect();
+
+    let mut df = df!(
+        "t" => &t,
+        "id" => &id,
+        "molecule_id" => &molecule_id,
+        "ptype" => &ptype,
+        "x" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
+        "y" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
+        "z" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "rel_x" => &particles.rel_pos.iter().map(|p| p.x).collect::<Vec<_>>(),
+        "rel_y" => &particles.rel_pos.iter().map(|p| p.y).collect::<Vec<_>>(),
+        "rel_z" => &particles.rel_pos.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "vx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
+        "vy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
+        "vz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
+        "qx" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
+        "qy" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
+        "qz" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "qw" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
+        "wx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
+        "wy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
+        "wz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
+        "radius" => &particles.radius,
+        "mass" => &particles.mass,
+        "charge" => &particles.charge,
+        "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
+        "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
+        "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
+        "a" => &particles.color.iter().map(|c| c.a as f64).collect::<Vec<_>>(),
+    )?;
+
+    // Write to Parquet (with temp file for safety)
+    let filename = format!("snapshot_{:010}.parquet", step);
+    let temp_filename = format!("snapshot_{:010}.parquet.tmp", step);
+
+    let temp_path = dir_path.join(&temp_filename);
+    let final_path = dir_path.join(&filename);
+
+    // Write to temporary file first with metadata
+    {
+        let file = std::fs::File::create(&temp_path)?;
+        ParquetWriter::new(file).finish(&mut df)?;
+    }
+
+    fs::rename(&temp_path, &final_path)?;
+
+    Ok(())
+}
+
+//--------------------------------------------------------
+// Graphics config
+//--------------------------------------------------------
 
 /// Loads the special json file (input/scene.json) into a SceneSetup struct which controls things like video fps, window_size.
 pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSetup, Box<dyn std::error::Error>> {
@@ -438,3 +442,37 @@ pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSetup, Box<dy
     Ok(settings)
 }
 
+
+
+//-----------------------------------------------------
+// private helpers
+//-----------------------------------------------------
+/// Helper to get a column or return a fallback Series of a specific type
+/// 
+/// Specialized helper for ID columns (u64)
+fn get_u64_col_or_id(df: &DataFrame) -> PolarsResult<Series> {
+    match df.column("molecule_id") {
+        Ok(col) => Ok(col.clone()),
+        Err(_) => {
+            // Fallback: If "molecule_id" is missing, use the "id" column
+            Ok(df.column("id")?.clone())
+        }
+    }
+}
+
+fn get_u64_col_or_filler(df: &DataFrame, name: &str, filler: u64) -> Series {
+    df.column(name)
+        .cloned()
+        .unwrap_or_else(|_| {
+            UInt64Chunked::full(name, filler, df.height()).into_series()
+        })
+}
+
+/// Specialized helper for Physical columns (f64)
+fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
+    df.column(name)
+        .cloned()
+        .unwrap_or_else(|_| {
+            Float64Chunked::full(name, filler, df.height()).into_series()
+        })
+}

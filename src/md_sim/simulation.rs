@@ -14,6 +14,7 @@ use std::path::Path;
 use std::collections::HashMap;
 use itertools::izip;
 
+use crate::md_sim::ObjectSpec;
 use crate::md_sim::particle::MoleculeData;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::force::CellGrid;
@@ -146,7 +147,7 @@ impl<S> Simulation<S>
         S: Forces + Motion + Sync,
     {
         /// Create a new simulation
-        pub fn new(mut particles: ParticleVec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
+        pub fn new(mut particles: ParticleVec, objects: ObjectSpec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
             let n = particles.len();
             let molecule_map = build_molecule_map(&particles);
             let mut cell_grid=CellGrid::new( n, &settings);

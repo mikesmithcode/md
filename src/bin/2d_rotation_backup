@@ -9,11 +9,11 @@ use glam::DVec3;
 use std::collections::HashMap;
 
 // Imports from simulation library
-use md::md_sim::{Simulation, SimulationSettings, Forces, Motion, ParticleVec, ObjectSpec, BoxSpec};
+use md::md_sim::{Simulation, SimulationSettings, Forces, Motion, ParticleVec};
 use md::md_sim::force::{add_weight,add_granular_collision,add_coulomb};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::particle::MoleculeData;
-use md::md_sim::utils::{save_particles, load_latest_particles, load_objects, filepaths};
+use md::md_sim::utils::{save_snapshot, load_latest_snapshot, filepaths};
 use md::md_viz::Scene;
 
 pub struct SimUpdate;
@@ -65,37 +65,19 @@ impl Motion for SimUpdate{
 pub fn main() {    
 
     // Construct filepaths
-    let [sim_config_path, scene_config_path, object_path ,particle_path, video_path] = filepaths(file!());
+    let [sim_config_path, scene_config_path, snapshot_path, video_path] = filepaths(file!());
     
+
+    //------------------------------------------------------------
+    // Initialise simulation with bunch of particles from a snapshot file and define simulation parameters with a config file. Takes latest snapshot in output
+    // copies the config file in input folder to the output folder appending sim index.
+    // -----------------------------------------------------------
+    
+    let (_particles, start_step, mut _time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
 
-    
-
-    //-------------------------------------------------------------
-    // Create simulation
-    //
-    // Initialise simulation with bunch of particles from a snapshot file. Takes latest snapshot in output
-    // copies the config file in input folder to the output folder appending sim index.
-    // Simulation::new() creates the simulation
-    // sim.update() to advance the simulation by one step
-    // file_io::save_particles(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
-    //--------------------------------------------------------------
-  
-    let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return particles from file");
-    let objects: Vec<ObjectSpec> = load_objects(&object_path).expect("Failed to return objects from file");
-
-    //
-    // Feed objects in by another method to Simulation construction so that it is optional.
-    // Create a method in Simulation to return a read only ref to objects
-    // Create an optional method in Motion trait that allows you to update the position of objects.
-    // Create an optional method in Forces trait which allows particles and objects to interact.
-    // Consider whether any speed up required (ie lots of particles never anywhere near object) Create a list of particles near an object which is rebuilt when particles move too far
-    // Think through what to do about display and save_frame be nice if these were optionally using objects
-
-
-    let mut sim= Simulation::new(particles, objects, SimUpdate, sim_settings.clone(), time);
-    
     //----------------------------------------------------------------
     //  Graphics
     //
@@ -104,12 +86,25 @@ pub fn main() {
     //  Call scene.display() to update window, scene.save_img() to write
     //--------------------------------------------------------------   
 
-    let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);  
-    scene.update_objects(context, objects); 
+    let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);   
     let mut event_loop = EventLoop::new(); 
     let _ = scene.view(&event_loop);
     let _ = scene.start_recording(&video_path, start_step);
 
+    //-------------------------------------------------------------
+    // Create simulation
+    //
+    // Initialise simulation with bunch of particles from a snapshot file. Takes latest snapshot in output
+    // copies the config file in input folder to the output folder appending sim index.
+    // Simulation::new() creates the simulation
+    // sim.update() to advance the simulation by one step
+    // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
+    //--------------------------------------------------------------
+  
+    let (particles, start_step, time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let mut sim= Simulation::new(particles, SimUpdate, sim_settings.clone(), time);
+    
+    println!("Simulation started...");
     //--------------------------------------------------------------
     // Start simulation loop
     //
@@ -132,9 +127,9 @@ pub fn main() {
             }
             
             //Handle graphics
-            //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img");
-            scene.display(sim.get_particles(), sim.get_objects()).expect("Error updating display");
-            let _ = scene.save_frame(sim.get_particles(), sim.get_objects());
+            //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
+            scene.display(sim.get_particles()).expect("Error updating display");
+            let _ = scene.save_frame(sim.get_particles());
 
             //save a snapshot of particle positions etc
             save_snapshot(&snapshot_path, step, sim.get_particles(), sim.time).expect("Error saving simulation snapshot");

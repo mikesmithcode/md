@@ -10,6 +10,7 @@
 use three_d::{Camera, Vector3};
 use three_d::InnerSpace;
 use three_d::*;
+use glam::DVec3;
 
 use winit::event::{WindowEvent, MouseButton, ElementState, MouseScrollDelta};
 use crate::md_viz::scene::SceneSetup;
@@ -29,8 +30,8 @@ pub enum CameraView {
 pub fn create_camera(viewport: Viewport, scene_settings: SceneSetup) -> Camera {
 
     match scene_settings.camera {
-        CameraView::Perspective => create_perspective_camera(viewport, scene_settings.sim_box_setup.sim_box_size),
-        CameraView::Orthographic => create_orthographic_camera(viewport, scene_settings.sim_box_setup.sim_box_size),
+        CameraView::Perspective => create_perspective_camera(viewport, scene_settings.sim_box_setup.box_size),
+        CameraView::Orthographic => create_orthographic_camera(viewport, scene_settings.sim_box_setup.box_size),
     }
 
     
@@ -40,13 +41,16 @@ pub fn create_camera(viewport: Viewport, scene_settings: SceneSetup) -> Camera {
 /// 
 /// This is useful for viewing and rotating around a 3D scene
 /// The default here is that +ve x is to the right, +ve y is into the page, +ve z is upwards on the page.
-fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Camera {
-    let [dim_x, dim_y, dim_z] = sim_box_size;
+fn create_perspective_camera(viewport: Viewport, sim_box_size: DVec3) -> Camera {
+    // 1. Cast DVec3 (f64) components to f32 for rendering math
+    let dim_x = sim_box_size.x as f32;
+    let dim_y = sim_box_size.y as f32;
+    let dim_z = sim_box_size.z as f32;
     
-    // 1. Add 10% buffer so the edges of the particles aren't cut off
-    let buffered_x = 1.1*dim_x;
-    let buffered_z = 1.1*dim_z;
-    let buffered_y = 1.1*dim_y;
+    // Add 10% buffer so the edges aren't cut off
+    let buffered_x = 1.1 * dim_x;
+    let buffered_y = 1.1 * dim_y;
+    let buffered_z = 1.1 * dim_z;
 
     let centre = vec3(dim_x * 0.5, dim_y * 0.5, dim_z * 0.5);
     
@@ -54,17 +58,16 @@ fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Came
     let fov_rad = fov_deg * std::f32::consts::PI / 180.0;
     let aspect = viewport.width as f32 / viewport.height as f32;
 
-    // 2. Calculate distance for Height (Z) and Width (X)
-    let dist_z = (buffered_z * 0.5) / (fov_rad * 0.5).tan();
+    // 2. Calculate distance based on vertical (Y) and horizontal (X) extents
+    let dist_y = (buffered_y * 0.5) / (fov_rad * 0.5).tan();
     
     // Adjust horizontal FOV based on aspect ratio
     let horizontal_fov_rad = 2.0 * ((fov_rad * 0.5).tan() * aspect).atan();
     let dist_x = (buffered_x * 0.5) / (horizontal_fov_rad * 0.5).tan();
 
-    // 3. Take the max distance and add half the depth (Y) 
-    // This ensures the camera is back far enough to see the FRONT face
-    let base_distance = dist_z.max(dist_x);
-    let eye_distance = (base_distance + (buffered_y * 0.5)) * 1.1; // 10% extra padding
+    // 3. Take the max distance and add half the depth (Z) to clear the front face
+    let base_distance = dist_y.max(dist_x);
+    let eye_distance = (base_distance + (buffered_z * 0.5)) * 1.1; // 10% extra padding
 
     let eye_pos = centre + vec3(0.0, -eye_distance, 0.0);
 
@@ -74,23 +77,27 @@ fn create_perspective_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Came
         centre,
         vec3(0.0, 0.0, 1.0), 
         degrees(fov_deg),
-        0.01,                
-        eye_distance + buffered_y + 10.0, 
+        0.01,                   
+        eye_distance + buffered_z + 10.0, 
     )
 }
 
-///Create a camera with orthographic view point
+/// Create a camera with orthographic view point
 /// 
 /// This has no perspective. Can be useful if you want to view a 2D simulation or
 /// 3D with no changes in apparent size with depth.
-fn create_orthographic_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Camera {
-    let x_mid = sim_box_size[0] * 0.5;
-    let y_mid = sim_box_size[1] * 0.5;
-    let z_mid = sim_box_size[2] * 0.5;
+fn create_orthographic_camera(viewport: Viewport, sim_box_size: DVec3) -> Camera {
+    let dim_x = sim_box_size.x as f32;
+    let dim_y = sim_box_size.y as f32;
+    let dim_z = sim_box_size.z as f32;
+
+    let x_mid = dim_x * 0.5;
+    let y_mid = dim_y * 0.5;
+    let z_mid = dim_z * 0.5;
     let centre = vec3(x_mid, y_mid, z_mid);
     
     // Find the largest dimension to set the initial zoom level
-    let max_dim = sim_box_size[0].max(sim_box_size[1]).max(sim_box_size[2]);
+    let max_dim = dim_x.max(dim_y).max(dim_z);
     
     // Initial height: 1.5x the largest dimension ensures the box fits
     let camera_height_units = max_dim * 1.5; 
@@ -99,14 +106,13 @@ fn create_orthographic_camera(viewport: Viewport, sim_box_size: [f32; 3]) -> Cam
         viewport,
         // Place the eye directly in front of the centre along the Z-axis
         vec3(x_mid, y_mid, max_dim * 2.5), 
-        centre,              // Look at the centre of the box
+        centre,                    // Look at the centre of the box
         vec3(0.0, 0.0, 1.0), // Up direction
         camera_height_units,
         -max_dim * 10.0,     // Near plane
         max_dim * 10.0,      // Far plane
     )
 }
-  
 
 /// Creates and returns an `OrbitControl` for camera manipulation.
 pub fn create_control(camera: &Camera) -> OrbitControl {

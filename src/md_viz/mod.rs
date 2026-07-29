@@ -6,5 +6,5 @@ pub mod video;
     
 
 pub use self::scene::{Scene, SceneSetup};
-pub use self::templates::{ParticleInstanceData, SphereTemplate, Geometry};
+pub use self::templates::{SphereTemplate, ObjectTemplate, BoxTemplate, WireBoxTemplate};
 

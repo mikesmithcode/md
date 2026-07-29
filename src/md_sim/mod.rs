@@ -6,8 +6,9 @@ pub mod particle;
 pub mod simulation;
 
 
+
 // Re-export main Structs
-pub use self::particle::{Particle, ParticleVec};
+pub use self::particle::{Particle, ParticleVec, ObjectSpec, BoxSpec};
 pub use self::simulation::{Simulation, SimulationSettings};
 
 //Reexport Traits

@@ -6,6 +6,7 @@
 use three_d::*;
 use soa_derive::soa_zip;
 use std::path::PathBuf;
+use glam::DVec3;
 
 use winit::window::Window as WinitWindow;
 use winit::window::WindowBuilder;
@@ -14,11 +15,11 @@ use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::event::{Event as WinitEvent, WindowEvent};
 
 use crate::md_sim::simulation::SimulationSettings;
-use crate::md_viz::objects::{create_ambient_light, create_directional_light, SimBox, create_simbox};
-use crate::md_viz::templates::SphereTemplate;
+use crate::md_viz::objects::{create_ambient_light, create_directional_light};
+use crate::md_viz::templates::{SphereTemplate, BoxTemplate, WireBoxTemplate, ObjectTemplate};
 use crate::md_viz::camera::{create_camera, CameraControl, CameraView};
 use crate::md_viz::video::VideoExporter;
-use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::particle::{ParticleVec, BoxSpec, ObjectSpec};
 
 use serde::{Serialize, Deserialize};
 
@@ -28,7 +29,7 @@ pub struct SceneSetup {
     pub camera: CameraView,
     pub window_size: (u32, u32),
     pub vid_fps: u32,
-    pub sim_box_setup: SimBox,
+    pub sim_box: BoxSpec,
 }
 
 impl Default for SceneSetup {
@@ -37,7 +38,7 @@ impl Default for SceneSetup {
             camera: CameraView::Perspective,
             window_size: (1280, 960),
             vid_fps: 30,
-            sim_box_setup: SimBox::default(),//The sim_box_size will be overwritten with values from the Simulation config.
+            sim_box: BoxSpec::default(),//The sim_box_size will be overwritten with values from the Simulation config.
         }
     }
 }
@@ -45,17 +46,17 @@ impl Default for SceneSetup {
 struct GpuResources {
     ambient_light: AmbientLight,
     directional_light: DirectionalLight,
-    simbox: Option<Gm<BoundingBox, PhysicalMaterial>>,
+    simbox_template: WireBoxTemplate,
     #[allow(dead_code)]
-    sphere_template: SphereTemplate,
-    particle_mesh: Gm<InstancedMesh, PhysicalMaterial>,
+    sphere_template: SphereTemplate,//Create instances which are updated starting from a single template
+    object_templates: Vec<ObjectTemplate>,//Each object gets its own template which is transformed.
     instance_transforms: Vec<Mat4>,
     instance_colors: Vec<Srgba>,
 }
 
 
 pub struct Scene {
-    settings: SceneSetup,
+    scene_settings: SceneSetup,
     pub camera: Camera,
     pub camera_control: CameraControl,
 
@@ -79,7 +80,7 @@ impl Scene {
         let camera_control = CameraControl::new(&camera, Vector3::new(0.0, 0.0, 0.0));
 
         Self {
-            settings: scene_settings,
+            scene_settings,
             camera,
             camera_control,
             context: None,
@@ -93,10 +94,11 @@ impl Scene {
 
     /// Creates a scene by reading a config file and applying simulation overrides
     pub fn from_config(scene_config_path: PathBuf, sim_settings: &SimulationSettings) -> Self {
-        let mut settings = Self::load_json(scene_config_path).unwrap_or_default();
+        let mut settings: SceneSetup = Self::load_json(scene_config_path).unwrap_or_default();
         println!("Scene Settings \n\n {:?}", settings);
-        // Update the sim_box_size with real simulation data
-        settings.sim_box_setup.sim_box_size = sim_settings.sim_box_size_f32();
+
+        // Update the box_size from simulation
+        settings.sim_box.box_size = sim_settings.sim_box_size;
 
         Self::new(settings)
     }
@@ -121,7 +123,7 @@ impl Scene {
     fn init_window(&mut self, event_loop: &EventLoop<()>, visible: bool) -> Result<(), Box<dyn std::error::Error>> {
         let window = WindowBuilder::new()
             .with_title("Simulation")
-            .with_inner_size(winit::dpi::PhysicalSize::new(self.settings.window_size.0, self.settings.window_size.1))
+            .with_inner_size(winit::dpi::PhysicalSize::new(self.scene_settings.window_size.0, self.scene_settings.window_size.1))
             .with_visible(visible)
             .build(event_loop)?;
 
@@ -132,8 +134,7 @@ impl Scene {
         self.windowed_context = Some(w_context);
         self.winit_window = Some(window);
 
-        // Initialize resources using the handle that is safely backed by an owner
-        let resources = Self::_init_gpu_resources(&context_handle, self.settings.sim_box_setup.clone())?;
+        let resources = self._init_gpu_resources(&context_handle)?;
         self.resources = Some(resources);
         
         self.frame_input_generator = Some(FrameInputGenerator::from_winit_window(self.winit_window.as_ref().unwrap()));
@@ -141,63 +142,91 @@ impl Scene {
         Ok(())
     }
 
-    // Remove '&self' from the start
-    fn _init_gpu_resources(context: &Context, sim_box_settings: SimBox) -> Result<GpuResources, Box<dyn std::error::Error>> { 
+    fn _init_gpu_resources(&self, context: &Context) -> Result<GpuResources, Box<dyn std::error::Error>> { 
+        let simbox_template= WireBoxTemplate::new(context, self.scene_settings.sim_box);
         let sphere_template = SphereTemplate::new(context);
-    
-        // Create an initial empty mesh
-        //let mut mat = PhysicalMaterial::default();
-        //mat.albedo = Srgba::WHITE;
-        //mat.render_states.blend = Blend::TRANSPARENCY;
-        //mat.render_states.cull = Cull::Back;
-        let mut mat = PhysicalMaterial::default();
-        mat.albedo = Srgba::WHITE;
-
-        mat.render_states = RenderStates {
-            blend: Blend::Enabled {
-                source_rgb_multiplier: BlendMultiplierType::SrcAlpha,
-                source_alpha_multiplier: BlendMultiplierType::One,
-                destination_rgb_multiplier: BlendMultiplierType::OneMinusSrcAlpha,
-                destination_alpha_multiplier: BlendMultiplierType::OneMinusSrcAlpha,
-                rgb_equation: BlendEquationType::Add,
-                alpha_equation: BlendEquationType::Add,
-            },
-            cull: Cull::Back,
-            // Disable writing to the depth buffer for transparent objects
-            write_mask: WriteMask::COLOR, 
-            // Keep depth testing ON so the simbox can still occlude the spheres
-            depth_test: DepthTest::Always,
-        };
-
-
-        let particle_mesh = Gm::new(
-            InstancedMesh::new(context, &Instances::default(), &sphere_template.cpu_mesh),
-            mat
-        );
+        let object_templates = vec![];
 
         let resources = GpuResources { 
             ambient_light: create_ambient_light(context), 
-            directional_light: create_directional_light(context), 
-            simbox: create_simbox(context, sim_box_settings), 
+            directional_light: create_directional_light(context),
+            simbox_template,
             sphere_template,
-            particle_mesh,
+            object_templates,
             instance_transforms: Vec::with_capacity(1000),
             instance_colors: Vec::with_capacity(1000)
         };
         Ok(resources)
     }
 
-    // Helper to reduce code duplication
-    fn push_transform_and_color(i: usize, particles: &ParticleVec, transforms: &mut Vec<Mat4>, colors: &mut Vec<Srgba>) {
-        transforms.push(Mat4::from_translation(vec3(particles.position[i].x as f32, particles.position[i].y as f32, particles.position[i].z as f32)) 
-            * Mat4::from_scale(particles.radius[i] as f32));
-        colors.push(particles.color[i]);
+    /// This is used to update all the objects in the Scene if they need recreating. Only needed
+    /// if one is created or destroyed.
+    pub fn update_objects(&mut self, context: &Context, object_specs: &[ObjectSpec]) {
+        if let Some(resources) = &mut self.resources {
+            if resources.object_templates.len() != object_specs.len() {
+                resources.object_templates = object_specs
+                    .iter()
+                    .map(|spec| match spec {
+                        ObjectSpec::HollowBox(boxspec) => ObjectTemplate::HollowBox(BoxTemplate::new(context, *boxspec)),
+                        ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(context, *boxspec)),
+                    })
+                    .collect();
+            }
+        }
     }
 
+
     /// Central rendering logic used by both display() and save_frame()
-    fn render_to_target(camera: &Camera,resources: &mut GpuResources,target: &mut RenderTarget,particles: &ParticleVec) -> Result<(), Box<dyn std::error::Error>> {
+    fn render_to_target(
+        camera: &Camera,
+        resources: &mut GpuResources,
+        target: &mut RenderTarget,
+        particles: &ParticleVec,
+        objects: Option<&[ObjectSpec]>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
 
+        // Render/update particles
+        Self::update_particle_instances(camera, resources, particles);
+
+        // Gather renderable objects dynamically using a vector collection
+        let mut scene_objects: Vec<&dyn Object> = Vec::new();
+
+        // Push particles mesh
+        scene_objects.push(&resources.sphere_template.mesh);
+
+        // Render additional scene objects if present, updating their transforms/colors as needed
+        if let Some(specs) = objects {
+            for (template, spec) in resources.object_templates.iter_mut().zip(specs.iter()) {
+                match template {
+                    ObjectTemplate::HollowBox(t) => {
+                        t.push_transform_and_color(
+                            spec,
+                            &mut resources.object_instance_transforms,
+                            &mut resources.object_instance_colors,
+                        );
+                        scene_objects.push(&t.mesh);
+                    }
+                    ObjectTemplate::WireBox(t) => {
+                        t.push_transform_and_color(
+                            spec,
+                            &mut resources.object_instance_transforms,
+                            &mut resources.object_instance_colors,
+                        );
+                        scene_objects.push(&t.mesh);
+                    }
+                }
+            }
+        }
+
+        // Setup lights and execute draw call
+        let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
+        target.render(camera, scene_objects, &lights);
+        
+        Ok(())
+    }
+
+    fn update_particle_instances(camera: &Camera, resources: &mut GpuResources, particles: &ParticleVec) {
         let mut transforms = std::mem::take(&mut resources.instance_transforms);
         let mut colors = std::mem::take(&mut resources.instance_colors);
         transforms.clear();
@@ -217,10 +246,9 @@ impl Scene {
             });
 
             for i in indices {
-                Self::push_transform_and_color(i, particles, &mut transforms, &mut colors);
+                resources.sphere_template.push_transform_and_color(i, particles, &mut transforms, &mut colors);
             }
         } else {
-            // Fast path: No transparency, no sorting needed
             for (pos, rad, col) in soa_zip!(particles, [position, radius, color]) {
                 transforms.push(Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) * Mat4::from_scale(*rad as f32));
                 colors.push(*col);
@@ -233,31 +261,14 @@ impl Scene {
             colors: Some(colors),
         };
 
-        // Update the existing GPU buffers
-        resources.particle_mesh.set_instances(&instances);
-
+        resources.sphere_template.mesh.set_instances(&instances);
         resources.instance_transforms = instances.transformations;
         resources.instance_colors = instances.colors.unwrap();
-
-        let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
-
-        let mut objects: Vec<&dyn Object> = Vec::with_capacity(2);
-
-        if let Some(ref sb) = resources.simbox {
-            objects.push(sb); 
-        }
-        
-        objects.push(&resources.particle_mesh);
-       
-        
-        // Render the persistent mesh
-        target.render(camera, objects, &lights);
-        
-        Ok(())
     }
 
+
     /// Refresh the live window
-    pub fn display(&mut self, particles: &ParticleVec) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn display(&mut self, particles: &ParticleVec, objects: &[ObjectSpec]) -> Result<(), Box<dyn std::error::Error>> {
         let context = self.context.as_ref().ok_or("No context")?;
         let resources = self.resources.as_mut().ok_or("No resources")?;
         let generator = self.frame_input_generator.as_mut().ok_or("Not in windowed mode")?;
@@ -267,7 +278,7 @@ impl Scene {
 
         let mut target = RenderTarget::screen(context, frame_input.viewport.width, frame_input.viewport.height);
             
-        Self::render_to_target(&self.camera,resources,&mut target,particles)?;
+        Self::render_to_target(&self.camera,resources,&mut target,particles, objects)?;
 
         if let Some(w_ctx) = &self.windowed_context {
             w_ctx.swap_buffers()?;
