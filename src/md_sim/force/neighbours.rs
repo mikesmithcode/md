@@ -2,7 +2,7 @@ use glam::DVec3;
 use rayon::prelude::*;
 
 use crate::md_sim::particle::ParticleVec;
-use crate::md_sim::simulation::SimulationSettings;
+use crate::md_sim::SimulationSettings;
 use crate::md_sim::utils::{check_delta,InteractionContext};
 use crate::md_sim::Forces;
 

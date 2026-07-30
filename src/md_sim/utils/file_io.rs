@@ -23,7 +23,7 @@ use glam::{DVec3,DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
-use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec, BoxSpec};
+use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec};
 use crate::md_viz::SceneSettings;
 
 
@@ -45,7 +45,7 @@ pub fn filepaths(script_name: &str)-> [PathBuf;5]{
                                             .unwrap();
 
     let sim_config_path = Path::new(INPUT_PATH).join(format!("{}.json", simulation_name));
-    let scene_config_path = Path::new(INPUT_PATH).join("scene.json");
+    let scene_config_path = Path::new(INPUT_PATH).join("scene_settings.json");
 
 
     let particle_snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("particles");
@@ -156,15 +156,17 @@ pub fn load_simsettings(input_filepath: &Path, output_path: &Path, index: usize)
 //---------------------------------------------------------
 // Load and save objects - eg simbox
 //---------------------------------------------------------
-pub fn load_objects(file_path: &Path)-> Result<Vec<ObjectSpec>, Box<dyn std::error::Error>>{
-    let file = std::fs::File::open(file_path)?;
+pub fn load_objects(file_path: &Path)-> Result<(), Box<dyn std::error::Error>>{
+    let _file = std::fs::File::open(file_path)?;
+    Ok(()) 
 }
 
-pub fn save_objects(dir_path: &Path,
-    step: usize,
-    objects: &ObjectVec,
-    time: f64,
+pub fn save_objects(_dir_path: &Path,
+    _step: usize,
+    _objects: &[ObjectSpec],
+    _time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())   
 
 }
 
@@ -341,7 +343,7 @@ pub fn load_latest_particles(
         .flatten() // Ignore entries we can't read
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
-            let step = name.strip_prefix("snapshot_")?
+            let step = name.strip_prefix("particles_")?
                            .strip_suffix(".parquet")?
                            .parse::<usize>().ok()?;
             Some((entry.path(), step))
@@ -349,7 +351,7 @@ pub fn load_latest_particles(
         .max_by_key(|&(_, step)| step) // Find the entry with the highest step
         .ok_or("No snapshot files found")?;
 
-    let (particles, time) = load_particle_snapshot(&latest_path)?;
+    let (particles, time) = load_particles(&latest_path)?;
     Ok((particles, latest_step, time))
 }
 

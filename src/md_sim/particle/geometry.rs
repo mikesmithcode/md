@@ -9,10 +9,7 @@ pub struct MoleculeData{
 }
 
 impl MoleculeData {
-    pub fn new(pids: Vec<usize>, particles: &ParticleVec) -> Self {
-        // Calculate CM
-        let (_, com, _) = calculate_molecule_com(&pids, particles);
-            
+    pub fn new(pids: Vec<usize>, particles: &ParticleVec) -> Self {           
         // Calculate constant body-frame inertia tensor
         let inertia = calculate_molecule_inertia(&pids, particles);
         

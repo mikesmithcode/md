@@ -231,6 +231,11 @@ impl Scene {
             }
         }
 
+        //Display simulation box outline
+        if resources.simbox_template.boxspec.visible {
+            scene_objects.push(&resources.simbox_template.mesh);
+        }
+
         // Setup lights and execute draw call
         let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
         target.render(camera, scene_objects, &lights);

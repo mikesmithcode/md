@@ -62,9 +62,9 @@ def get_config(script_name):
     with open(config_path, 'r') as f:
         config = json.load(f)
     
-    path_to_snapshots = Path(f"output/{name}/snapshots/")
+    path_to_snapshots = Path(f"output/{name}/particles/")
     os.makedirs(path_to_snapshots, exist_ok=True)
-    snapshot_filepath = path_to_snapshots.joinpath("snapshot_0000000000.parquet")
+    snapshot_filepath = path_to_snapshots.joinpath("particles_0000000000.parquet")
 
     return config, snapshot_filepath
 

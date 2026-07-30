@@ -80,6 +80,10 @@ impl<S> Simulation<S>
             // Predict the new positions, velocities etc
             self.sim_update.update_motion(&self.forces, &self.torques, &mut self.particles, &self.settings,&self.molecule_map, self.time);
 
+            //Move any objects
+            if let Some(scene_objects) = &mut self.objects{
+                self.sim_update.update_objects(scene_objects, &self.settings, self.time);
+            }
 
             //----------------------------------------------------------------------------
             // Calculate all the forces

@@ -20,6 +20,7 @@ pub struct SceneSettings {
     pub camera: CameraView,
     pub window_size: (u32, u32),
     pub vid_fps: u32,
+    #[serde(default)]
     pub sim_box: BoxSpec,
 }
 

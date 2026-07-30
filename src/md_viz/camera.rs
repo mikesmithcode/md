@@ -13,7 +13,7 @@ use three_d::*;
 use glam::DVec3;
 
 use winit::event::{WindowEvent, MouseButton, ElementState, MouseScrollDelta};
-use crate::md_viz::scene::SceneSettings;
+use crate::md_viz::SceneSettings;
 use serde::{Serialize, Deserialize};
 
 
@@ -30,8 +30,8 @@ pub enum CameraView {
 pub fn create_camera(viewport: Viewport, scene_settings: SceneSettings) -> Camera {
 
     match scene_settings.camera {
-        CameraView::Perspective => create_perspective_camera(viewport, scene_settings.sim_box_setup.box_size),
-        CameraView::Orthographic => create_orthographic_camera(viewport, scene_settings.sim_box_setup.box_size),
+        CameraView::Perspective => create_perspective_camera(viewport, scene_settings.sim_box.box_size),
+        CameraView::Orthographic => create_orthographic_camera(viewport, scene_settings.sim_box.box_size),
     }
 
     

@@ -10,7 +10,7 @@ mod single;
 pub use single::{add_weight, add_viscous_drag, add_active_force};
 pub use pairwise::{add_granular_collision, add_weeks_chandler_andersen, add_coulomb};
 pub use neighbours::CellGrid;
-pub use bonds::*;
+//pub use bonds::*;
 
 
 

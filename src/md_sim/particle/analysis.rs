@@ -34,7 +34,7 @@ pub fn calculate_total_angular_momentum(particles: &ParticleVec, molecules: &Has
     let mut total_l = DVec3::ZERO;
 
     for mol in molecules.values() {
-        let (total_mass, com_pos, v_com) = calculate_molecule_com(&mol.pids, particles);
+        let (_total_mass, com_pos, v_com) = calculate_molecule_com(&mol.pids, particles);
         
         // Spin Angular Momentum (S = I_global * omega)
         let omega = particles.omega[mol.pids[0]];

@@ -82,7 +82,8 @@ pub fn main() {
   
     let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return particles from file");
     //let objects: Vec<ObjectSpec> = load_objects(&object_path).expect("Failed to return objects from file");
-    
+
+    //
     // Feed objects in by another method to Simulation construction so that it is optional.
     // Create a method in Simulation to return a read only ref to objects
     // Create an optional method in Motion trait that allows you to update the position of objects.

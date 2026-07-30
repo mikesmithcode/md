@@ -7,7 +7,7 @@ mod integration;
 pub use change::{enforce_boundary, change_rad, move_sinwave, change_colour};
 pub use integration::{integrate_singleparticle_update,integrate_singleparticle_correct, integrate_rigid_bodies, integrate_rigid_bodies_correct, update_abps};
 
-pub use crate::md_sim::{SimulationSettings, ParticleVec};
+pub use crate::md_sim::{SimulationSettings, ParticleVec, ObjectSpec};
 pub use super::particle::MoleculeData;
 
 #[cfg(test)]
@@ -68,6 +68,14 @@ pub trait Motion {
         _molecule_map: &HashMap<usize, MoleculeData>
     ) {
         // Optional: No correction by default
+    }
+
+
+    /// Can be used to update any property of the ObjectSpec. 
+    /// If Option<Vec<ObjectSpec>> = None this is bypassed otherwise Vec<ObjectSpec> extracted
+    /// and modified in place.
+    fn update_objects(&self, _objects: &mut Vec<ObjectSpec>, _settings: &SimulationSettings, _time: f64){
+        //Optional no movement by default. It is assumed all objects are passive moving according to prescribed rules
     }
 }
 

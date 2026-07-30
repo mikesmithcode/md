@@ -29,6 +29,7 @@ impl ObjectSpec{
 //------------------------------------------------------------------------------
 /// Configuration for a generic box-like object in the scene.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct BoxSpec {
     pub visible: bool,
     pub thickness: f64, //thickness is internal if negative but external if positive

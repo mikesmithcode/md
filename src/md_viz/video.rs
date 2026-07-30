@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio, Child};
 use std::io::Write;
 use std::fs;
-use crate::md_viz::scene::SceneSettings;
+use crate::md_viz::SceneSettings;
 
 pub struct VideoExporter {
     process: Child,

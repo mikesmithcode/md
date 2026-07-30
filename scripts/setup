@@ -22,7 +22,7 @@ fi
 
 if [ "$RUN_CLEAN" = true ]; then
     echo "--- Cleaning $1 ---"
-    cargo run --quiet --bin cleanup -- "$1"
+    cargo run --quiet --bin clean -- "$1"
     
     mkdir -p "output/$1/snapshots" "output/$1/video"
 

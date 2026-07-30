@@ -5,7 +5,7 @@ show_help() {
     echo "Usage: run [-c] [-r] [-b] [-h] <simulation_name>"
     echo ""
     echo "Options:"
-    echo "  -c    Clean & Setup: Runs cleanup, creates directories, and executes the Python setup."
+    echo "  -c    Clean & Setup: Runs clean, creates directories, and executes the Python setup."
     echo "  -r    Release Mode: Compiles the Rust simulation with heavy optimizations."
     echo "  -b    Build Only: Compiles the code but skips launching the simulation."
     echo "  -h    Help: Displays this help message."
@@ -47,10 +47,10 @@ if [ -z "$TARGET_NAME" ]; then
     exit 1
 fi
 
-# 3. Setup (Cleanup + Python)
+# 3. Setup (Clean + Python)
 if [ "$RUN_CLEAN" = true ]; then
-    echo "--- Running Cleanup for $TARGET_NAME ---"
-    cargo run --quiet --bin cleanup -- "$TARGET_NAME"
+    echo "--- Running Clean for $TARGET_NAME ---"
+    cargo run --quiet --bin clean -- "$TARGET_NAME"
     mkdir -p "output/$TARGET_NAME/snapshots" "output/$TARGET_NAME/video"
     "$PYTHON_EXEC" python_scripts/"$TARGET_NAME".py "$TARGET_NAME" || { echo "Python setup failed"; exit 1; }
 fi
