@@ -10,6 +10,8 @@ $$\tau_{total} = \sum_{i}\tau_{i} + \sum_{i}(r_{i}-R_{COM}) \times f_{i}$$
 
 ie the sum of the individual torques plus the torque about the centre of mass of the forces on the particles.
 
+To speed this process up we group the particles into molecules. There is a molecule_id which enables us to define whether a particle is part of the same molecule. In calculating forces we ignore all particles that are in the same molecule since the particle is a rigid body. This assumption would need to be revisited if you wanted elastic / bendy molecules.
+
 ### Verlet integration scheme.
 
 In verlet we update the velocity and the omega first integrating half a timestep. Then we integrate the positions / orientations by a full timestep using the new values of velocity and omega. Then we calculate the new forces and torques. Finally, we apply a correction to the velocity and omega by integrating a further half-step.

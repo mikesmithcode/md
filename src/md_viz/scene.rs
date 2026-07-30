@@ -2,11 +2,9 @@
 //!
 //! This module is responsible for drawing everything either to a live window or a video stream.
 //! It uses a unified rendering pipeline to ensure visual consistency across all outputs.
-
+use std::path::PathBuf;
 use three_d::*;
 use soa_derive::soa_zip;
-use std::path::PathBuf;
-use glam::DVec3;
 
 use winit::window::Window as WinitWindow;
 use winit::window::WindowBuilder;
@@ -14,49 +12,20 @@ use winit::event_loop::EventLoop;
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::event::{Event as WinitEvent, WindowEvent};
 
-use crate::md_sim::simulation::SimulationSettings;
-use crate::md_viz::objects::{create_ambient_light, create_directional_light};
+use crate::md_sim::SimulationSettings;
+use crate::md_sim::particle::{ParticleVec, ObjectSpec};
+
+use crate::md_viz::lights::{create_ambient_light, create_directional_light};
 use crate::md_viz::templates::{SphereTemplate, BoxTemplate, WireBoxTemplate, ObjectTemplate};
-use crate::md_viz::camera::{create_camera, CameraControl, CameraView};
+use crate::md_viz::camera::{create_camera, CameraControl};
 use crate::md_viz::video::VideoExporter;
-use crate::md_sim::particle::{ParticleVec, BoxSpec, ObjectSpec};
+use crate::md_viz::SceneSettings;
+use crate::md_viz::scene_settings::GpuResources;
 
-use serde::{Serialize, Deserialize};
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)] 
-pub struct SceneSetup {
-    pub camera: CameraView,
-    pub window_size: (u32, u32),
-    pub vid_fps: u32,
-    pub sim_box: BoxSpec,
-}
-
-impl Default for SceneSetup {
-    fn default() -> Self {
-        Self {
-            camera: CameraView::Perspective,
-            window_size: (1280, 960),
-            vid_fps: 30,
-            sim_box: BoxSpec::default(),//The sim_box_size will be overwritten with values from the Simulation config.
-        }
-    }
-}
-
-struct GpuResources {
-    ambient_light: AmbientLight,
-    directional_light: DirectionalLight,
-    simbox_template: WireBoxTemplate,
-    #[allow(dead_code)]
-    sphere_template: SphereTemplate,//Create instances which are updated starting from a single template
-    object_templates: Vec<ObjectTemplate>,//Each object gets its own template which is transformed.
-    instance_transforms: Vec<Mat4>,
-    instance_colors: Vec<Srgba>,
-}
 
 
 pub struct Scene {
-    scene_settings: SceneSetup,
+    scene_settings: SceneSettings,
     pub camera: Camera,
     pub camera_control: CameraControl,
 
@@ -73,7 +42,10 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn new(scene_settings: SceneSetup) -> Self {
+    ///------------------------------------------------------------------
+    /// Setup
+    /// -----------------------------------------------------------------
+    pub fn new(scene_settings: SceneSettings) -> Self {
         let (w, h) = scene_settings.window_size;
         let viewport = Viewport::new_at_origo(w, h);
         let camera = create_camera(viewport, scene_settings.clone());
@@ -94,7 +66,7 @@ impl Scene {
 
     /// Creates a scene by reading a config file and applying simulation overrides
     pub fn from_config(scene_config_path: PathBuf, sim_settings: &SimulationSettings) -> Self {
-        let mut settings: SceneSetup = Self::load_json(scene_config_path).unwrap_or_default();
+        let mut settings: SceneSettings = Self::load_json(scene_config_path).unwrap_or_default();
         println!("Scene Settings \n\n {:?}", settings);
 
         // Update the box_size from simulation
@@ -103,7 +75,7 @@ impl Scene {
         Self::new(settings)
     }
 
-    fn load_json(path: PathBuf) -> Result<SceneSetup, Box<dyn std::error::Error>> {
+    fn load_json(path: PathBuf) -> Result<SceneSettings, Box<dyn std::error::Error>> {
         let file = std::fs::File::open(path)?;
         let reader = std::io::BufReader::new(file);
         Ok(serde_json::from_reader(reader)?)
@@ -142,6 +114,12 @@ impl Scene {
         Ok(())
     }
 
+
+    ///-----------------------------------------------------------------------------------
+    /// Controlling rendering of graphics
+    /// ----------------------------------------------------------------------------------
+    
+    // creates and stores the initial graphic templates for rendering
     fn _init_gpu_resources(&self, context: &Context) -> Result<GpuResources, Box<dyn std::error::Error>> { 
         let simbox_template= WireBoxTemplate::new(context, self.scene_settings.sim_box);
         let sphere_template = SphereTemplate::new(context);
@@ -159,73 +137,7 @@ impl Scene {
         Ok(resources)
     }
 
-    /// This is used to update all the objects in the Scene if they need recreating. Only needed
-    /// if one is created or destroyed.
-    pub fn update_objects(&mut self, context: &Context, object_specs: &[ObjectSpec]) {
-        if let Some(resources) = &mut self.resources {
-            if resources.object_templates.len() != object_specs.len() {
-                resources.object_templates = object_specs
-                    .iter()
-                    .map(|spec| match spec {
-                        ObjectSpec::HollowBox(boxspec) => ObjectTemplate::HollowBox(BoxTemplate::new(context, *boxspec)),
-                        ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(context, *boxspec)),
-                    })
-                    .collect();
-            }
-        }
-    }
-
-
-    /// Central rendering logic used by both display() and save_frame()
-    fn render_to_target(
-        camera: &Camera,
-        resources: &mut GpuResources,
-        target: &mut RenderTarget,
-        particles: &ParticleVec,
-        objects: Option<&[ObjectSpec]>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
-
-        // Render/update particles
-        Self::update_particle_instances(camera, resources, particles);
-
-        // Gather renderable objects dynamically using a vector collection
-        let mut scene_objects: Vec<&dyn Object> = Vec::new();
-
-        // Push particles mesh
-        scene_objects.push(&resources.sphere_template.mesh);
-
-        // Render additional scene objects if present, updating their transforms/colors as needed
-        if let Some(specs) = objects {
-            for (template, spec) in resources.object_templates.iter_mut().zip(specs.iter()) {
-                match template {
-                    ObjectTemplate::HollowBox(t) => {
-                        t.push_transform_and_color(
-                            spec,
-                            &mut resources.object_instance_transforms,
-                            &mut resources.object_instance_colors,
-                        );
-                        scene_objects.push(&t.mesh);
-                    }
-                    ObjectTemplate::WireBox(t) => {
-                        t.push_transform_and_color(
-                            spec,
-                            &mut resources.object_instance_transforms,
-                            &mut resources.object_instance_colors,
-                        );
-                        scene_objects.push(&t.mesh);
-                    }
-                }
-            }
-        }
-
-        // Setup lights and execute draw call
-        let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
-        target.render(camera, scene_objects, &lights);
-        
-        Ok(())
-    }
-
+    // uses the particle data to transform the graphic template instances
     fn update_particle_instances(camera: &Camera, resources: &mut GpuResources, particles: &ParticleVec) {
         let mut transforms = std::mem::take(&mut resources.instance_transforms);
         let mut colors = std::mem::take(&mut resources.instance_colors);
@@ -267,8 +179,74 @@ impl Scene {
     }
 
 
+    /// This is used to update all the objects in the Scene if they need recreating. Only needed
+    /// if one is created, destroyed. Rebuilds if len of objects vec changes
+    pub fn update_objects(&mut self, context: &Context, object_specs: &[ObjectSpec]) {
+        if let Some(resources) = &mut self.resources {
+            if resources.object_templates.len() != object_specs.len() {
+                resources.object_templates = object_specs
+                    .iter()
+                    .map(|spec| match spec {
+                        ObjectSpec::HollowBox(boxspec) => ObjectTemplate::HollowBox(BoxTemplate::new(context, *boxspec)),
+                        ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(context, *boxspec)),
+                    })
+                    .collect();
+            }
+        }
+    }
+
+
+    /// Central rendering logic used by both display() and save_frame()
+    fn render_to_target(
+        camera: &Camera,
+        resources: &mut GpuResources,
+        target: &mut RenderTarget,
+        particles: &ParticleVec,
+        objects: Option<&[ObjectSpec]>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
+
+        // update particle graphics instances
+        Self::update_particle_instances(camera, resources, particles);
+
+        // Gather renderable objects dynamically using a vector collection
+        let mut scene_objects: Vec<&dyn Object> = Vec::new();
+
+        // Push particles mesh
+        scene_objects.push(&resources.sphere_template.mesh);
+
+        // Add additional scene objects if present, updating their transforms/colors as needed
+        if let Some(specs) = objects {
+            for (template, spec) in resources.object_templates.iter_mut().zip(specs.iter()) {
+                match template {
+                    ObjectTemplate::HollowBox(t) => {
+                        t.push_transform_and_color(spec);
+                        scene_objects.push(&t.mesh);
+                    }
+                    ObjectTemplate::WireBox(t) => {
+                        t.push_transform_and_color(spec);
+                        scene_objects.push(&t.mesh);
+                    }
+                }
+            }
+        }
+
+        // Setup lights and execute draw call
+        let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
+        target.render(camera, scene_objects, &lights);
+        
+        Ok(())
+    }
+
+  
+
+
+    ///-------------------------------------------------------------------------------------------
+    /// Outputs to window and file
+    /// ------------------------------------------------------------------------------------------
+    /// 
     /// Refresh the live window
-    pub fn display(&mut self, particles: &ParticleVec, objects: &[ObjectSpec]) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn display(&mut self, particles: &ParticleVec, objects: Option<&[ObjectSpec]>) -> Result<(), Box<dyn std::error::Error>> {
         let context = self.context.as_ref().ok_or("No context")?;
         let resources = self.resources.as_mut().ok_or("No resources")?;
         let generator = self.frame_input_generator.as_mut().ok_or("Not in windowed mode")?;
@@ -287,6 +265,53 @@ impl Scene {
         Ok(())
     }
 
+    pub fn start_recording(&mut self, path: &PathBuf, step: usize) -> Result<(), Box<dyn std::error::Error>> {
+        //Format the step with 10-digit padding
+        let step_suffix = format!("_{:010}", step);
+
+        //Create the new path with the suffix
+        let mut new_path = path.clone();
+        
+        // Extract current filename without extension
+        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+            let filename_string = format!("{}{}.mp4", file_stem, step_suffix);
+            new_path.set_file_name(filename_string);
+        } else {
+            new_path.push(format!("video{}.mp4", step_suffix));
+        }
+
+        self.video_exporter = Some(VideoExporter::new(&new_path, &self.scene_settings)?);
+        
+        Ok(())
+    }
+
+    /// Capture the current state to the video exporter
+    pub fn save_frame(&mut self, particles: &ParticleVec, objects: Option<&[ObjectSpec]>) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(ref mut exporter) = self.video_exporter {
+            let (w, h) = self.scene_settings.window_size;
+            
+            let context = self.context.as_ref().ok_or("No context")?;
+            let resources = self.resources.as_mut().ok_or("No resources")?;
+
+            let mut target = RenderTarget::screen(context, w, h);
+
+            Self::render_to_target(&self.camera,resources,&mut target, particles, objects)?;
+
+            exporter.write_frame(&target.read_color::<[u8; 4]>())?;
+        }
+        Ok(())
+    }
+
+    pub fn close(&mut self) {
+        if let Some(exporter) = self.video_exporter.take() {
+            let _ = exporter.close();
+        }
+    }
+
+    ///----------------------------------------------------------------------
+    /// Interacting with the window
+    /// ---------------------------------------------------------------------
+    /// 
     /// Poll events and update camera control
     pub fn poll_events(&mut self, event_loop: &mut EventLoop<()>) -> bool {
         let mut close_requested = false;
@@ -322,48 +347,4 @@ impl Scene {
         close_requested
     }
 
-
-    pub fn start_recording(&mut self, path: &PathBuf, step: usize) -> Result<(), Box<dyn std::error::Error>> {
-        //Format the step with 10-digit padding
-        let step_suffix = format!("_{:010}", step);
-
-        //Create the new path with the suffix
-        let mut new_path = path.clone();
-        
-        // Extract current filename without extension
-        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-            let filename_string = format!("{}{}.mp4", file_stem, step_suffix);
-            new_path.set_file_name(filename_string);
-        } else {
-            new_path.push(format!("video{}.mp4", step_suffix));
-        }
-
-        self.video_exporter = Some(VideoExporter::new(&new_path, &self.settings)?);
-        
-        Ok(())
-    }
-
-
-    /// Capture the current state to the video exporter
-    pub fn save_frame(&mut self, particles: &ParticleVec) -> Result<(), Box<dyn std::error::Error>> {
-        if let Some(ref mut exporter) = self.video_exporter {
-            let (w, h) = self.settings.window_size;
-            
-            let context = self.context.as_ref().ok_or("No context")?;
-            let resources = self.resources.as_mut().ok_or("No resources")?;
-
-          let mut target = RenderTarget::screen(context, w, h);
-
-            Self::render_to_target(&self.camera,resources,&mut target, particles)?;
-
-            exporter.write_frame(&target.read_color::<[u8; 4]>())?;
-        }
-        Ok(())
-    }
-
-    pub fn close(&mut self) {
-        if let Some(exporter) = self.video_exporter.take() {
-            let _ = exporter.close();
-        }
-    }
 }

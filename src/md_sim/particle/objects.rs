@@ -4,9 +4,20 @@ use serde::{Serialize, Deserialize};
 use glam::{DVec3, DQuat};
 
 
+#[derive(Debug, Clone, Copy)]
 pub enum ObjectSpec{
     HollowBox(BoxSpec),
     WireBox(BoxSpec),
+}
+
+impl ObjectSpec{
+    ///Returns a reference to the underlying spec e.g BoxSpec
+    pub fn get_spec(&self) -> BoxSpec {
+        match self {
+            ObjectSpec::HollowBox(boxspec) => *boxspec,
+            ObjectSpec::WireBox(boxspec) => *boxspec,
+        }
+    }
 }
 
 

@@ -69,9 +69,7 @@ pub fn main() {
     
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
-
     
-
     //-------------------------------------------------------------
     // Create simulation
     //
@@ -83,7 +81,7 @@ pub fn main() {
     //--------------------------------------------------------------
   
     let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return particles from file");
-    let objects: Vec<ObjectSpec> = load_objects(&object_path).expect("Failed to return objects from file");
+    //let objects: Vec<ObjectSpec> = load_objects(&object_path).expect("Failed to return objects from file");
 
     //
     // Feed objects in by another method to Simulation construction so that it is optional.
@@ -94,7 +92,7 @@ pub fn main() {
     // Think through what to do about display and save_frame be nice if these were optionally using objects
 
 
-    let mut sim= Simulation::new(particles, objects, SimUpdate, sim_settings.clone(), time);
+    let mut sim= Simulation::new(particles, None, SimUpdate, sim_settings.clone(), time);
     
     //----------------------------------------------------------------
     //  Graphics
@@ -105,7 +103,6 @@ pub fn main() {
     //--------------------------------------------------------------   
 
     let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);  
-    scene.update_objects(context, objects); 
     let mut event_loop = EventLoop::new(); 
     let _ = scene.view(&event_loop);
     let _ = scene.start_recording(&video_path, start_step);
@@ -113,7 +110,7 @@ pub fn main() {
     //--------------------------------------------------------------
     // Start simulation loop
     //
-    // Call scene.display() to update window, scene.save_img() to write
+    // Call scene.display() to update window, scene.save_frame() to write
     // img to file. simulation.update() to advance the simulation by one step
     //--------------------------------------------------------------
     
@@ -136,8 +133,9 @@ pub fn main() {
             scene.display(sim.get_particles(), sim.get_objects()).expect("Error updating display");
             let _ = scene.save_frame(sim.get_particles(), sim.get_objects());
 
-            //save a snapshot of particle positions etc
-            save_snapshot(&snapshot_path, step, sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+            //save a snapshot of particle positions and if present objects
+            save_particles(&snapshot_path, step, sim.get_particles(), sim.time).expect("Error saving particles to snapshot");
+            save_objects(&snapshot_path, step, sim.get_objects(), sim.time).expect("Error saving objects to snapshot");
         }
         
     }

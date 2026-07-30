@@ -24,7 +24,7 @@ use three_d::core::Srgba;
 use itertools::izip;
 
 use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec, BoxSpec};
-use crate::md_viz::SceneSetup;
+use crate::md_viz::SceneSettings;
 
 
 /// Generate all the filepaths
@@ -430,8 +430,8 @@ pub fn save_particles(
 // Graphics config
 //--------------------------------------------------------
 
-/// Loads the special json file (input/scene.json) into a SceneSetup struct which controls things like video fps, window_size.
-pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSetup, Box<dyn std::error::Error>> {
+/// Loads the special json file (input/scene.json) into a SceneSettings struct which controls things like video fps, window_size.
+pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSettings, Box<dyn std::error::Error>> {
     // Open the file in read-only mode
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);

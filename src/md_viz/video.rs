@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio, Child};
 use std::io::Write;
 use std::fs;
-use crate::md_viz::scene::SceneSetup;
+use crate::md_viz::scene::SceneSettings;
 
 pub struct VideoExporter {
     process: Child,
@@ -11,7 +11,7 @@ pub struct VideoExporter {
 }
 
 impl VideoExporter {
-    pub fn new(video_path: &PathBuf, scene_settings: &SceneSetup) -> Result<Self, Box<dyn std::error::Error>> {        
+    pub fn new(video_path: &PathBuf, scene_settings: &SceneSettings) -> Result<Self, Box<dyn std::error::Error>> {        
         if let Some(parent) = video_path.parent() {
             fs::create_dir_all(parent)?;
         }

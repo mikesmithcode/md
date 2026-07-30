@@ -13,7 +13,7 @@ use three_d::*;
 use glam::DVec3;
 
 use winit::event::{WindowEvent, MouseButton, ElementState, MouseScrollDelta};
-use crate::md_viz::scene::SceneSetup;
+use crate::md_viz::scene::SceneSettings;
 use serde::{Serialize, Deserialize};
 
 
@@ -27,7 +27,7 @@ pub enum CameraView {
 
 
 /// Creates and returns a `Camera` instance.
-pub fn create_camera(viewport: Viewport, scene_settings: SceneSetup) -> Camera {
+pub fn create_camera(viewport: Viewport, scene_settings: SceneSettings) -> Camera {
 
     match scene_settings.camera {
         CameraView::Perspective => create_perspective_camera(viewport, scene_settings.sim_box_setup.box_size),

@@ -1,14 +1,13 @@
-//! objects.rs
+//! lights.rs
 //!
-//! This module handles creation of all things in a scene other than a camera: Lights, axes, simulation box, 
-//! It is purely related to graphics
+//! This module handles creation of lights
 
 use three_d::*;
 use three_d::Srgba;
 
 
 /*-----------------------------------------------------------------------------------
-Fns to create objects
+Fns to create lights in the scene
 -------------------------------------------------------------------------------------*/
 
 /// Creates and returns a `DirectionalLight`.

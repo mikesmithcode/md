@@ -6,7 +6,7 @@
 
 
 use glam::{DVec3, Mat4 as GMat4, Vec3 as GVec3};
-use crate::md_sim::{ParticleVec, BoxSpec};
+use crate::md_sim::{ParticleVec, BoxSpec, ObjectSpec};
 use three_d::{Context, CpuMesh, Gm, InstancedMesh, Instances, Srgba, PhysicalMaterial,
     Blend, BlendEquationType, BlendMultiplierType, Cull, DepthTest,
     RenderStates, WriteMask};
@@ -19,7 +19,7 @@ pub enum ObjectTemplate {
 
 impl ObjectTemplate {
     /// Returns a reference to the underlying `three-d` object for rendering
-    pub fn as_object(&self) -> &(dyn three_d::Object + 'static) {
+    pub fn get_mesh(&self) -> &(dyn three_d::Object + 'static) {
         match self {
             ObjectTemplate::HollowBox(b) => &b.mesh,
             ObjectTemplate::WireBox(w) => &w.mesh,
@@ -153,38 +153,33 @@ impl WireBoxTemplate {
     // Helper to update instance of particle
     pub fn push_transform_and_color(
         &mut self, // Note: This must now be mutable
-        spec: &ObjectSpec,
-        transforms: &mut Vec<three_d::Mat4>,
-        colors: &mut Vec<three_d::Srgba>,
+        spec: &ObjectSpec
     ) {
-        if self.boxspec == *boxspec {
+        let boxspec = spec.get_spec();
+        //If nothing has changed ignore
+        if self.boxspec == boxspec {
             return;
         }
 
+        //otherwise update position and colour.
         let pos = boxspec.position;
         let glam_mat = GMat4::from_rotation_translation(
             glam::DQuat::from(boxspec.orientation).as_quat(),
             glam::Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32),
         );
 
-        transforms.push(glam_to_three_d(glam_mat));
+        // Update the mesh's transform directly
+        self.mesh.set_transformation(glam_to_three_d(glam_mat));
         
-        colors.push(boxspec.color);
+        // If your material/color needs updating:
+        self.mesh.material.albedo = boxspec.color;
         
-        // Update the stored specification so it doesn't process again unnecessarily 
-        self.boxspec = *boxspec; 
+        // Update the stored specification so it only triggers with a change
+        self.boxspec = boxspec; 
     }
 }
 
-fn glam_to_three_d(mat: GMat4) -> three_d::Mat4 {
-    let cols = mat.to_cols_array();
-    three_d::Mat4::from_cols(
-        three_d::Vector4::new(cols[0], cols[1], cols[2], cols[3]),
-        three_d::Vector4::new(cols[4], cols[5], cols[6], cols[7]),
-        three_d::Vector4::new(cols[8], cols[9], cols[10], cols[11]),
-        three_d::Vector4::new(cols[12], cols[13], cols[14], cols[15]),
-    )
-}
+
 /// This box has filled sides and a hollow center. If you use a box dimension a negative thickness
 /// preserves the outer dimension whilst a positive one preserves the inner.
 pub struct BoxTemplate {
@@ -285,26 +280,32 @@ impl BoxTemplate {
         Self { mesh, boxspec }
     }
 
+    // Helper to update instance of particle
     pub fn push_transform_and_color(
-        &mut self,
-        boxspec: &BoxSpec,
-        transforms: &mut Vec<three_d::Mat4>,
-        colors: &mut Vec<three_d::Srgba>,
+        &mut self, // Note: This must now be mutable
+        spec: &ObjectSpec
     ) {
-        if self.boxspec == *boxspec {
+        let boxspec = spec.get_spec();
+        //If nothing has changed ignore
+        if self.boxspec == boxspec {
             return;
         }
 
+        //otherwise update position and colour.
         let pos = boxspec.position;
         let glam_mat = GMat4::from_rotation_translation(
             glam::DQuat::from(boxspec.orientation).as_quat(),
             glam::Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32),
         );
 
-        transforms.push(glam_to_three_d(glam_mat));
-        colors.push(boxspec.color);
+        // Update the mesh's transform directly
+        self.mesh.set_transformation(glam_to_three_d(glam_mat));
         
-        self.boxspec = *boxspec;
+        // If your material/color needs updating:
+        self.mesh.material.albedo = boxspec.color;
+        
+        // Update the stored specification so it only triggers with a change
+        self.boxspec = boxspec; 
     }
 }
 
@@ -328,4 +329,17 @@ fn create_transparent_material() -> PhysicalMaterial {
         depth_test: DepthTest::Always,
     };
     mat
+}
+
+//--------------------------------------------------------------------------
+// Helpers
+//---------------------------------------------------------------------------
+fn glam_to_three_d(mat: GMat4) -> three_d::Mat4 {
+    let cols = mat.to_cols_array();
+    three_d::Mat4::from_cols(
+        three_d::Vector4::new(cols[0], cols[1], cols[2], cols[3]),
+        three_d::Vector4::new(cols[4], cols[5], cols[6], cols[7]),
+        three_d::Vector4::new(cols[8], cols[9], cols[10], cols[11]),
+        three_d::Vector4::new(cols[12], cols[13], cols[14], cols[15]),
+    )
 }

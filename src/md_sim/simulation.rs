@@ -6,11 +6,6 @@
 //! 
 
 use glam::DVec3;
-
-use serde::{Serialize, Deserialize};
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
 use std::collections::HashMap;
 use itertools::izip;
 
@@ -20,90 +15,7 @@ use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::force::CellGrid;
 use crate::md_sim::Forces;
 use crate::md_sim::Motion;
-use crate::md_sim::particle::{SimulationModel, CollisionParams};
-
-
-
-
-
-///---------------------------------------------------------
-/// These are general rather than particle specific parameters that affect the running of the simulation
-/// 
-/// 
-/// dt - timestep of the simulation
-/// sim_box_size - x,y,z dimensions of the simulation box
-/// cutoff - range of force or distance within which neighbours are defined by the cell grid / verlet in [`crate::md_sim::neighbours::CellGrid`]
-/// skin -  This is the distance beyond the cutoff in which particles are added to a particles verlet list. When any particle travels skin/2 the grid and verlet list are rebuilt.
-/// num_steps - How many steps the simulation will advance before stopping
-/// dump - Can be used to control how many steps occur before writing to a file or saving an image to the video. But must be used manually in the main loop
-/// active_ptypes - A Vec of i32 where each number represents. 
-/// 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SimulationSettings{
-    pub dt: f64,
-    pub sim_box_size: DVec3, 
-    pub periodic: [bool; 3],
-    pub cutoff: f64,
-    pub skin: f64,
-    pub start: usize,
-    pub num_steps: usize,
-    pub dump: usize,
-    pub interaction_ptypes: Vec<[u8;2]>,
-    pub model: SimulationModel,  
-}
-
-impl SimulationSettings {
-    /// Loads sim config from file and builds the active mask
-    pub fn new(path: &Path) -> Result<SimulationSettings, Box<dyn std::error::Error>> {
-        let file = File::open(path).map_err(|e| {
-            format!(
-                "\n==========================================\n\
-                Error: Couldn't find config at {}\n\
-                Details: {}\n\
-                ==========================================\n", 
-                path.display(), e
-            )
-        })?;
-        
-        let reader = BufReader::new(file);
-        let sim_settings: SimulationSettings = serde_json::from_reader(reader)?;
-
-        Ok(sim_settings)
-    }
-
-    pub fn sim_box_size_f32(&self) -> [f32; 3] {
-        self.sim_box_size.as_vec3().to_array()
-    }
-
-    
-
-    //pub fn is_head(&self, ptype: u8) -> bool {
-    //    self.head_ptypes.contains(&ptype)
-    //}
-}
-
-/// Largely used for testing
-impl Default for SimulationSettings {
-    fn default() -> Self {
-        Self {
-            dt: 0.1,
-            sim_box_size: DVec3::new(10.0, 0.1, 10.0),
-            periodic: [true;3],
-            cutoff: 1.0,
-            skin:0.2,
-            start: 0,
-            num_steps: 15,
-            dump: 1000,
-            interaction_ptypes: vec![[0,0]],
-            //head_ptypes: vec![],
-            model: SimulationModel::Solid(CollisionParams{
-                stiffness: 1000.0, 
-                damping: 50.0}),
-        }
-
-    }
-}
-
+use crate::md_sim::SimulationSettings;
 
 /// The main simulation engine
 /// 
@@ -115,6 +27,7 @@ pub struct Simulation<S>
         S: Forces + Motion,
 {
     pub particles: ParticleVec,
+    pub objects: Option<Vec<ObjectSpec>>,
     pub forces: Vec<DVec3>,
     pub torques: Vec<DVec3>,
     pub sim_update: S,
@@ -125,29 +38,14 @@ pub struct Simulation<S>
     pub molecule_map: HashMap<usize, MoleculeData>,
 }
 
-fn build_molecule_map(particles: &ParticleVec) -> HashMap<usize, MoleculeData> {
-    // group indices by mol_id
-    let mut temp_map: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (id, &mol_id) in izip!(&particles.id, &particles.molecule_id) {
-        temp_map.entry(mol_id).or_default().push(*id);
-    }
 
-    // Convert to MoleculeData - store inertia
-    let mut molecule_map = HashMap::new();
-    for (mol_id, pids) in temp_map {
-        let mol_data = MoleculeData::new(pids, particles);
-        molecule_map.insert(mol_id, mol_data);
-    }
-
-    molecule_map
-}
 
 impl<S> Simulation<S> 
     where 
         S: Forces + Motion + Sync,
     {
         /// Create a new simulation
-        pub fn new(mut particles: ParticleVec, objects: ObjectSpec, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
+        pub fn new(mut particles: ParticleVec, objects: Option<Vec<ObjectSpec>>, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
             let n = particles.len();
             let molecule_map = build_molecule_map(&particles);
             let mut cell_grid=CellGrid::new( n, &settings);
@@ -155,6 +53,7 @@ impl<S> Simulation<S>
 
             Self {
                 particles,
+                objects,
                 forces : vec![DVec3::ZERO; n],
                 torques : vec![DVec3::ZERO; n],
                 sim_update,
@@ -230,15 +129,19 @@ impl<S> Simulation<S>
             
         }
 
-        //Return read only reference to particles
         pub fn get_particles(&self)-> &ParticleVec{
             &self.particles
         }
 
-        //Return mut reference to particles
         pub fn get_mut_particles(&mut self)-> &mut ParticleVec{
             &mut self.particles
         }
+
+        pub fn get_objects(&self) -> Option<&[ObjectSpec]>{
+            self.objects.as_deref()
+        }
+
+        
 
         /// Reset the force vec to Zeros
         /// 
@@ -257,7 +160,22 @@ impl<S> Simulation<S>
     
 
 
+fn build_molecule_map(particles: &ParticleVec) -> HashMap<usize, MoleculeData> {
+    // group indices by mol_id
+    let mut temp_map: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (id, &mol_id) in izip!(&particles.id, &particles.molecule_id) {
+        temp_map.entry(mol_id).or_default().push(*id);
+    }
 
+    // Convert to MoleculeData - store inertia
+    let mut molecule_map = HashMap::new();
+    for (mol_id, pids) in temp_map {
+        let mol_data = MoleculeData::new(pids, particles);
+        molecule_map.insert(mol_id, mol_data);
+    }
+
+    molecule_map
+}
 
 
 
