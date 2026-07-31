@@ -78,43 +78,55 @@ pub struct WireBoxTemplate {
 
 impl WireBoxTemplate {
     pub fn new(context: &Context, boxspec: BoxSpec) -> Self {
+        let center = boxspec.position;
         let half_size = boxspec.box_size * 0.5;
-        let min = -half_size;
-        let max = half_size;
-        let thickness = boxspec.thickness;
-        let abs_t = thickness.abs();
+        let thickness = boxspec.thickness.abs();
 
-        let (effective_min, effective_max) = if thickness > 0.0 {
-            (min - DVec3::splat(abs_t), max + DVec3::splat(abs_t))
+        // Compute effective outer bounds including thickness
+        let (e_min, e_max) = if boxspec.thickness > 0.0 {
+            (center - half_size - DVec3::splat(thickness), center + half_size + DVec3::splat(thickness))
         } else {
-            (min, max)
+            (center - half_size, center + half_size)
         };
 
-        let strut_thickness = if thickness == 0.0 { 0.0 } else { abs_t };
-        let size = effective_max - effective_min;
+        let strut_t = if boxspec.thickness == 0.0 { 0.0 } else { thickness };
+        let span = e_max - e_min;
+        
+        // Net length of the strut (excluding corner overlaps)
+        let net_span = span;// - DVec3::splat(strut_t * 2.0);
+        let half_t = strut_t * 0.5;
 
-        let c0 = DVec3::new(effective_min.x, effective_min.y, effective_min.z);
-        let c1 = DVec3::new(effective_max.x, effective_min.y, effective_min.z);
-        let c2 = DVec3::new(effective_min.x, effective_max.y, effective_min.z);
-        let c3 = DVec3::new(effective_max.x, effective_max.y, effective_min.z);
-        let c4 = DVec3::new(effective_min.x, effective_min.y, effective_max.z);
-        let c5 = DVec3::new(effective_max.x, effective_min.y, effective_max.z);
-        let c6 = DVec3::new(effective_min.x, effective_max.y, effective_max.z);
-        let c7 = DVec3::new(effective_max.x, effective_max.y, effective_max.z);
+        // Define the base coordinates for the inner core corners
+        let x0 = e_min.x + half_t;
+        let x1 = e_max.x - half_t;
+        let y0 = e_min.y + half_t;
+        let y1 = e_max.y - half_t;
+        let z0 = e_min.z + half_t;
+        let z1 = e_max.z - half_t;
 
+        // 3. Define the 12 edge midpoints directly at the center of each strut,
+        // and scales (halved for CpuMesh::cube() which spans from -1.0 to 1.0).
         let edges = [
-            (0.5 * (c0 + c1), DVec3::new(size.x, strut_thickness, strut_thickness)),
-            (0.5 * (c1 + c3), DVec3::new(strut_thickness, size.y, strut_thickness)),
-            (0.5 * (c3 + c2), DVec3::new(size.x, strut_thickness, strut_thickness)),
-            (0.5 * (c2 + c0), DVec3::new(strut_thickness, size.y, strut_thickness)),
-            (0.5 * (c4 + c5), DVec3::new(size.x, strut_thickness, strut_thickness)),
-            (0.5 * (c5 + c7), DVec3::new(strut_thickness, size.y, strut_thickness)),
-            (0.5 * (c7 + c6), DVec3::new(size.x, strut_thickness, strut_thickness)),
-            (0.5 * (c6 + c4), DVec3::new(size.x, strut_thickness, strut_thickness)),
-            (0.5 * (c0 + c4), DVec3::new(strut_thickness, strut_thickness, size.z)),
-            (0.5 * (c1 + c5), DVec3::new(strut_thickness, strut_thickness, size.z)),
-            (0.5 * (c2 + c6), DVec3::new(strut_thickness, strut_thickness, size.z)),
-            (0.5 * (c3 + c7), DVec3::new(strut_thickness, strut_thickness, size.z)),
+            // --- X-axis aligned edges (4 bottom, 4 top) ---
+            // Y and Z are shifted to e_min/e_max faces offset by half_t
+            (DVec3::new(center.x, y0, z0), DVec3::new(net_span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(center.x, y1, z0), DVec3::new(net_span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(center.x, y0, z1), DVec3::new(net_span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(center.x, y1, z1), DVec3::new(net_span.x, strut_t, strut_t) * 0.5),
+
+            // --- Y-axis aligned edges (4 vertical bottom-to-top) ---
+            // X and Z are shifted to e_min/e_max faces offset by half_t
+            (DVec3::new(x0, center.y, z0), DVec3::new(strut_t, net_span.y, strut_t) * 0.5),
+            (DVec3::new(x1, center.y, z0), DVec3::new(strut_t, net_span.y, strut_t) * 0.5),
+            (DVec3::new(x0, center.y, z1), DVec3::new(strut_t, net_span.y, strut_t) * 0.5),
+            (DVec3::new(x1, center.y, z1), DVec3::new(strut_t, net_span.y, strut_t) * 0.5),
+
+            // --- Z-axis aligned edges (4 front-to-back) ---
+            // X and Y are shifted to e_min/e_max faces offset by half_t
+            (DVec3::new(x0, y0, center.z), DVec3::new(strut_t, strut_t, net_span.z) * 0.5),
+            (DVec3::new(x1, y0, center.z), DVec3::new(strut_t, strut_t, net_span.z) * 0.5),
+            (DVec3::new(x0, y1, center.z), DVec3::new(strut_t, strut_t, net_span.z) * 0.5),
+            (DVec3::new(x1, y1, center.z), DVec3::new(strut_t, strut_t, net_span.z) * 0.5),
         ];
 
         let local_transformations: Vec<three_d::Mat4> = edges
@@ -189,96 +201,101 @@ pub struct BoxTemplate {
 
 impl BoxTemplate {
     /// Creates a hollow box with filled faces from a BoxSpec.
-    pub fn new(context: &Context, boxspec: BoxSpec) -> Self {
-        let half_size = boxspec.box_size * 0.5;
-        let min = -half_size;
-        let max = half_size;
-        let thickness = boxspec.thickness;
-        let abs_t = thickness.abs();
+pub fn new(context: &Context, boxspec: BoxSpec) -> Self {
+    let center = boxspec.position;
+    let half_size = boxspec.box_size * 0.5;
+    let thickness = boxspec.thickness;
+    let abs_t = thickness.abs();
 
-        let (outer_min, outer_max, inner_min, inner_max) = if thickness == 0.0 {
-            (min, max, min, max)
-        } else if thickness > 0.0 {
-            (
-                DVec3::new(min.x - abs_t, min.y - abs_t, min.z - abs_t),
-                DVec3::new(max.x + abs_t, max.y + abs_t, max.z + abs_t),
-                min,
-                max,
-            )
-        } else {
-            (
-                min,
-                max,
-                DVec3::new(min.x + abs_t, min.y + abs_t, min.z + abs_t),
-                DVec3::new(max.x - abs_t, max.y - abs_t, max.z - abs_t),
-            )
-        };
+    // Compute inner and outer bounds depending on the sign of thickness,
+    // mirroring the logic pattern used for the wire box struts.
+    let (outer_min, outer_max, inner_min, inner_max) = if thickness == 0.0 {
+        let min = center - half_size;
+        let max = center + half_size;
+        (min, max, min, max)
+    } else if thickness > 0.0 {
+        // Positive thickness: nominal size is inner cavity, walls grow outward (external)
+        let inner_min = center - half_size;
+        let inner_max = center + half_size;
+        let outer_min = inner_min - DVec3::splat(abs_t);
+        let outer_max = inner_max + DVec3::splat(abs_t);
+        (outer_min, outer_max, inner_min, inner_max)
+    } else {
+        // Negative thickness: nominal size is outer boundary, walls shrink inward (internal)
+        let outer_min = center - half_size;
+        let outer_max = center + half_size;
+        let inner_min = outer_min + DVec3::splat(abs_t);
+        let inner_max = outer_max - DVec3::splat(abs_t);
+        (outer_min, outer_max, inner_min, inner_max)
+    };
 
-        let walls = [
-            // Left wall
-            (
-                0.5 * DVec3::new(outer_min.x + inner_min.x, outer_min.y + outer_max.y, outer_min.z + outer_max.z),
-                DVec3::new(inner_min.x - outer_min.x, outer_max.y - outer_min.y, outer_max.z - outer_min.z),
-            ),
-            // Right wall
-            (
-                0.5 * DVec3::new(outer_max.x + inner_max.x, outer_min.y + outer_max.y, outer_min.z + outer_max.z),
-                DVec3::new(outer_max.x - inner_max.x, outer_max.y - outer_min.y, outer_max.z - outer_min.z),
-            ),
-            // Bottom wall
-            (
-                0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + inner_min.y, outer_min.z + outer_max.z),
-                DVec3::new(outer_max.x - outer_min.x, inner_min.y - outer_min.y, outer_max.z - outer_min.z),
-            ),
-            // Top wall
-            (
-                0.5 * DVec3::new(outer_min.x + outer_max.x, outer_max.y + inner_max.y, outer_min.z + outer_max.z),
-                DVec3::new(outer_max.x - outer_min.x, outer_max.y - inner_max.y, outer_max.z - outer_min.z),
-            ),
-            // Back wall
-            (
-                0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + outer_max.y, outer_min.z + inner_min.z),
-                DVec3::new(outer_max.x - outer_min.x, outer_max.y - outer_min.y, inner_min.z - outer_min.z),
-            ),
-            // Front wall
-            (
-                0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + outer_max.y, outer_max.z + inner_min.z),
-                DVec3::new(outer_max.x - outer_min.x, outer_max.y - outer_min.y, outer_max.z - inner_min.z),
-            ),
-        ];
+    let walls = [
+        // Left wall
+        (
+            0.5 * DVec3::new(outer_min.x + inner_min.x, outer_min.y + outer_max.y, outer_min.z + outer_max.z),
+            DVec3::new(inner_min.x - outer_min.x, outer_max.y - outer_min.y, outer_max.z - outer_min.z),
+        ),
+        // Right wall
+        (
+            0.5 * DVec3::new(outer_max.x + inner_max.x, outer_min.y + outer_max.y, outer_min.z + outer_max.z),
+            DVec3::new(outer_max.x - inner_max.x, outer_max.y - outer_min.y, outer_max.z - outer_min.z),
+        ),
+        // Bottom wall
+        (
+            0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + inner_min.y, outer_min.z + outer_max.z),
+            DVec3::new(outer_max.x - outer_min.x, inner_min.y - outer_min.y, outer_max.z - outer_min.z),
+        ),
+        // Top wall
+        (
+            0.5 * DVec3::new(outer_min.x + outer_max.x, outer_max.y + inner_max.y, outer_min.z + outer_max.z),
+            DVec3::new(outer_max.x - outer_min.x, outer_max.y - inner_max.y, outer_max.z - outer_min.z),
+        ),
+        // Back wall
+        (
+            0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + outer_max.y, outer_min.z + inner_min.z),
+            DVec3::new(outer_max.x - outer_min.x, outer_max.y - outer_min.y, inner_min.z - outer_min.z),
+        ),
+        // Front wall
+        (
+            0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + outer_max.y, outer_max.z + inner_min.z),
+            DVec3::new(outer_max.x - outer_min.x, outer_max.y - outer_min.y, outer_max.z - inner_min.z),
+        ),
+    ];
 
-        let local_transformations: Vec<three_d::Mat4> = walls
-            .iter()
-            .map(|(translation, scale)| {
-                let glam_mat = GMat4::from_translation(GVec3::new(
-                    translation.x as f32,
-                    translation.y as f32,
-                    translation.z as f32,
-                )) * GMat4::from_scale(GVec3::new(
-                    scale.x as f32,
-                    scale.y as f32,
-                    scale.z as f32,
-                ));
+    let local_transformations: Vec<three_d::Mat4> = walls
+        .iter()
+        .map(|(translation, scale)| {
+            let adjusted_scale = *scale * 0.5;
 
-                glam_to_three_d(glam_mat)
-            })
-            .collect();
+            let glam_mat = GMat4::from_translation(GVec3::new(
+                translation.x as f32,
+                translation.y as f32,
+                translation.z as f32,
+            )) * GMat4::from_scale(GVec3::new(
+                adjusted_scale.x as f32,
+                adjusted_scale.y as f32,
+                adjusted_scale.z as f32,
+            ));
 
-        let mat = create_transparent_material();
-        let mesh = Gm::new(
-            InstancedMesh::new(
-                context,
-                &Instances {
-                    transformations: local_transformations,
-                    ..Default::default()
-                },
-                &CpuMesh::cube(),
-            ),
-            mat,
-        );
+            glam_to_three_d(glam_mat)
+        })
+        .collect();
 
-        Self { mesh, boxspec }
-    }
+    let mat = create_opaque_material();
+    let mesh = Gm::new(
+        InstancedMesh::new(
+            context,
+            &Instances {
+                transformations: local_transformations,
+                ..Default::default()
+            },
+            &CpuMesh::cube(),
+        ),
+        mat,
+    );
+
+    Self { mesh, boxspec }
+}
 
     // Helper to update instance of particle
     pub fn push_transform_and_color(
@@ -328,6 +345,12 @@ fn create_transparent_material() -> PhysicalMaterial {
         write_mask: WriteMask::COLOR, 
         depth_test: DepthTest::Always,
     };
+    mat
+}
+
+fn create_opaque_material() -> PhysicalMaterial {
+    let mut mat = PhysicalMaterial::default();
+    mat.albedo = Srgba::WHITE;
     mat
 }
 

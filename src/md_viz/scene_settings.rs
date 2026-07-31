@@ -8,8 +8,8 @@ use three_d::*;
 
 use crate::md_sim::BoxSpec;
 
-use crate::md_viz::camera::CameraView;
-use crate::md_viz::templates::{SphereTemplate, WireBoxTemplate, ObjectTemplate};
+use crate::md_viz::camera::MyCamera;
+use crate::md_viz::templates::{SphereTemplate, WireBoxTemplate, ObjectTemplate, BoxTemplate};
 
 
 
@@ -17,7 +17,7 @@ use crate::md_viz::templates::{SphereTemplate, WireBoxTemplate, ObjectTemplate};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)] 
 pub struct SceneSettings {
-    pub camera: CameraView,
+    pub camera: MyCamera,
     pub window_size: (u32, u32),
     pub vid_fps: u32,
     #[serde(default)]
@@ -26,8 +26,9 @@ pub struct SceneSettings {
 
 impl Default for SceneSettings {
     fn default() -> Self {
+
         Self {
-            camera: CameraView::Perspective,
+            camera: MyCamera::default(),
             window_size: (1280, 960),
             vid_fps: 30,
             sim_box: BoxSpec::default(),//The sim_box_size will be overwritten with values from the Simulation config.
@@ -40,7 +41,7 @@ impl Default for SceneSettings {
 pub struct GpuResources {
     pub ambient_light: AmbientLight,
     pub directional_light: DirectionalLight,
-    pub simbox_template: WireBoxTemplate,
+    pub simbox_template: BoxTemplate,//WireBox
     #[allow(dead_code)]
     pub sphere_template: SphereTemplate,//Create instances which are updated starting from a single template
     pub object_templates: Vec<ObjectTemplate>,//Each object gets its own template which is transformed.

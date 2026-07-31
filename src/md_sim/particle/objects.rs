@@ -21,18 +21,25 @@ impl ObjectSpec{
 }
 
 
-//------------------------------------------------------------------------------
-// BoxSpec
-// 
-// This is the configuration of a box on the simulation side. It is rendered
-// in md_viz by a BoxRenderable in md_viz::objects.rs
-//------------------------------------------------------------------------------
+///------------------------------------------------------------------------------
+/// BoxSpec
+/// 
+/// This is the configuration of a box on the simulation side. It is rendered
+/// in md_viz by a BoxRenderable in md_viz::objects.rs
+///------------------------------------------------------------------------------
 /// Configuration for a generic box-like object in the scene.
+/// 
+/// Fields:
+/// 
+/// visible - turn graphic display on and off
+/// thickness - is internal if negative but external if positive
+/// position - this coord sets the centre of the box. The axis of system is 0,0,0 in bottom, left, back corner
+/// box_size - dimensions. The axis of system is x across, y front-back, z up down 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct BoxSpec {
     pub visible: bool,
-    pub thickness: f64, //thickness is internal if negative but external if positive
+    pub thickness: f64, 
     pub position: DVec3,
     #[serde(skip)]
     pub box_size: DVec3,

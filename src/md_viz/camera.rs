@@ -4,18 +4,54 @@
 //! You have two choices: orthographic (distance doesn't matter, perfect for 2D in 3D scene) and perspective (things further away look smaller) accessed as options on an enum. You can interact with
 //! the view using your mouse: zoom in and out with the wheel, rotate by holding down left button and dragging. This live camera only works on the live window not on the headless images. For these the view is set at compile time. You'd need to update the config. Changes in the live window print details to the terminal so you can use this to figure out what you want.
 //! 
-
-
-
 use three_d::{Camera, Vector3};
 use three_d::InnerSpace;
 use three_d::*;
+
 use glam::DVec3;
 
 use winit::event::{WindowEvent, MouseButton, ElementState, MouseScrollDelta};
 use crate::md_viz::SceneSettings;
 use serde::{Serialize, Deserialize};
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MyCamera{
+    pub cam_type: CameraView,
+    pub fov: f32,
+    #[serde(with="vec3_serde")]
+    pub rel_pos: Vec3,
+    #[serde(with="vec3_serde")]
+    pub up: Vec3, 
+}
+
+impl Default for MyCamera{
+    fn default()-> Self{
+        Self{
+            cam_type: CameraView::Perspective,
+            fov: 45.0,
+            rel_pos: Vec3::new(0.0, 0.25, 0.0),
+            up: Vec3::new(0.0, 0.0, 1.0)
+        }
+    }
+}
+
+// A tiny reusable module to handle the conversion under the hood
+mod vec3_serde {
+    use super::Vec3;
+    use serde::{Serialize, Deserialize, Serializer, Deserializer};
+
+    pub fn serialize<S>(vec: &Vec3, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        [vec.x, vec.y, vec.z].serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec3, D::Error>
+    where D: Deserializer<'de> {
+        let arr = <[f32; 3]>::deserialize(deserializer)?;
+        Ok(Vec3::new(arr[0], arr[1], arr[2]))
+    }
+}
 
 
 /// Enum used to switch between different camera perspectives.
@@ -25,24 +61,23 @@ pub enum CameraView {
     Orthographic,
 }
 
-
 /// Creates and returns a `Camera` instance.
 pub fn create_camera(viewport: Viewport, scene_settings: SceneSettings) -> Camera {
 
-    match scene_settings.camera {
-        CameraView::Perspective => create_perspective_camera(viewport, scene_settings.sim_box.box_size),
-        CameraView::Orthographic => create_orthographic_camera(viewport, scene_settings.sim_box.box_size),
+    match scene_settings.camera.cam_type {
+        CameraView::Perspective => create_perspective_camera(viewport, scene_settings),
+        CameraView::Orthographic => create_orthographic_camera(viewport, scene_settings),
     }
-
-    
 }
 
 ///Create a camera that has perspective. 
 /// 
 /// This is useful for viewing and rotating around a 3D scene
 /// The default here is that +ve x is to the right, +ve y is into the page, +ve z is upwards on the page.
-fn create_perspective_camera(viewport: Viewport, sim_box_size: DVec3) -> Camera {
-    // 1. Cast DVec3 (f64) components to f32 for rendering math
+fn create_perspective_camera(viewport: Viewport, scene_settings: SceneSettings) -> Camera {
+    let sim_box_size = scene_settings.sim_box.box_size;
+
+    // Cast DVec3 (f64) components to f32 for rendering math
     let dim_x = sim_box_size.x as f32;
     let dim_y = sim_box_size.y as f32;
     let dim_z = sim_box_size.z as f32;
@@ -52,30 +87,32 @@ fn create_perspective_camera(viewport: Viewport, sim_box_size: DVec3) -> Camera 
     let buffered_y = 1.1 * dim_y;
     let buffered_z = 1.1 * dim_z;
 
-    let centre = vec3(dim_x * 0.5, dim_y * 0.5, dim_z * 0.5);
+    let centre = Vector3::new(dim_x * 0.5, dim_y * 0.5, dim_z * 0.5);
     
-    let fov_deg = 45.0;
+    let fov_deg = scene_settings.camera.fov;
     let fov_rad = fov_deg * std::f32::consts::PI / 180.0;
     let aspect = viewport.width as f32 / viewport.height as f32;
 
-    // 2. Calculate distance based on vertical (Y) and horizontal (X) extents
+    // Calculate distance based on vertical (Y) and horizontal (X) extents
     let dist_y = (buffered_y * 0.5) / (fov_rad * 0.5).tan();
     
     // Adjust horizontal FOV based on aspect ratio
-    let horizontal_fov_rad = 2.0 * ((fov_rad * 0.5).tan() * aspect).atan();
+    let horizontal_fov_rad: f32 = 2.0 * ((fov_rad * 0.5).tan() * aspect).atan();
     let dist_x = (buffered_x * 0.5) / (horizontal_fov_rad * 0.5).tan();
 
-    // 3. Take the max distance and add half the depth (Z) to clear the front face
+    // Take the max distance and add half the depth (Z) to clear the front face
     let base_distance = dist_y.max(dist_x);
     let eye_distance = (base_distance + (buffered_z * 0.5)) * 1.1; // 10% extra padding
 
-    let eye_pos = centre + vec3(0.0, -eye_distance, 0.0);
+    let eye_pos = centre + scene_settings.camera.rel_pos;//Vector3::new(0.0, -eye_distance, 0.0);
+
+    let up = Vector3::new(0.0, 0.0, 1.0);
 
     Camera::new_perspective(
         viewport,
         eye_pos,
         centre,
-        vec3(0.0, 0.0, 1.0), 
+        up,
         degrees(fov_deg),
         0.01,                   
         eye_distance + buffered_z + 10.0, 
@@ -86,7 +123,9 @@ fn create_perspective_camera(viewport: Viewport, sim_box_size: DVec3) -> Camera 
 /// 
 /// This has no perspective. Can be useful if you want to view a 2D simulation or
 /// 3D with no changes in apparent size with depth.
-fn create_orthographic_camera(viewport: Viewport, sim_box_size: DVec3) -> Camera {
+pub fn create_orthographic_camera(viewport: Viewport, scene_settings: SceneSettings) -> Camera {
+    let sim_box_size = scene_settings.sim_box.box_size;
+
     let dim_x = sim_box_size.x as f32;
     let dim_y = sim_box_size.y as f32;
     let dim_z = sim_box_size.z as f32;
@@ -94,24 +133,45 @@ fn create_orthographic_camera(viewport: Viewport, sim_box_size: DVec3) -> Camera
     let x_mid = dim_x * 0.5;
     let y_mid = dim_y * 0.5;
     let z_mid = dim_z * 0.5;
-    let centre = vec3(x_mid, y_mid, z_mid);
     
-    // Find the largest dimension to set the initial zoom level
     let max_dim = dim_x.max(dim_y).max(dim_z);
+        
+    let rel_pos = scene_settings.camera.rel_pos;
+    // Z is up
+    let up = scene_settings.camera.up;//Vector3::new(0.0, 0.0, 1.0);
+    let centre = Vector3::new(x_mid, y_mid, z_mid);
+    let position = centre + rel_pos;//Vector3::new(x_mid, y_mid + distance, z_mid);
+
     
-    // Initial height: 1.5x the largest dimension ensures the box fits
-    let camera_height_units = max_dim * 1.5; 
     
-    Camera::new_orthographic(
+    let z_near: f32;
+    let z_far: f32;
+
+    let _max_axis = if rel_pos.x >= rel_pos.y && rel_pos.x >= rel_pos.z {
+        z_near = position.x;
+        z_far = x_mid - dim_x;    
+    } else if rel_pos.y >= rel_pos.z {
+        z_near = position.y;
+        z_far = y_mid - dim_y;  
+    } else {
+        z_near = position.z;
+        z_far = z_mid - dim_z;  
+    }; //  
+
+    let screen_scaling = 4.0;
+    let padding_factor=1.20;
+
+    let camera = Camera::new_orthographic(
         viewport,
-        // Place the eye directly in front of the centre along the Z-axis
-        vec3(x_mid, y_mid, max_dim * 2.5), 
-        centre,                    // Look at the centre of the box
-        vec3(0.0, 0.0, 1.0), // Up direction
-        camera_height_units,
-        -max_dim * 10.0,     // Near plane
-        max_dim * 10.0,      // Far plane
-    )
+        position,
+        centre,
+        up,
+        max_dim*screen_scaling*padding_factor,
+        z_near,
+        z_far
+    );
+    
+    camera
 }
 
 /// Creates and returns an `OrbitControl` for camera manipulation.

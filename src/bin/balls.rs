@@ -41,8 +41,8 @@ impl Forces for SimUpdate{
 
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3,DVec3){
-        (force, torque)=add_granular_collision(i, j, particles, force, torque, settings);
-        force = add_coulomb(i,j, particles, force, settings);
+        //(force, torque)=add_granular_collision(i, j, particles, force, torque, settings);
+        //force = add_coulomb(i,j, particles, force, settings);
         (force, torque)
     }
 

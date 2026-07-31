@@ -71,6 +71,7 @@ impl Scene {
 
         // Update the box_size from simulation
         settings.sim_box.box_size = sim_settings.sim_box_size;
+        settings.sim_box.position = sim_settings.sim_box_size*0.5;
 
         Self::new(settings)
     }
@@ -121,7 +122,7 @@ impl Scene {
     
     // creates and stores the initial graphic templates for rendering
     fn _init_gpu_resources(&self, context: &Context) -> Result<GpuResources, Box<dyn std::error::Error>> { 
-        let simbox_template= WireBoxTemplate::new(context, self.scene_settings.sim_box);
+        let simbox_template= BoxTemplate::new(context, self.scene_settings.sim_box);//WireBox
         let sphere_template = SphereTemplate::new(context);
         let object_templates = vec![];
 

@@ -1,5 +1,10 @@
   {
-    "camera": "Perspective",
+    "camera": {
+      "cam_type": "Orthographic",
+      "fov": 45.0,
+      "rel_pos": [0.0, 0.25, 0.0], 
+      "up":[0.0, 0.0, 1.0]
+      },
     "window_size": [1280, 960],
     "vid_fps": 30,
     "sim_box": {

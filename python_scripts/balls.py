@@ -24,8 +24,8 @@ base_particle = {
         "molecule_id": 0, 
         "ptype": 0,
         "x" : 0.025,
-        "y" : 0.005,
-        "z" : 0.005,
+        "y" : 0.00,
+        "z" : 0.00,
         "rel_x": 0.0,
         "rel_y": 0.0,
         "rel_z": 0.0,
@@ -35,9 +35,9 @@ base_particle = {
         "wx" : 0.0,
         "wy" : 0.0,
         "wz" : 0.0,
-        "radius" : 0.005,
+        "radius" : 0.0005,
         "mass" : 5.2E-4,#density 1000kgm^-3
-        "charge" : 1.0E-9,
+        "charge" : 0.0E-9,
         "r": 255.0,
         "g": 0.0,
         "b" : 0.0,
@@ -48,7 +48,7 @@ base_particle = {
 #particles
 particle = base_particle.copy()
 particle2 = base_particle.copy()
-particle["z"] = 0.02
+particle["z"] = 0.049999
 particle["wy"] = 0.0
 particle["molecule_id"] = 0
 #particle["x"] += 0.0005
@@ -56,7 +56,7 @@ id += 1
 particle2["id"] = id
 particle2["molecule_id"] = id
 particle2["ptype"] = 0
-particle2["charge"]=-1.0E-9
+particle2["charge"]=-0.0E-9
 
 
 
