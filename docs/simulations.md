@@ -1,6 +1,11 @@
 ## Summary of simulations
 
-1. silo
+1. 2d_rotation
+
+Two particles which each contain a non-centred charge. One falling onto the other. The bottom one is set as immobile but rotating. The particles can rotate and interact with loss and friction. The top particle falls under gravity. ptypes -> Moving particle = 0, charge associated with moving particle = 2, static particle = 1, charge associated with static particle = 3. Uses the SolidFriction Model. "interaction_ptypes" specified in the config are those particles which respond to forces on them. 
+
+
+2. silo
 
 This is a 2d simulation using particles with no friction, rotation etc just inelastic collisions. The hopper is made of particles with sloped boundaries made of particles with ptype=1. The bottom of the silo is horizontal made of particles with ptype=2. A square grid of particles (ptype=0) is initially suspended above the hopper and then falls under gravity. One could perhaps in future then remove the bottom particles and watch things flow out. 
 
@@ -20,9 +25,7 @@ One ball bouncing on top of another stationary ball. Can be used to estimate coe
 
 An implementation of active brownian particles. Overlap is controlled with a Weeks-Chandler-Andersen potential (Lennard-Jones with a cutoff at the minimum). The particles have a swim speed v0, a translational noise controlled by Dt and a gaussian angular noise. The angular diffusion Dr is related to the translation Dt by Dr = 3.0*Dt/(4.0 * r**2). This should produce MIPs like behaviour for high densities, low angular noise / high swim speed.
 
-5. 2d_rotation
-
-Two particles. One falling onto the other. The bottom one is set as immobile. The particles can rotate and interact with loss and friction. The top particle falls under gravity. ptypes -> Moving particle = 0, charge associated with moving particle = 2, static particle = 1, charge associated with static particle = 3. Uses the SolidFriction Model. "active_ptypes" specified in the config are those particles which respond to forces on them. Specifying that a particle ptype is immobile in update_ptype_no_forces means that any forces calculated on these particles are set to zero. This means they don't move in response to forces.
+5
 
 
 ## Understanding config files

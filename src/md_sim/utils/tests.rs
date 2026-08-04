@@ -1,5 +1,3 @@
-
-
 use super::*;
 use tempfile::tempdir;
 use glam::{DVec3, DQuat};
@@ -43,7 +41,7 @@ fn test_check_delta() {
 
 #[test]
 fn test_filepath()-> Result<(), Box<dyn std::error::Error>>{
-    let [sim_config_path, _scene_config_path, _snapshot_path, _video_path] = filepaths("test.rs");
+    let [sim_config_path, _scene_config_path, _object_path, _particle_path,_video_path] = filepaths("test.rs");
 
     assert_eq!(sim_config_path, Path::new("input").join("test.json"));
 
@@ -51,7 +49,7 @@ fn test_filepath()-> Result<(), Box<dyn std::error::Error>>{
 }
 
 #[test]
-fn test_save_and_load_snapshot() -> Result<(), Box<dyn std::error::Error>> {
+fn test_save_and_load_particles() -> Result<(), Box<dyn std::error::Error>> {
     // Setup temporary workspace
     let dir = tempdir()?;
     let dir_path = dir.path();
@@ -78,13 +76,13 @@ fn test_save_and_load_snapshot() -> Result<(), Box<dyn std::error::Error>> {
     let time = 0.5;
 
     // Test saving
-    save_snapshot(dir_path, step, &particles, time)?;
+    save_particles(dir_path, step, &particles, time)?;
 
     // Test loading specific file
-    let file_name = format!("snapshot_{:010}.parquet", step);
+    let file_name = format!("particles_{:010}.parquet", step);
     let file_path = dir_path.join(file_name);
-    let (loaded_particles, loaded_time) = load_snapshot(&file_path)?;
-
+    let (loaded_particles, loaded_time) = load_particles(&file_path)?;
+    
     // Checks
     assert_eq!(loaded_particles.len(), 1);
     assert_eq!(loaded_particles.id[0], 1);
@@ -95,7 +93,7 @@ fn test_save_and_load_snapshot() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn test_load_latest_snapshot() -> Result<(), Box<dyn std::error::Error>> {
+fn test_load_latest_particles() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
     let dir_path = dir.path();
     
@@ -119,11 +117,11 @@ fn test_load_latest_snapshot() -> Result<(), Box<dyn std::error::Error>> {
             ref_pos: DVec3::ZERO,
         });
 
+    
+    save_particles(dir_path, 1, &particles, 0.1)?;
+    save_particles(dir_path, 10, &particles, 1.0)?; 
 
-    save_snapshot(dir_path, 1, &particles, 0.1)?;
-    save_snapshot(dir_path, 10, &particles, 1.0)?; 
-
-    let (_, latest_step, latest_time) = load_latest_snapshot(dir_path)?;
+    let (_, latest_step, latest_time) = load_latest_particles(dir_path)?;
 
     //Check loads latest
     assert_eq!(latest_step, 10);

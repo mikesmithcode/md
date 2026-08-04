@@ -346,6 +346,7 @@ pub fn load_latest_particles(
             let step = name.strip_prefix("particles_")?
                            .strip_suffix(".parquet")?
                            .parse::<usize>().ok()?;
+
             Some((entry.path(), step))
         })
         .max_by_key(|&(_, step)| step) // Find the entry with the highest step
@@ -411,12 +412,13 @@ pub fn save_particles(
     )?;
 
     // Write to Parquet (with temp file for safety)
-    let filename = format!("snapshot_{:010}.parquet", step);
-    let temp_filename = format!("snapshot_{:010}.parquet.tmp", step);
+    let filename = format!("particles_{:010}.parquet", step);
+    let temp_filename = format!("particles_{:010}.parquet.tmp", step);
+    
 
     let temp_path = dir_path.join(&temp_filename);
     let final_path = dir_path.join(&filename);
-
+    
     // Write to temporary file first with metadata
     {
         let file = std::fs::File::create(&temp_path)?;

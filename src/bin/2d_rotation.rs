@@ -43,7 +43,7 @@ impl Forces for SimUpdate{
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3,DVec3){
         (force, torque)=add_granular_collision(i, j, particles, force, torque, settings);
-        //force = add_coulomb(i,j, particles, force, settings);
+        force = add_coulomb(i,j, particles, force, settings);
         (force, torque)
     }
 
@@ -84,14 +84,9 @@ pub fn main() {
     let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return particles from file");
     //let objects: Vec<ObjectSpec> = load_objects(&object_path).expect("Failed to return objects from file");
     
-    // Feed objects in by another method to Simulation construction so that it is optional.
-    // Create a method in Simulation to return a read only ref to objects
-    // Create an optional method in Motion trait that allows you to update the position of objects.
-    // Create an optional method in Forces trait which allows particles and objects to interact.
-    // Consider whether any speed up required (ie lots of particles never anywhere near object) Create a list of particles near an object which is rebuilt when particles move too far
-    // Think through what to do about display and save_frame be nice if these were optionally using objects
-
-
+    //----------------------------------------------------------------------------
+    //Initialise the simulation
+    //----------------------------------------------------------------------------
     let mut sim= Simulation::new(particles, None, SimUpdate, sim_settings.clone(), time);
     
     //----------------------------------------------------------------

@@ -47,7 +47,10 @@ fn test_total_ang_momentum(){
 //-------------------------------------------------------------------------------
 // Tests geometry.rs
 // -----------------------------------------------------------------------------
+#[test]
+fn test_molecule_data(){
 
+}
 
 #[test]
 fn test_calculate_com(){
@@ -87,3 +90,18 @@ fn test_particle_new() {
     assert_eq!(particle.mass, mass);
 }
 
+//-------------------------------------------------------------------
+// Test Objects
+//---------------------------------------------------------
+
+#[test]
+fn test_create_boxspec(){
+    let object = BoxSpec::new(0 as usize, DVec3::new(1.0,1.0,1.0), thickness=-0.01);
+
+    assert_eq!(object.id, id);
+    assert_eq!(particle.position, position);
+    assert_eq!(particle.velocity, velocity);
+    assert_eq!(particle.color, color);
+    assert_eq!(particle.radius, radius);
+    assert_eq!(particle.mass, mass);
+}

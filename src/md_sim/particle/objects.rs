@@ -38,6 +38,7 @@ impl ObjectSpec{
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct BoxSpec {
+    pub id: usize,
     pub visible: bool,
     pub thickness: f64, 
     pub position: DVec3,
@@ -52,6 +53,7 @@ pub struct BoxSpec {
 impl Default for BoxSpec {
     fn default() -> Self {
         Self {
+            id: 0,
             visible: true,
             thickness: 0.1,
             position: DVec3::ZERO,
@@ -63,8 +65,9 @@ impl Default for BoxSpec {
 }
 
 impl BoxSpec {
-    pub fn new(box_size: DVec3, thickness: f64) -> Self {
+    pub fn new(id: usize, box_size: DVec3, thickness: f64) -> Self {
         Self {
+            id,
             box_size,
             thickness,
             ..Default::default()

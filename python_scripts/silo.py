@@ -10,11 +10,11 @@ import sys
 print(f"DEBUG: Using Python at {sys.executable}")
 import polars as pl
 
-path_to_snapshots = "output/silo/snapshots/"
+path_to_snapshots = "output/silo/particles/"
 
 os.makedirs(path_to_snapshots, exist_ok=True)
 root_path = Path(__file__).parent.parent
-filepath = root_path.joinpath(path_to_snapshots,  "snapshot_0000000000.parquet")
+filepath = root_path.joinpath(path_to_snapshots,  "particles_0000000000.parquet")
 
 config, snapshot_filepath = get_config(__file__)
 box = config["sim_box_size"]

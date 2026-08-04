@@ -1,68 +1,62 @@
+
 /// Explanation of simulation
 /// 
-/// Silo consists of a 2D hopper with diagonal walls and a flat bottom. We then drop a square lattice
-/// of balls from above into it and watch everything slosh around.
+/// Demo for active brownian particles
+
 
 
 use winit::event_loop::EventLoop;
 use glam::DVec3;
 use std::collections::HashMap;
 
-// Import everything from your md_viz library
-use md::md_viz::scene::Scene;
 
 // Imports from simulation library
+use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
 use md::md_sim::{Simulation, SimulationSettings, Forces, Motion, ParticleVec};
-use md::md_sim::force::{add_weight, add_granular_collision};
-use md::md_sim::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
-use md::md_sim::utils::{filepaths, save_snapshot, load_latest_snapshot};
+use md::md_sim::force::{add_weeks_chandler_andersen, add_active_force};
+use md::md_sim::motion::update_abps;
 use md::md_sim::particle::MoleculeData;
+use md::md_viz::scene::Scene;
 
 
 pub struct SimUpdate;
 
 impl Forces for SimUpdate{
-    // Default implementation is true, set to false if not using
-    fn has_pair_forces(&self)-> bool {
-        true
-    }
-    // Default implementation is true set to false if not using
-    fn has_single_forces(&self)-> bool {
-        true
-    }
 
 
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
-        if particles.ptype[i] == 0{
-            force=add_weight(i, force, particles);
-        }
-        (force, _torque)
+    fn update_single_forces(&self,i:usize, force: DVec3, torque: DVec3, particles: &ParticleVec, settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
+       add_active_force(i, force, particles, settings);
+       (force, torque)
     }
 
     // forces that operate between pairs of particles
-    fn update_pair_forces(&self,i: usize,j: usize,mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
-        (force, torque)=add_granular_collision(i, j, particles, force, torque, settings);
-        (force, torque)
+    fn update_pair_forces(&self,i: usize,j: usize,force: DVec3, _torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
+        add_weeks_chandler_andersen(i, j, particles, force, settings);
+        (force, _torque)
     }
 
 }
 
+
+
+/// Add any changes to the motion e.g particles changing size, being created or disappearing. Then integrate the equations of motion.
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
-        integrate_singleparticle_update(forces, particles, settings);
-    }
-    fn correct_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>) {
-        integrate_singleparticle_correct(forces, particles, settings);
+    fn update_motion(&self, forces: &[DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
+        if forces.iter().all(|&f| f == DVec3::ZERO) {
+            return;
+        }
+        update_abps(forces, particles, settings);    
     }
 }
+
 
 
 
 pub fn main() {    
 
-    // Construct filepaths
-    let [sim_config_path, scene_config_path, snapshot_path, video_path] = filepaths(file!());
+    // Construct filepaths from script name.
+    let [sim_config_path, scene_config_path, object_path, particle_path, video_path] = filepaths(file!());
     
 
     //------------------------------------------------------------
@@ -70,7 +64,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (_particles, start_step, mut _time) = load_latest_snapshot(&snapshot_path).expect("Failed to return latest snapshot");
+    let (_particles, start_step, mut _time) = load_latest_particles(&particle_path).expect("Failed to return latest snapshot");
 
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
@@ -78,14 +72,17 @@ pub fn main() {
     //----------------------------------------------------------------
     //  Graphics
     //
-    //  event_loop and scene.init_window(&event_loop) for live display. Optional video output.
-    //  scene.init_headless() for headless video 
-    //  Call scene.display() to update window, scene.save_img() to write
+    //  Graphics are handled by a Scene struct.
+    //  For any graphics you need an event_loop and scene.view() for live display or scene.background() for hidden. 
+    //  Optional video output requires you to scene.start_recording()
+    //
+    //  Once in your main loop you can update display with scene.display() and add a frame to the video with scene.save_frame()
     //--------------------------------------------------------------   
 
     let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);   
     let mut event_loop = EventLoop::new(); 
     let _ = scene.view(&event_loop);
+    //let _ = scene.background(&event_loop);
     let _ = scene.start_recording(&video_path, start_step);
 
     //-------------------------------------------------------------
