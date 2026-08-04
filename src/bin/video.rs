@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use glob::glob;
 use winit::event_loop::EventLoop;
 
-use md::md_sim::utils::{filepaths, load_snapshot};
+use md::md_sim::utils::{filepaths, load_particles};
 use md::md_viz::scene::Scene;
 use md::md_sim::SimulationSettings;
 
@@ -17,7 +17,7 @@ fn main(){
 
     let sim_name = std::env::args().nth(1).expect("Must supply a simulation name");
 
-    let [sim_config_path, scene_config_path, _snapshot_path, video_path] = filepaths(&sim_name);
+    let [sim_config_path, scene_config_path, object_snapshot_path,_particle_snapshot_path, video_path] = filepaths(&sim_name);
     
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
     let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);
@@ -32,8 +32,8 @@ fn main(){
         entries.sort(); 
         
         for entry in entries{
-            if let Ok((particles, _)) =load_snapshot(&entry){
-                scene.save_frame(&particles).expect("Error saving frame");            }
+            if let Ok((particles, _)) =load_particles(&entry){
+                scene.save_frame(&particles, None).expect("Error saving frame");            }
             
         }
     }

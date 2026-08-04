@@ -41,7 +41,7 @@ impl Default for SceneSettings {
 pub struct GpuResources {
     pub ambient_light: AmbientLight,
     pub directional_light: DirectionalLight,
-    pub simbox_template: BoxTemplate,//WireBox
+    pub simbox_template: WireBoxTemplate,
     #[allow(dead_code)]
     pub sphere_template: SphereTemplate,//Create instances which are updated starting from a single template
     pub object_templates: Vec<ObjectTemplate>,//Each object gets its own template which is transformed.

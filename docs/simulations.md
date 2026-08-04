@@ -29,4 +29,5 @@ Two particles. One falling onto the other. The bottom one is set as immobile. Th
 
 - ptype is used to indicate different types of particles
 - interaction_ptypes contains a list of interaction pairs:
-    [[0,0],[0,1],[0,2],[1,2]] means 0 is active and will respond to forces from other 0's, 1 and 2 and 1 is active and will respond to forces from 2 but as listed will not respond to forces from 0s or 1s but because it is first it will respond to single body forces such as gravity. 2 is never first so it is an inactive particle and will be static and do nothing except exert forces on others.
+    [[0,0],[0,1],[0,2],[1,2]] means 0 will respond to forces from other 0's, 1 and 2 and 1 will respond to forces from 2 but as listed will not respond to forces from 0s or 1s. but because it is first it will respond to single body forces such as gravity. 2 is never first so it is an inactive particle and will be static and do nothing except exert forces on others. The CellGrid uses this info to make sure that only pairs that interact are sent to the force calcs for interacting pairs. You can refine this further inside the funcs with an if statement. single_forces need to be refined inside the function to work out which forces apply to which types of particles.
+

@@ -47,7 +47,8 @@ use crate::md_sim::utils::check_delta;
 /// # Periodic Boundaries
 ///
 /// * **Minimum Image Convention:** Automatically handles periodic wrapping via `check_delta` 
-///   to ensure interactions occur over the shortest path across boundaries.
+///   to ensure interactions occur over the shortest path across boundaries. check_delta handles
+///   whether a boundary is periodic or not and changes behaviour accordingly.
 ///
 /// # Performance
 ///
@@ -118,7 +119,7 @@ pub fn add_granular_collision(i: usize, j: usize, particles: &ParticleVec, mut f
     (force, torque)
 }
 
-/// This implements the WCA between particles i and j. 
+/// This implements the Weeks Chandler Andersen model between particles i and j. 
 /// 
 /// WCA is a truncated lennards-Jones potential that stops at the minimum of the potential.
 pub fn add_weeks_chandler_andersen(i: usize,j: usize, particles: &ParticleVec, mut force: DVec3,settings: &SimulationSettings)->DVec3{
@@ -159,7 +160,10 @@ pub fn add_weeks_chandler_andersen(i: usize,j: usize, particles: &ParticleVec, m
     force
 }
 
-
+/// Coulomb interaction
+/// 
+/// Applies the Coulomb force $$(1/4{\pi}{\epsilon_{0}})q_{1}q_{2}/d^{2}$$. This applies the force only to particle i. The reverse
+/// is handled if the interaction [j,i] is specified in the interaction_ptypes.
 pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3,_settings: &SimulationSettings)-> DVec3{
     const EPS0: f64 = 8.85418782e-12;
 

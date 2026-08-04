@@ -122,7 +122,7 @@ impl Scene {
     
     // creates and stores the initial graphic templates for rendering
     fn _init_gpu_resources(&self, context: &Context) -> Result<GpuResources, Box<dyn std::error::Error>> { 
-        let simbox_template= BoxTemplate::new(context, self.scene_settings.sim_box);//WireBox
+        let simbox_template= WireBoxTemplate::new(context, self.scene_settings.sim_box);//WireBox
         let sphere_template = SphereTemplate::new(context);
         let object_templates = vec![];
 

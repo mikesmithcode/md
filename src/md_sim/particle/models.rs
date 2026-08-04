@@ -1,8 +1,9 @@
+//! SimulationModel defines the structure of the file to be read in which may be different in different simulations
+//! 
+//! The json tells serde what variant it should use.
+
 use serde::{Serialize, Deserialize};
 
-/// SimulationModel defines the structure of the file to be read in which may be different in different simulations
-/// 
-/// The json tells serde what variant it should use.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum SimulationModel{

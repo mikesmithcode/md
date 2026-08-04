@@ -1,3 +1,31 @@
+//!SimulationSettings
+//! 
+//! These settings are general rather than particle specific parameters that affect the running of the simulation
+//! The SimulationSettings are loaded predominantly from the input/<sim_name>.json file which looks like this:
+//! 
+//! ```json
+//!   {
+//!  "dt": 1e-5,
+//!  "sim_box_size": [0.05, 0.01, 0.05],
+//!  "periodic": [true,true,true],
+//!  "cutoff": 0.025,
+//!  "skin": 0.002,
+//!  "start": 0,
+//!  "num_steps": 50000,
+//!  "dump": 100,
+//!  "interaction_ptypes": [[0,0]],
+//!  "model": {
+//!    "type": "SolidFriction",
+//!    "stiffness": 6650.0,
+//!    "damping": 2.97,
+//!    "mu": 0.4
+//!  }
+//! }
+//!  ```
+//! 
+
+
+
 use glam::DVec3;
 use serde::{Serialize, Deserialize};
 use std::fs::File;
@@ -8,8 +36,7 @@ use crate::md_sim::particle::{SimulationModel, CollisionParams};
 
 
 ///---------------------------------------------------------
-/// These are general rather than particle specific parameters that affect the running of the simulation
-/// 
+/// Definitions of SimulationSettings
 /// 
 /// dt - timestep of the simulation
 /// sim_box_size - x,y,z dimensions of the simulation box
@@ -21,7 +48,7 @@ use crate::md_sim::particle::{SimulationModel, CollisionParams};
 /// dump - Can be used to control how many steps occur before writing to a file or saving an image to the video. But must be used manually in the main loop
 /// interactive_ptypes - A Vec of 2 x i32 arrays where each number represents an interaction between particles of ptype [1,2] means ptype 1 will experience a force from ptype 2. This does 
 /// not imply reciprocity. If you want that specify [1,2],[2,1]. This is used to optimise the particle neighbour lists to speed everything up.
-/// model - used to try and get additional parameters for different types of simulation into the simulation. 
+/// model - used to try and get additional parameters for different types of simulation into the simulation. See [`SimulationModel`].
 /// 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimulationSettings{
@@ -55,16 +82,6 @@ impl SimulationSettings {
 
         Ok(sim_settings)
     }
-
-    pub fn sim_box_size_f32(&self) -> [f32; 3] {
-        self.sim_box_size.as_vec3().to_array()
-    }
-
-    
-
-    //pub fn is_head(&self, ptype: u8) -> bool {
-    //    self.head_ptypes.contains(&ptype)
-    //}
 }
 
 /// Largely used for testing

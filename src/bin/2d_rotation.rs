@@ -1,7 +1,6 @@
-
-/// Explanation of simulation
-/// 
-/// We have two balls with buried charges. We drop one on the other.
+//! Explanation of simulation
+//! 
+//! We have two balls with buried charges. We drop one on the other.
 
 
 use winit::event_loop::EventLoop;
@@ -35,14 +34,16 @@ impl Forces for SimUpdate{
 
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, mut force: DVec3,torque:DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
-        //force = add_weight(i, force, particles);
+        if particles.ptype[i] == 0{
+            force = add_weight(i, force, particles);
+        }
         (force, torque)
     }
 
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3,DVec3){
         (force, torque)=add_granular_collision(i, j, particles, force, torque, settings);
-        force = add_coulomb(i,j, particles, force, settings);
+        //force = add_coulomb(i,j, particles, force, settings);
         (force, torque)
     }
 
@@ -128,7 +129,6 @@ pub fn main() {
             }
             
             //Handle graphics
-            //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img");
             scene.display(sim.get_particles(), sim.get_objects()).expect("Error updating display");
             //let _ = scene.save_frame(sim.get_particles(), sim.get_objects());
 

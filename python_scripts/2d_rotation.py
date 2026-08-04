@@ -33,7 +33,7 @@ base_particle = {
         "vy" : 0.0,
         "vz" : 0.0,
         "wx" : 0.0,
-        "wy" : 0.0,
+        "wy" : 25.0,
         "wz" : 0.0,
         "radius" : 0.005,
         "mass" : 5.2E-4,#density 1000kgm^-3

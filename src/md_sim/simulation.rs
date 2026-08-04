@@ -1,10 +1,33 @@
 //! The simulation is run by calling methods on the Simulation struct
 //! 
-//! The Simulation struct is the centrepiece of the simulation. Define one with the ::new() and then
-//! update it each timestep with update(). You can get mutable or immmutable references to the particles. The immutable
-//! ones can be fed to the visualization.
+//! The Simulation struct is the centrepiece of the simulation. 
+//! Create with [`new()`] and update it each timestep with update().
 //! 
-
+//! To use it one must implement and pass your own SimUpdate struct. This should implement the traits [`Motion`] [`Forces`] and compulsory methods therein.
+//! This together with the ParticleVec loaded from file of initial positions. 
+//! ```rust
+//! pub struct SimUpdate;
+//!
+//! impl Forces for SimUpdate{
+//!     //Forces which apply to every particle individually
+//!     fn update_single_forces(&self,i:usize, mut force: DVec3,torque:DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
+//!         (force, torque)
+//!     }
+//!     // forces that operate between pairs of particles
+//!     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3,DVec3){
+//!         (force, torque)
+//!     }
+//! }
+//!
+//! impl Motion for SimUpdate{
+//!     fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings,molecule_map: &HashMap<usize,MoleculeData>, _time:f64) {
+//!        integrate_rigid_bodies(forces, torques, particles, molecule_map, settings);
+//!     }
+//!     fn correct_motion(&self, forces: &[glam::DVec3],  torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize,MoleculeData>) {
+//!        integrate_rigid_bodies_correct(forces,torques,particles, molecule_map, settings)
+//!     }
+//! }
+ 
 use glam::DVec3;
 use std::collections::HashMap;
 use itertools::izip;
@@ -44,7 +67,15 @@ impl<S> Simulation<S>
     where 
         S: Forces + Motion + Sync,
     {
-        /// Create a new simulation
+        
+        /// Create a new simulation with new().
+        /// 
+        /// ```rust
+        /// Simulation::new(mut particles: ParticleVec, objects: Option<Vec<ObjectSpec>>, sim_update: S, settings: SimulationSettings, time: f64);
+        /// ```
+        /// When you call this it moves particles into the Simulation. Connected particles are known as molecules. Particles that belong to the same 
+        /// molecule are labelled with the same molecular_id. A quick look up called molecule_map (HashMap)is calculated. To speed up the task of 
+        /// finding neighbours in pairwise force calculations we call the [`neighbours::cell_grid()`]
         pub fn new(mut particles: ParticleVec, objects: Option<Vec<ObjectSpec>>, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
             let n = particles.len();
             let molecule_map = build_molecule_map(&particles);
@@ -68,13 +99,14 @@ impl<S> Simulation<S>
         /// Update the simulation
         /// 
         /// The positions and velocities are updated in 2 steps
-        /// First we predict the motion based on current values
-        /// Then we calculate the forces
-        /// If there are any particles that shouldn't respond to the forces (walls, prescribed motion) we call a method
-        /// which zeros those elements of the force vector.
-        /// Then we correct our prediction in light of the new forces.
-        /// Only pairs of particles within the cutoff distance are 
-        /// calculated for the pair forces.
+        /// First we predict the motion ([Motion]) based on current values of the force and advance 
+        /// positions a full timestep and velocities half a timestep.
+        /// Then we calculate the new forces ([Forces]). If there are any particles 
+        /// that shouldn't respond to the forces (walls, prescribed motion)
+        /// these can be identified either by their ptype or by zeroing their
+        /// forces prior to the Motion.
+        /// Finally, we correct our prediction in light of the new forces ([Motion]) by advancing just
+        /// the velocities by half a timestep using the new calculated value of the force.
         pub fn update(&mut self){
 
             // Predict the new positions, velocities etc
@@ -118,13 +150,6 @@ impl<S> Simulation<S>
                     );
             }
 
-            //if self.sim_update.has_internal_forces(){
-            //    for i in 0..self.particles.len() {
-            //        todo!();
-            //        
-            //    }
-            //}
-
             // Perform correction to the motion based on the updated forces
             self.sim_update.correct_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, &self.molecule_map);
 
@@ -133,24 +158,27 @@ impl<S> Simulation<S>
             
         }
 
+        /// Get an immutable ref to particles
         pub fn get_particles(&self)-> &ParticleVec{
             &self.particles
         }
 
+        /// Get a mutable ref to particles
         pub fn get_mut_particles(&mut self)-> &mut ParticleVec{
             &mut self.particles
         }
 
+        /// Get a ref to the objects.
         pub fn get_objects(&self) -> Option<&[ObjectSpec]>{
             self.objects.as_deref()
         }
 
         
 
-        /// Reset the force vec to Zeros
-        /// 
-        /// This resets but it also checks if the array has changed size due
-        /// to creation or destruction of particles
+        // Reset the force vec to Zeros
+        // 
+        // This resets but it also checks if the array has changed size due
+        // to creation or destruction of particles
         fn reset_forces(&mut self){
             if self.forces.len() != self.particles.len(){
                 self.forces.resize(self.particles.len(), DVec3::ZERO);

@@ -7,11 +7,15 @@
 //! 
 //!  *IMPORTANT*
 //!  It uses the soa_derive macro. This means that we appear to define a Vec of Particle structs
-//! but what actually happens is that a struct of Vecs is created. e.g if my Particle struct had 
+//! but what actually happens is that a struct of Vecs is created. e.g if my Particle struct had .x and .y for each particle
+//! and then these were pushed to a vec. The macro takes this and creates a vec of x and vec of y and attaches them as fields to 
+//! a ParticleVec struct.
+//! 
 //! See docs for details: <https://docs.rs/soa_derive/latest/soa_derive/>
+//! 
 //! We do this because iterating over a Vec of positions is really fast compared to taking a whole particle one
 //! at a time into the cache memory. However, its much easier to think about structs. This gives us the best of both worlds.
-//! 
+
 
 // md_sim/src/lib.rs
 use glam::f64::{DVec3,DQuat};
@@ -20,6 +24,14 @@ use soa_derive::StructOfArray;
 
 
 ///Particle defines a particle object which defines key properties: position, velocity etc
+/// 
+/// id is unique to every particle
+/// molecule_id - all particles that belong to the same superstructure have the same molecule_id. 
+/// ptype - defines different types of particles. Mostly used to target different interactions between different types of particles
+/// position - global coordinates of particle
+/// rel_pos - local coordinate of particle in a molecule 
+/// velocity - global velocity of particle
+/// orientation - a quaternion  
 #[derive(Debug, Clone, PartialEq, StructOfArray)]
 #[soa_derive(Debug, PartialEq)]
 pub struct Particle {

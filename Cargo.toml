@@ -8,7 +8,7 @@ resolver = "2"
 # Move your workspace dependencies here
 rand = "0.8"
 rand_distr = "0.4"
-three-d = { version = "0.18.2", features = ["headless"] }
+three-d = "0.19"
 glam = { version = "0.27", features = ["serde"] }
 image = "0.24"
 winit = "0.28"
