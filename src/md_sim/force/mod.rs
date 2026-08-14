@@ -16,7 +16,7 @@ pub use neighbours::CellGrid;
 
 use glam::DVec3;
 use crate::md_sim::particle::ParticleVec;
-use crate::md_sim::SimulationSettings;
+use crate::md_sim::{ObjectSpec, SimulationSettings};
 
 #[cfg(test)]
 mod tests;
@@ -38,6 +38,11 @@ pub trait Forces {
     ///
     /// If `false`, the engine will skip the `update_single_forces` loop.
     fn has_single_forces(&self) -> bool { true }
+
+    /// For collisions between particles and objects
+    /// 
+    /// off by default
+    fn has_object_forces(&self) -> bool { false }
 
     /// Set this to true if your particle is composite and you need to apply forces and torques to whole.
     fn has_internal_forces(&self) -> bool {false}
@@ -62,6 +67,20 @@ pub trait Forces {
         particles: &ParticleVec, 
         settings: &SimulationSettings,
         time: f64
+    )->(DVec3, DVec3);
+
+
+    /// Calculates forces between particles and objects
+    /// 
+    /// Objects are either static or move according to prescribed rules
+    fn update_object_forces(
+        &self, 
+        i: usize, 
+        force: DVec3,
+        torque: DVec3,
+        particles: &ParticleVec, 
+        objects: Option<&[ObjectSpec]>,
+        settings: &SimulationSettings
     )->(DVec3, DVec3);
 
     /// Calculates binary forces between two particles within the cutoff distance.

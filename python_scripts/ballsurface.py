@@ -5,21 +5,22 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import os
 import sys
-from utility import display, get_config
+from utility import display, get_config_particlepath
 
 
 name = sys.argv[1]
 
 path = "output/" + name
-path_to_snapshots = path + "/snapshots"
-config, snapshot_filepath = get_config(__file__)
+path_to_snapshots = path + "/particles"
+# Parse inputs and create folders etc.
+config, particle_filepath = get_config_particlepath()
 box = config["sim_box_size"]
 
 os.makedirs(path_to_snapshots, exist_ok=True)
 
 root_path = Path.cwd()
-filepath = root_path.joinpath(path_to_snapshots,  "snapshot_0000000000.parquet")
 
+print(particle_filepath)
 base_particle = {
         "t": 0.0,
         "id": 0,
@@ -44,7 +45,7 @@ base_particle = {
 
 particle2 = base_particle.copy()
 particle2["z"] = 0.045
-particle2["id"] = 1
+particle2["id"] = 0
 particle2["ptype"] = 0
 
 
@@ -57,7 +58,7 @@ df = df.with_columns(
 )
 
 
-df.write_parquet(filepath)
+df.write_parquet(particle_filepath)
 print(df)
 
 display(df, box)

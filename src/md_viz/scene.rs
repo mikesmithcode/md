@@ -16,7 +16,7 @@ use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::{ParticleVec, ObjectSpec};
 
 use crate::md_viz::lights::{create_ambient_light, create_directional_light};
-use crate::md_viz::templates::{SphereTemplate, BoxTemplate, WireBoxTemplate, ObjectTemplate};
+use crate::md_viz::templates::{SphereTemplate, RectTemplate, TriTemplate, WireBoxTemplate, ObjectTemplate};
 use crate::md_viz::camera::{create_camera, CameraControl};
 use crate::md_viz::video::VideoExporter;
 use crate::md_viz::SceneSettings;
@@ -188,8 +188,9 @@ impl Scene {
                 resources.object_templates = object_specs
                     .iter()
                     .map(|spec| match spec {
-                        ObjectSpec::HollowBox(boxspec) => ObjectTemplate::HollowBox(BoxTemplate::new(context, *boxspec)),
                         ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(context, *boxspec)),
+                        ObjectSpec::Rectangle(rectspec)=> ObjectTemplate::Rectangle(RectTemplate::new(context, *rectspec)),
+                        ObjectSpec::Triangle(trispec)=> ObjectTemplate::Triangle(TriTemplate::new(context, *trispec)),
                     })
                     .collect();
             }
@@ -214,13 +215,18 @@ impl Scene {
         let mut scene_objects: Vec<&dyn Object> = Vec::new();
 
         // Push particles mesh
-        scene_objects.push(&resources.sphere_template.mesh);
+        //scene_objects.push(&resources.sphere_template.mesh);
 
+        
         // Add additional scene objects if present, updating their transforms/colors as needed
         if let Some(specs) = objects {
             for (template, spec) in resources.object_templates.iter_mut().zip(specs.iter()) {
                 match template {
-                    ObjectTemplate::HollowBox(t) => {
+                    ObjectTemplate::Rectangle(t) => {
+                        t.push_transform_and_color(spec);
+                        scene_objects.push(&t.mesh);
+                    }
+                    ObjectTemplate::Triangle(t) => {
                         t.push_transform_and_color(spec);
                         scene_objects.push(&t.mesh);
                     }
@@ -231,14 +237,17 @@ impl Scene {
                 }
             }
         }
-
+        println!("Rendering {} scene objects", scene_objects.len());
+        
         //Display simulation box outline
         if resources.simbox_template.boxspec.visible {
             scene_objects.push(&resources.simbox_template.mesh);
         }
+        
 
         // Setup lights and execute draw call
         let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
+        println!("Rendering {} scene objects", scene_objects.len());
         target.render(camera, scene_objects, &lights);
         
         Ok(())

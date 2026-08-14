@@ -31,43 +31,59 @@ use crate::md_viz::SceneSettings;
 /// 
 /// use the file!() macro as input. Do this [sim_config,scene_config, snapshot, video]=filepaths(file!());
 /// This returns three filepaths of type Path
-pub fn filepaths(script_name: &str)-> [PathBuf;5]{
-    //Specify the folder in which all the output will be stored. Assumes in root of workspace.
-    const OUTPUT_PATH: &'static str = "output";
-    const INPUT_PATH: &'static str = "input";
+pub fn filepaths() -> [PathBuf; 5] {
+    // Grab command line arguments directly at the top of the function
+    let args: Vec<String> = std::env::args().collect();
+    
+    // Expect the argument to be present; panic with an informative message if missing
+    let run_dir = args.get(1).expect(
+        "Error: No run directory provided. \n\
+         Usage: Please run via your shell script (e.g., `./run silo_123`) \n\
+         or pass the output directory argument explicitly."
+    );
 
-    //----------------------------------------------------------------
-    // Create simulation filepaths
-    //---------------------------------------------------------------
-    let simulation_name = Path::new(script_name)
-                                            .file_stem()
-                                            .and_then(|s| s.to_str())
-                                            .unwrap();
+    const INPUT_PATH: &'static str = "input";
+    let run_path = Path::new(run_dir);
+
+    // Extract the simulation target name (e.g., "silo") from the parent directory
+    let simulation_name = run_path
+        .parent()
+        .and_then(|p| p.file_name())
+        .and_then(|s| s.to_str())
+        .expect("Error: Invalid run directory path structure. Expected something like 'output/target/target_id'.");
+
+    // Extract the specific simulation argument (e.g., "silo_123") from the final component
+    let sim_arg = run_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .expect("Error: Could not extract simulation run name from path.");
 
     let sim_config_path = Path::new(INPUT_PATH).join(format!("{}.json", simulation_name));
     let scene_config_path = Path::new(INPUT_PATH).join("scene_settings.json");
 
-
-    let particle_snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("particles");
-    if let Err(_e) = fs::create_dir_all(&particle_snapshot_path){
+    let particle_snapshot_path = run_path.join("particles");
+    if let Err(_e) = fs::create_dir_all(&particle_snapshot_path) {
         eprintln!("Error creating directory");
     };
-    let _ = particle_snapshot_path.join("particles");
 
-    let object_snapshot_path = Path::new(OUTPUT_PATH).join(simulation_name).join("objects");
-    if let Err(_e) = fs::create_dir_all(&object_snapshot_path){
+    let object_snapshot_path = run_path.join("objects");
+    if let Err(_e) = fs::create_dir_all(&object_snapshot_path) {
         eprintln!("Error creating directory");
     };
-    let _ = object_snapshot_path.join("objects");
 
-
-    let video_path = Path::new(OUTPUT_PATH).join(simulation_name).join("video");
-    if let Err(_e) = fs::create_dir_all(&video_path){
+    let video_dir = run_path.join("video");
+    if let Err(_e) = fs::create_dir_all(&video_dir) {
         eprintln!("Error creating directory");
     };
-    let video_path = video_path.join(simulation_name).with_extension("mp4");
+    let video_path = video_dir.join(format!("{}.mp4", sim_arg));
 
-    [sim_config_path, scene_config_path, object_snapshot_path, particle_snapshot_path, video_path]
+    [
+        sim_config_path,
+        scene_config_path,
+        object_snapshot_path,
+        particle_snapshot_path,
+        video_path,
+    ]
 }
 
 
@@ -192,6 +208,7 @@ pub fn save_objects(_dir_path: &Path,
 /// * `(particles, time)` - Vector of particles and simulation time
 /// Load particle snapshot from Parquet file into a ParticleVec
 pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std::error::Error>> {
+    println!("load_particles {:?}", file_path );
     let file = std::fs::File::open(file_path)?;
     let df = ParquetReader::new(file).finish()?;
 
@@ -237,6 +254,8 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
     let m_col = df.column("mass")?.f64()?;
     let q_series = get_f64_col(&df, "charge", 0.0);
     let q_col = q_series.f64()?;
+    let visible_series = get_bool_col(&df, "visible", true);
+    let visible_col = visible_series.bool()?;
     let r_series = get_f64_col(&df, "r", 255.0);
     let col_r = r_series.f64()?;
     let g_series = get_f64_col(&df, "g", 0.0);
@@ -245,12 +264,13 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
     let col_b = b_series.f64()?;
     let a_series = get_f64_col(&df, "a", 255.0);
     let col_a = a_series.f64()?;
+    
 
     let t = t_col.get(0).unwrap_or(0.0);
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
-    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,qx, qy, qz, qw, wx ,wy,wz, rad, mass, charge, r, g, b, a) in izip!(
+    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,qx, qy, qz, qw, wx ,wy,wz, rad, mass, charge, visible, r, g, b, a) in izip!(
         id_col.into_iter(),
         molecule_id_col.into_iter(),
         ptype_col.into_iter(),
@@ -273,6 +293,7 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
         r_col.into_iter(),
         m_col.into_iter(),
         q_col.into_iter(),
+        visible_col.into_iter(),
         col_r.into_iter(),
         col_g.into_iter(),
         col_b.into_iter(),
@@ -312,6 +333,7 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
             radius: rad.unwrap_or(0.0),
             mass: mass.unwrap_or(0.0),
             charge: charge.unwrap_or(0.0),
+            visible: visible.unwrap_or(true),
             color: Srgba::new(
                 r.unwrap_or(0.0) as u8,
                 g.unwrap_or(0.0) as u8,
@@ -405,6 +427,7 @@ pub fn save_particles(
         "radius" => &particles.radius,
         "mass" => &particles.mass,
         "charge" => &particles.charge,
+        "visible" => &particles.visible,
         "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
         "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
         "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
@@ -478,5 +501,14 @@ fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
         .cloned()
         .unwrap_or_else(|_| {
             Float64Chunked::full(name, filler, df.height()).into_series()
+        })
+}
+
+/// Specialized helper for Boolean columns
+fn get_bool_col(df: &DataFrame, name: &str, filler: bool) -> Series {
+    df.column(name)
+        .cloned()
+        .unwrap_or_else(|_| {
+            BooleanChunked::full(name, filler, df.height()).into_series()
         })
 }

@@ -6,23 +6,26 @@
 
 
 use glam::{DVec3, Mat4 as GMat4, Vec3 as GVec3};
-use crate::md_sim::{ParticleVec, BoxSpec, ObjectSpec};
 use three_d::{Context, CpuMesh, Gm, InstancedMesh, Instances, Srgba, PhysicalMaterial,
     Blend, BlendEquationType, BlendMultiplierType, Cull, DepthTest,
     RenderStates, WriteMask};
 
+use crate::md_sim::{ParticleVec, BoxSpec, RectSpec, TriSpec, ObjectSpec};
+
 ///Used by all shapes except SphereTemplate which is used for particles
 pub enum ObjectTemplate {
-    HollowBox(BoxTemplate),
     WireBox(WireBoxTemplate),
+    Rectangle(RectTemplate),
+    Triangle(TriTemplate),
 }
 
 impl ObjectTemplate {
     /// Returns a reference to the underlying `three-d` object for rendering
     pub fn get_mesh(&self) -> &(dyn three_d::Object + 'static) {
         match self {
-            ObjectTemplate::HollowBox(b) => &b.mesh,
             ObjectTemplate::WireBox(w) => &w.mesh,
+            ObjectTemplate::Rectangle(r) => &r.mesh,
+            ObjectTemplate::Triangle(t) => &t.mesh,
         }
     }
 }
@@ -68,9 +71,11 @@ impl SphereTemplate {
 }
 
 
+/// ------------------------------------------------------------------------------------
 /// Wire framed box primarily used to indicate the simulation box. 
 /// If you use a box dimension a negative thickness
 /// preserves the outer dimension whilst a positive one preserves the inner.
+/// -----------------------------------------------------------------------------------
 pub struct WireBoxTemplate {
     pub mesh: Gm<InstancedMesh, PhysicalMaterial>,
     pub boxspec: BoxSpec,
@@ -167,7 +172,7 @@ impl WireBoxTemplate {
         &mut self, // Note: This must now be mutable
         spec: &ObjectSpec
     ) {
-        let boxspec = spec.get_spec();
+        let boxspec = spec.get_box_spec().expect("Not valid boxspec");
         //If nothing has changed ignore
         if self.boxspec == boxspec {
             return;
@@ -192,139 +197,155 @@ impl WireBoxTemplate {
 }
 
 
-/// This box has filled sides and a hollow center. If you use a box dimension a negative thickness
-/// preserves the outer dimension whilst a positive one preserves the inner.
-pub struct BoxTemplate {
+
+/// ---------------------------------------------------------------------------------
+/// Flat rectangular plane template used for rendering boundaries or walls.
+/// ----------------------------------------------------------------------------------
+pub struct RectTemplate {
     pub mesh: Gm<InstancedMesh, PhysicalMaterial>,
-    pub boxspec: BoxSpec,
+    pub rectspec: RectSpec,
 }
 
-impl BoxTemplate {
-    /// Creates a hollow box with filled faces from a BoxSpec.
-pub fn new(context: &Context, boxspec: BoxSpec) -> Self {
-    let center = boxspec.position;
-    let half_size = boxspec.box_size * 0.5;
-    let thickness = boxspec.thickness;
-    let abs_t = thickness.abs();
+impl RectTemplate {
+    pub fn new(context: &Context, rectspec: RectSpec) -> Self {
+        let normal = rectspec.normal.normalize();
+        let tangent = (rectspec.tangent - normal * rectspec.tangent.dot(normal)).normalize();
+        let bitangent = normal.cross(tangent);
 
-    // Compute inner and outer bounds depending on the sign of thickness,
-    // mirroring the logic pattern used for the wire box struts.
-    let (outer_min, outer_max, inner_min, inner_max) = if thickness == 0.0 {
-        let min = center - half_size;
-        let max = center + half_size;
-        (min, max, min, max)
-    } else if thickness > 0.0 {
-        // Positive thickness: nominal size is inner cavity, walls grow outward (external)
-        let inner_min = center - half_size;
-        let inner_max = center + half_size;
-        let outer_min = inner_min - DVec3::splat(abs_t);
-        let outer_max = inner_max + DVec3::splat(abs_t);
-        (outer_min, outer_max, inner_min, inner_max)
-    } else {
-        // Negative thickness: nominal size is outer boundary, walls shrink inward (internal)
-        let outer_min = center - half_size;
-        let outer_max = center + half_size;
-        let inner_min = outer_min + DVec3::splat(abs_t);
-        let inner_max = outer_max - DVec3::splat(abs_t);
-        (outer_min, outer_max, inner_min, inner_max)
-    };
+        let hx = rectspec.half_size.x;
+        let hy = rectspec.half_size.y;
 
-    let walls = [
-        // Left wall
-        (
-            0.5 * DVec3::new(outer_min.x + inner_min.x, outer_min.y + outer_max.y, outer_min.z + outer_max.z),
-            DVec3::new(inner_min.x - outer_min.x, outer_max.y - outer_min.y, outer_max.z - outer_min.z),
-        ),
-        // Right wall
-        (
-            0.5 * DVec3::new(outer_max.x + inner_max.x, outer_min.y + outer_max.y, outer_min.z + outer_max.z),
-            DVec3::new(outer_max.x - inner_max.x, outer_max.y - outer_min.y, outer_max.z - outer_min.z),
-        ),
-        // Bottom wall
-        (
-            0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + inner_min.y, outer_min.z + outer_max.z),
-            DVec3::new(outer_max.x - outer_min.x, inner_min.y - outer_min.y, outer_max.z - outer_min.z),
-        ),
-        // Top wall
-        (
-            0.5 * DVec3::new(outer_min.x + outer_max.x, outer_max.y + inner_max.y, outer_min.z + outer_max.z),
-            DVec3::new(outer_max.x - outer_min.x, outer_max.y - inner_max.y, outer_max.z - outer_min.z),
-        ),
-        // Back wall
-        (
-            0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + outer_max.y, outer_min.z + inner_min.z),
-            DVec3::new(outer_max.x - outer_min.x, outer_max.y - outer_min.y, inner_min.z - outer_min.z),
-        ),
-        // Front wall
-        (
-            0.5 * DVec3::new(outer_min.x + outer_max.x, outer_min.y + outer_max.y, outer_max.z + inner_min.z),
-            DVec3::new(outer_max.x - outer_min.x, outer_max.y - outer_min.y, outer_max.z - inner_min.z),
-        ),
-    ];
+        // Construct 4x4 transform matrix from orthonormal basis and center.
+        // Three_d squares are 1x1 by default, so multiplying by (hx * 2.0) and (hy * 2.0) scales them.
+        let glam_mat = glam::DMat4::from_cols(
+            glam::DVec4::new(tangent.x * hx * 2.0, tangent.y * hx * 2.0, tangent.z * hx * 2.0, 0.0),
+            glam::DVec4::new(bitangent.x * hy * 2.0, bitangent.y * hy * 2.0, bitangent.z * hy * 2.0, 0.0),
+            glam::DVec4::new(normal.x, normal.y, normal.z, 0.0),
+            glam::DVec4::new(rectspec.center.x, rectspec.center.y, rectspec.center.z, 1.0),
+        );
 
-    let local_transformations: Vec<three_d::Mat4> = walls
-        .iter()
-        .map(|(translation, scale)| {
-            let adjusted_scale = *scale * 0.5;
+        let mut mat = create_opaque_material();
+        mat.albedo = rectspec.color;
 
-            let glam_mat = GMat4::from_translation(GVec3::new(
-                translation.x as f32,
-                translation.y as f32,
-                translation.z as f32,
-            )) * GMat4::from_scale(GVec3::new(
-                adjusted_scale.x as f32,
-                adjusted_scale.y as f32,
-                adjusted_scale.z as f32,
-            ));
+        let mesh = Gm::new(
+            InstancedMesh::new(
+                context,
+                &Instances {
+                    transformations: vec![glam_to_three_d(glam_mat.as_mat4())],
+                    ..Default::default()
+                },
+                &CpuMesh::square(),
+            ),
+            mat,
+        );
 
-            glam_to_three_d(glam_mat)
-        })
-        .collect();
+        Self { mesh, rectspec }
+    }
 
-    let mat = create_opaque_material();
-    let mesh = Gm::new(
-        InstancedMesh::new(
-            context,
-            &Instances {
-                transformations: local_transformations,
-                ..Default::default()
-            },
-            &CpuMesh::cube(),
-        ),
-        mat,
-    );
-
-    Self { mesh, boxspec }
-}
-
-    // Helper to update instance of particle
+    /// Helper to update the position, orientation, and color of the rectangle instance.
     pub fn push_transform_and_color(
-        &mut self, // Note: This must now be mutable
+        &mut self,
         spec: &ObjectSpec
     ) {
-        let boxspec = spec.get_spec();
-        //If nothing has changed ignore
-        if self.boxspec == boxspec {
+        let rectspec = match spec.get_rect_spec() {
+            Some(s) => s,
+            None => return,
+        };
+
+        if self.rectspec == rectspec {
             return;
         }
 
-        //otherwise update position and colour.
-        let pos = boxspec.position;
-        let glam_mat = GMat4::from_rotation_translation(
-            glam::DQuat::from(boxspec.orientation).as_quat(),
-            glam::Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32),
+        let normal = rectspec.normal.normalize();
+        let tangent = (rectspec.tangent - normal * rectspec.tangent.dot(normal)).normalize();
+        let bitangent = normal.cross(tangent);
+
+        let hx = rectspec.half_size.x;
+        let hy = rectspec.half_size.y;
+
+        let glam_mat = glam::DMat4::from_cols(
+            glam::DVec4::new(tangent.x * hx * 2.0, tangent.y * hx * 2.0, tangent.z * hx * 2.0, 0.0),
+            glam::DVec4::new(bitangent.x * hy * 2.0, bitangent.y * hy * 2.0, bitangent.z * hy * 2.0, 0.0),
+            glam::DVec4::new(normal.x, normal.y, normal.z, 0.0),
+            glam::DVec4::new(rectspec.center.x, rectspec.center.y, rectspec.center.z, 1.0),
         );
 
-        // Update the mesh's transform directly
-        self.mesh.set_transformation(glam_to_three_d(glam_mat));
-        
-        // If your material/color needs updating:
-        self.mesh.material.albedo = boxspec.color;
-        
-        // Update the stored specification so it only triggers with a change
-        self.boxspec = boxspec; 
+        self.mesh.set_transformation(glam_to_three_d(glam_mat.as_mat4()));
+        self.mesh.material.albedo = rectspec.color;
+        self.rectspec = rectspec;
     }
 }
+
+
+/// ---------------------------------------------------------------------------------
+/// Custom triangular mesh template used for rendering CAD shapes or particle walls.
+/// ----------------------------------------------------------------------------------
+pub struct TriTemplate {
+    pub mesh: Gm<InstancedMesh, PhysicalMaterial>,
+    pub trispec: TriSpec,
+}
+
+impl TriTemplate {
+    pub fn new(context: &Context, trispec: TriSpec) -> Self {
+        let [v0, v1, v2] = trispec.local_triangles;
+
+        let positions = vec![
+            three_d::Vec3::new(v0.x as f32, v0.y as f32, v0.z as f32),
+            three_d::Vec3::new(v1.x as f32, v1.y as f32, v1.z as f32),
+            three_d::Vec3::new(v2.x as f32, v2.y as f32, v2.z as f32),
+        ];
+
+        let indices = three_d::Indices::U32(vec![0, 1, 2]);
+
+        let mut cpu_mesh = CpuMesh {
+            positions: three_d::Positions::F32(positions),
+            indices,
+            ..Default::default()
+        };
+        cpu_mesh.compute_normals();
+
+        let mat_transform = trispec_to_three_d_matrix(&trispec);
+
+        let mut mat = create_opaque_material();
+        mat.albedo = trispec.color;
+
+        let mesh = Gm::new(
+            InstancedMesh::new(
+                context,
+                &Instances {
+                    transformations: vec![mat_transform],
+                    ..Default::default()
+                },
+                &cpu_mesh,
+            ),
+            mat,
+        );
+
+        Self { mesh, trispec }
+    }
+
+    pub fn push_transform_and_color(&mut self, spec: &ObjectSpec) {
+        let trispec = match spec {
+            ObjectSpec::Triangle(t) => t,
+            _ => return,
+        };
+
+        if &self.trispec == trispec {
+            return;
+        }
+
+        let mat_transform = trispec_to_three_d_matrix(trispec);
+
+        self.mesh.geometry.set_instances(&Instances {
+            transformations: vec![mat_transform],
+            ..Default::default()
+        });
+        self.mesh.material.albedo = trispec.color;
+        self.trispec = *trispec;
+    }
+
+}
+
 
 //---------------------------------------------------------------------------------------
 // Material
@@ -351,6 +372,11 @@ fn create_transparent_material() -> PhysicalMaterial {
 fn create_opaque_material() -> PhysicalMaterial {
     let mut mat = PhysicalMaterial::default();
     mat.albedo = Srgba::WHITE;
+    // Disable backface culling so surfaces render from both sides
+    mat.render_states = three_d::RenderStates {
+        cull: three_d::Cull::None,
+        ..Default::default()
+    };
     mat
 }
 
@@ -365,4 +391,20 @@ fn glam_to_three_d(mat: GMat4) -> three_d::Mat4 {
         three_d::Vector4::new(cols[8], cols[9], cols[10], cols[11]),
         three_d::Vector4::new(cols[12], cols[13], cols[14], cols[15]),
     )
+}
+
+// Helper function to build the 4x4 matrix compatible with three_d
+fn trispec_to_three_d_matrix(trispec: &TriSpec) -> three_d::Mat4 {
+    let normal = trispec.normal.normalize();
+    let tangent = (trispec.tangent - normal * trispec.tangent.dot(normal)).normalize();
+    let bitangent = normal.cross(tangent);
+
+    let glam_mat = glam::DMat4::from_cols(
+        glam::DVec4::new(tangent.x, tangent.y, tangent.z, 0.0),
+        glam::DVec4::new(bitangent.x, bitangent.y, bitangent.z, 0.0),
+        glam::DVec4::new(normal.x, normal.y, normal.z, 0.0),
+        glam::DVec4::new(trispec.center.x, trispec.center.y, trispec.center.z, 1.0),
+    );
+
+    glam_to_three_d(glam_mat.as_mat4())
 }

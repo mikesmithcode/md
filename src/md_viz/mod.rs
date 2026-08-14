@@ -52,5 +52,5 @@ pub mod video;
 
 pub use self::scene::Scene;
 pub use self::scene_settings::SceneSettings;
-pub use self::templates::{SphereTemplate, ObjectTemplate, BoxTemplate, WireBoxTemplate};
+pub use self::templates::{SphereTemplate, ObjectTemplate, RectTemplate, WireBoxTemplate};
 

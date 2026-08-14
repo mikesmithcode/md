@@ -113,17 +113,15 @@ impl<S> Simulation<S>
             self.sim_update.update_motion(&self.forces, &self.torques, &mut self.particles, &self.settings,&self.molecule_map, self.time);
 
             //Move any objects
-            if let Some(scene_objects) = &mut self.objects{
+            if let Some(scene_objects) = self.objects.as_deref_mut(){
                 self.sim_update.update_objects(scene_objects, &self.settings, self.time);
             }
 
             //----------------------------------------------------------------------------
             // Calculate all the forces
             //----------------------------------------------------------------------------
-            if self.sim_update.has_single_forces() || self.sim_update.has_pair_forces(){
-                //Clear the force buffer and check same length as particles
-                self.reset_forces();
-            }
+            self.reset_forces();
+            
 
             if self.sim_update.has_single_forces(){
                 // Single forces apply to individual particles
@@ -134,6 +132,16 @@ impl<S> Simulation<S>
                     self.torques[i] += torque;
                 }
             }
+
+            if self.sim_update.has_object_forces(){
+                let (mut force, mut torque);
+                for i in 0..self.particles.len(){
+                    (force, torque) = self.sim_update.update_object_forces(i, DVec3::ZERO, DVec3::ZERO, &self.particles, self.objects.as_deref(), &self.settings);
+                    self.forces[i] += force;
+                    self.torques[i] += torque;
+                }
+            }
+
 
             // Grid means you only check particles nearby. Then it calculates all pair forces 
             // between particles i and j.

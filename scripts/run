@@ -2,19 +2,29 @@
 
 # --- Help Instructions ---
 show_help() {
-    echo "Usage: run [-c] [-r] [-b] [-h] <simulation_name>"
+    echo "Usage: run [-c] [-b] [-r] [-x] [-h] <input_name>"
     echo ""
     echo "Options:"
-    echo "  -c    Clean & Setup: Runs clean, creates directories, and executes the Python setup."
-    echo "  -r    Release Mode: Compiles the Rust simulation with heavy optimizations."
-    echo "  -b    Build Only: Compiles the code but skips launching the simulation."
+    echo "  -c    Clean & Setup Only: Runs clean, creates directories, executes Python setup, and exits."
+    echo "  -b    Build Release: Compiles the code in release mode and skips launching the simulation."
+    echo "  -r    Release Mode: Compiles the Rust simulation with heavy optimizations (and runs it)."
+    echo "  -x    Execute Only: Runs a pre-existing binary without rebuilding (fails if missing)."
     echo "  -h    Help: Displays this help message."
     echo ""
+    echo "Behavior Notes:"
+    echo "  - If -b, -r, and -x are omitted, it compiles and runs in normal (debug) mode."
+    echo "  - If -b is specified, it automatically implies release mode."
+    echo ""
+    echo "Examples:"
+    echo "  ./run -c silo_123         # Cleans output and runs Python setup only, then exits"
+    echo "  ./run silo_123            # Compiles (debug) and runs 'silo' with arg 'output/silo/silo_123'"
+    echo "  ./run -b silo_123         # Compiles 'silo' in release mode and exits"
+    echo "  ./run -r silo_123         # Compiles (release) and runs 'silo' with arg 'output/silo/silo_123'"
+    echo "  ./run -x silo_123         # Runs pre-built 'silo' with arg 'output/silo/silo_123' without rebuilding"
     exit 0
 }
 
 # 1. Configuration - Detect OS/Venv
-# (Kept original logic)
 if [ -f ".venv/Scripts/python.exe" ]; then
     PYTHON_EXEC=".venv/Scripts/python.exe"
 elif [ -f ".venv/bin/python" ]; then
@@ -25,50 +35,95 @@ else
 fi
 
 RUN_CLEAN=false
+SETUP_ONLY=false
 RELEASE_FLAG=""
 BUILD_ONLY=false
+EXECUTE_ONLY=false
 
-# 2. Process flags - Added 'b'
-while getopts "crbh" opt; do
+# 2. Process flags
+while getopts "crbxh" opt; do
   case $opt in
-    c) RUN_CLEAN=true ;;
+    c) 
+       RUN_CLEAN=true 
+       SETUP_ONLY=true
+       ;;
     r) RELEASE_FLAG="--release" ;;
-    b) BUILD_ONLY=true ;;
+    b) 
+       BUILD_ONLY=true 
+       RELEASE_FLAG="--release"
+       ;;
+    x) EXECUTE_ONLY=true ;;
     h) show_help ;;
     \?) echo "Invalid option: -$OPTARG. Use -h for help." >&2; exit 1 ;;
   esac
 done
 
 shift $((OPTIND-1))
-TARGET_NAME="$1"
 
-if [ -z "$TARGET_NAME" ]; then
+INPUT_NAME="$1"
+
+if [ -z "$INPUT_NAME" ]; then
     echo "Error: No simulation name provided."
     exit 1
 fi
 
-# 3. Setup (Clean + Python)
-if [ "$RUN_CLEAN" = true ]; then
-    echo "--- Running Clean for $TARGET_NAME ---"
-    cargo run --quiet --bin clean -- "$TARGET_NAME"
-    mkdir -p "output/$TARGET_NAME/snapshots" "output/$TARGET_NAME/video"
-    "$PYTHON_EXEC" python_scripts/"$TARGET_NAME".py "$TARGET_NAME" || { echo "Python setup failed"; exit 1; }
+# 3. Parse target name and simulation argument using '_' delimiter
+if [[ "$INPUT_NAME" == "_*" ]]; then
+    TARGET_NAME="$INPUT_NAME"
+    SIM_ARG="$INPUT_NAME"
+elif [[ "$INPUT_NAME" == *"_"* ]]; then
+    TARGET_NAME="${INPUT_NAME%%_*}" # Everything before the first underscore
+    SIM_ARG="$INPUT_NAME"          # Full string passed as argument
+else
+    TARGET_NAME="$INPUT_NAME"
+    SIM_ARG="$INPUT_NAME"
 fi
 
-# 4. Build Logic
-echo "--- Compiling $TARGET_NAME $RELEASE_FLAG ---"
-cargo build $RELEASE_FLAG --bin "$TARGET_NAME" || { echo "Compilation failed"; exit 1; }
+# Define the precise nested relative path directory expected by Rust and Python
+OUTPUT_DIR="output/$TARGET_NAME/$SIM_ARG"
 
-# 5. Conditional Launch Logic
+# Determine build profile directory path
+PROFILE_DIR=$([ "$RELEASE_FLAG" == "--release" ] && echo "release" || echo "debug")
+BINARY="./target/$PROFILE_DIR/$TARGET_NAME"
+
+# 4. Setup (Clean + Python) - Cleans specific output dir, creates nested layout, runs Python setup
+if [ "$EXECUTE_ONLY" = false ] && [ "$RUN_CLEAN" = true ]; then
+    echo "All output in \"$OUTPUT_DIR\" has been cleared"
+    rm -rf "$OUTPUT_DIR"
+    
+    # Ensure nested folders exist for particles and video
+    mkdir -p "$OUTPUT_DIR/particles" "$OUTPUT_DIR/video"
+    
+    "$PYTHON_EXEC" python_scripts/"$TARGET_NAME".py "$INPUT_NAME" || { echo "Python setup failed"; exit 1; }
+
+    if [ "$SETUP_ONLY" = true ]; then
+        echo "--- Setup complete. Skipping build and execution. ---"
+        exit 0
+    fi
+fi
+
+# 5. Build Logic or Execution Check
+if [ "$EXECUTE_ONLY" = true ]; then
+    if [ ! -f "$BINARY" ]; then
+        echo "Error: Binary for '$TARGET_NAME' not found in target/$PROFILE_DIR/. You need to build first."
+        exit 1
+    fi
+    echo "--- Skipping build (-x specified). Using existing binary. ---"
+else
+    echo "--- Compiling $TARGET_NAME ${RELEASE_FLAG:-'(debug mode)'} ---"
+    cargo build $RELEASE_FLAG --bin "$TARGET_NAME" || { echo "Compilation failed"; exit 1; }
+fi
+
+# 6. Conditional Launch Logic
 if [ "$BUILD_ONLY" = true ]; then
     echo "--- Build complete. Skipping execution. ---"
 else
     echo "--- Launching Simulation ---"
-    BINARY="./target/$([ "$RELEASE_FLAG" == "--release" ] && echo "release" || echo "debug")/$TARGET_NAME"
     
+    # Run binary and pass the full relative path directory (e.g., output/silo/silo_123) as the argument
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY"
+        GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$OUTPUT_DIR"
     else
-        "$BINARY"
+        "$BINARY" "$OUTPUT_DIR"
     fi
 fi

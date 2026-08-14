@@ -9,7 +9,7 @@ use three_d::*;
 use crate::md_sim::BoxSpec;
 
 use crate::md_viz::camera::MyCamera;
-use crate::md_viz::templates::{SphereTemplate, WireBoxTemplate, ObjectTemplate, BoxTemplate};
+use crate::md_viz::templates::{SphereTemplate, WireBoxTemplate, ObjectTemplate, RectTemplate};
 
 
 

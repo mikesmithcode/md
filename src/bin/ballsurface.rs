@@ -5,14 +5,15 @@
 
 
 use winit::event_loop::EventLoop;
-use glam::DVec3;
+use glam::{DVec2,DVec3};
 use std::collections::HashMap;
+use three_d::Srgba;
 
 // Import everything from your md_viz library
 use md::md_viz::scene::Scene;
 
 // Imports from simulation library
-use md::md_sim::{Simulation, SimulationSettings, Forces, Motion, ParticleVec};
+use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, Simulation, SimulationSettings};
 use md::md_sim::force::{add_weight, add_granular_collision};
 use md::md_sim::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
 use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
@@ -24,10 +25,14 @@ pub struct SimUpdate;
 impl Forces for SimUpdate{
     // Default implementation is true, set to false if not using
     fn has_pair_forces(&self)-> bool {
-        true
+        false
     }
     // Default implementation is true set to false if not using
     fn has_single_forces(&self)-> bool {
+        true
+    }
+
+    fn has_object_forces(&self) -> bool {
         true
     }
 
@@ -40,9 +45,13 @@ impl Forces for SimUpdate{
         (force, _torque)
     }
 
+    fn update_object_forces(&self, i: usize, force: DVec3, torque: DVec3, particles: &ParticleVec, objects: Option<&[ObjectSpec]>, settings: &SimulationSettings)->(DVec3, DVec3){
+        //Assume flat rectangular plane with surface normal in z direction (upwards). Interaction on overlap.
+        (force, torque)
+    }
+
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize,mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
-        (force, torque)=add_granular_collision(i, j, particles, force, torque, settings);
         (force, torque)
     }
 
@@ -62,7 +71,7 @@ impl Motion for SimUpdate{
 pub fn main() {    
 
     // Construct filepaths
-    let [sim_config_path, scene_config_path, object_path, particle_path, video_path] = filepaths();
+    let [sim_config_path, scene_config_path, _object_path, particle_path, _video_path] = filepaths();
     
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
@@ -72,9 +81,25 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (particles, start_step, mut time) = load_latest_particles(&particle_path).expect("Failed to return latest snapshot");
+    let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return latest snapshot");
     
-    let mut sim= Simulation::new(particles, None, SimUpdate, sim_settings.clone(), time);
+    
+    let size = sim_settings.sim_box_size;
+    
+    let mut center = size / 2.0;
+    let normal = DVec3::new(0.0,1.0,1.0).normalize();
+    let tangent = DVec3::new(1.0,0.0,0.0);
+    center.z = 0.1;
+    let half_size = DVec2::new(size.x, size.y)/2.0;
+    let color = Srgba::RED;
+
+    let rectspec = RectSpec::new(center,normal,tangent, half_size, color);
+    let surface = ObjectSpec::Rectangle(rectspec);
+    let objects = Some(vec![surface]);
+
+
+
+    let mut sim= Simulation::new(particles, objects, SimUpdate, sim_settings.clone(), time);
     //----------------------------------------------------------------
     //  Graphics
     //
@@ -98,7 +123,8 @@ pub fn main() {
     // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
     //--------------------------------------------------------------
   
-    
+   
+
     
     
     println!("Simulation started...");
@@ -128,7 +154,7 @@ pub fn main() {
             
             //Handle graphics
             //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
-            scene.display(sim.get_particles(), None).expect("Error updating display");
+            scene.display(sim.get_particles(), sim.get_objects()).expect("Error updating display");
             //let _ = scene.save_frame(&sim.get_particles(), None);
 
             //save a snapshot of particle positions etc

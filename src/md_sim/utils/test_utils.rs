@@ -22,6 +22,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
+                visible: true,
                 ref_pos: DVec3::ZERO,
             });
         particles.push(
@@ -38,6 +39,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
+                visible: true,
                 ref_pos: DVec3::ZERO,
             });
         particles.push(
@@ -54,6 +56,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
+                visible: true,
                 ref_pos: DVec3::ZERO,
             });
         particles.push(
@@ -70,6 +73,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
+                visible: true,
                 ref_pos: DVec3::ZERO,
             });
             particles.push(
@@ -86,6 +90,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
+                visible: true,
                 ref_pos: DVec3::ZERO,
             });
             particles.push(
@@ -102,6 +107,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
+                visible:true,
                 ref_pos: DVec3::ZERO,
             });
       
@@ -128,6 +134,7 @@ pub fn create_single_molecule()-> ParticleVec{
         mass: 1.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
+        visible: true,
         ref_pos: DVec3::ZERO,
     });
     
@@ -145,6 +152,7 @@ pub fn create_single_molecule()-> ParticleVec{
         mass: 0.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
+        visible: true,
         ref_pos: DVec3::ZERO,
     });
 
@@ -171,6 +179,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 1.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
+        visible: true,
         ref_pos: DVec3::ZERO,
     });
     
@@ -188,6 +197,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 0.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
+        visible: true,
         ref_pos: DVec3::ZERO,
     });
 
@@ -208,6 +218,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 1.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
+        visible: true,
         ref_pos: DVec3::ZERO,
     });
     
@@ -225,6 +236,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 0.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
+        visible: true,
         ref_pos: DVec3::ZERO,
     });
 
@@ -243,6 +255,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 1.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
+        visible: true,
         ref_pos: DVec3::ZERO,
     });
     
@@ -260,6 +273,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 0.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
+        visible: true,
         ref_pos: DVec3::ZERO,
     });
 

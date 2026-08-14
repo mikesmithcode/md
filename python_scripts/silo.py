@@ -4,19 +4,17 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from utility import display, get_config
+from utility import display, get_config_particlepath
 
 import sys
 print(f"DEBUG: Using Python at {sys.executable}")
 import polars as pl
 
-path_to_snapshots = "output/silo/particles/"
 
-os.makedirs(path_to_snapshots, exist_ok=True)
-root_path = Path(__file__).parent.parent
-filepath = root_path.joinpath(path_to_snapshots,  "particles_0000000000.parquet")
 
-config, snapshot_filepath = get_config(__file__)
+# Parse inputs and create folders etc.
+config, particle_filepath = get_config_particlepath()
+
 box = config["sim_box_size"]
 
 base_particle = {
@@ -97,7 +95,7 @@ df = df.with_columns(pl.col("id").cast(pl.UInt64))
 print("max", df.select(pl.max("ptype")))
 print(df)
 
-df.write_parquet(filepath)
+df.write_parquet(particle_filepath)
         
 
 display(df, box)
