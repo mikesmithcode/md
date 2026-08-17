@@ -5,10 +5,11 @@
 //! for high-performance rendering.
 
 
-use glam::{DVec3, Mat4 as GMat4, Vec3 as GVec3};
-use three_d::{Context, CpuMesh, Gm, InstancedMesh, Instances, Srgba, PhysicalMaterial,
+use glam::{DVec3, Mat4 as GMat4, Vec3 as GVec3, Vec4 as GVec4};
+use three_d::{Context, CpuMesh,Mesh, Gm, InstancedMesh, Instances, Srgba, PhysicalMaterial,
     Blend, BlendEquationType, BlendMultiplierType, Cull, DepthTest,
     RenderStates, WriteMask};
+use three_d::InnerSpace;
 
 use crate::md_sim::{ParticleVec, BoxSpec, RectSpec, TriSpec, ObjectSpec};
 
@@ -202,51 +203,26 @@ impl WireBoxTemplate {
 /// Flat rectangular plane template used for rendering boundaries or walls.
 /// ----------------------------------------------------------------------------------
 pub struct RectTemplate {
-    pub mesh: Gm<InstancedMesh, PhysicalMaterial>,
+    pub mesh: Gm<Mesh, PhysicalMaterial>,
     pub rectspec: RectSpec,
 }
 
 impl RectTemplate {
     pub fn new(context: &Context, rectspec: RectSpec) -> Self {
-        let normal = rectspec.normal.normalize();
-        let tangent = (rectspec.tangent - normal * rectspec.tangent.dot(normal)).normalize();
-        let bitangent = normal.cross(tangent);
-
-        let hx = rectspec.half_size.x;
-        let hy = rectspec.half_size.y;
-
-        // Construct 4x4 transform matrix from orthonormal basis and center.
-        // Three_d squares are 1x1 by default, so multiplying by (hx * 2.0) and (hy * 2.0) scales them.
-        let glam_mat = glam::DMat4::from_cols(
-            glam::DVec4::new(tangent.x * hx * 2.0, tangent.y * hx * 2.0, tangent.z * hx * 2.0, 0.0),
-            glam::DVec4::new(bitangent.x * hy * 2.0, bitangent.y * hy * 2.0, bitangent.z * hy * 2.0, 0.0),
-            glam::DVec4::new(normal.x, normal.y, normal.z, 0.0),
-            glam::DVec4::new(rectspec.center.x, rectspec.center.y, rectspec.center.z, 1.0),
-        );
-
         let mut mat = create_opaque_material();
         mat.albedo = rectspec.color;
 
         let mesh = Gm::new(
-            InstancedMesh::new(
-                context,
-                &Instances {
-                    transformations: vec![glam_to_three_d(glam_mat.as_mat4())],
-                    ..Default::default()
-                },
-                &CpuMesh::square(),
-            ),
+            Mesh::new(context, &CpuMesh::square()),
             mat,
         );
 
-        Self { mesh, rectspec }
+        let mut template = Self { mesh, rectspec: rectspec.clone() };
+        template.update_transform_and_color(&rectspec);
+        template
     }
 
-    /// Helper to update the position, orientation, and color of the rectangle instance.
-    pub fn push_transform_and_color(
-        &mut self,
-        spec: &ObjectSpec
-    ) {
+    pub fn push_transform_and_color(&mut self, spec: &ObjectSpec) {
         let rectspec = match spec.get_rect_spec() {
             Some(s) => s,
             None => return,
@@ -256,26 +232,62 @@ impl RectTemplate {
             return;
         }
 
-        let normal = rectspec.normal.normalize();
-        let tangent = (rectspec.tangent - normal * rectspec.tangent.dot(normal)).normalize();
-        let bitangent = normal.cross(tangent);
-
-        let hx = rectspec.half_size.x;
-        let hy = rectspec.half_size.y;
-
-        let glam_mat = glam::DMat4::from_cols(
-            glam::DVec4::new(tangent.x * hx * 2.0, tangent.y * hx * 2.0, tangent.z * hx * 2.0, 0.0),
-            glam::DVec4::new(bitangent.x * hy * 2.0, bitangent.y * hy * 2.0, bitangent.z * hy * 2.0, 0.0),
-            glam::DVec4::new(normal.x, normal.y, normal.z, 0.0),
-            glam::DVec4::new(rectspec.center.x, rectspec.center.y, rectspec.center.z, 1.0),
-        );
-
-        self.mesh.set_transformation(glam_to_three_d(glam_mat.as_mat4()));
-        self.mesh.material.albedo = rectspec.color;
+        self.update_transform_and_color(&rectspec);
         self.rectspec = rectspec;
     }
-}
 
+    fn update_transform_and_color(&mut self, rectspec: &RectSpec) {
+        println!("center {:?}", rectspec.center);
+        
+        let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
+            rectspec.center.x as f32, 
+            rectspec.center.y as f32, 
+            rectspec.center.z as f32,
+        ));
+
+        let tangent = three_d::Vec3::new(
+            rectspec.tangent.x as f32,
+            rectspec.tangent.y as f32,
+            rectspec.tangent.z as f32,
+        ).normalize();
+
+        let normal = three_d::Vec3::new(
+            rectspec.normal.x as f32,
+            rectspec.normal.y as f32,
+            rectspec.normal.z as f32,
+        ).normalize();
+
+        let bitangent = normal.cross(tangent).normalize();
+
+        // Construct the rotation matrix from the orientation frame
+        let rotation = three_d::Mat4::from_cols(
+            tangent.extend(0.0),
+            bitangent.extend(0.0),
+            normal.extend(0.0),
+            three_d::Vec4::unit_w(),
+        );
+
+        let scale_mat = three_d::Mat4::from_nonuniform_scale(
+            rectspec.half_size.x as f32,
+            rectspec.half_size.y as f32,
+            0.01,
+        );
+
+        // Include rotation between translation and scaling
+        let transform = translation * rotation * scale_mat;
+
+        self.mesh.set_transformation(transform);
+        self.mesh.material.albedo = rectspec.color;
+        
+        // Disable back-face culling to ensure it renders from any angle
+        self.mesh.material.render_states = three_d::RenderStates {
+            write_mask: three_d::WriteMask::COLOR_AND_DEPTH,
+            cull: three_d::Cull::None, 
+            ..Default::default()
+        };
+    }
+}
+//self.mesh.set_transformation(three_d::Mat4::from_scale(0.1)); 
 
 /// ---------------------------------------------------------------------------------
 /// Custom triangular mesh template used for rendering CAD shapes or particle walls.

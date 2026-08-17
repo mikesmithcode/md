@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import os
 import sys
-from utility import display, get_config_particlepath
+from utility import display, get_config
 
 
 name = sys.argv[1]
@@ -13,7 +13,7 @@ name = sys.argv[1]
 path = "output/" + name
 path_to_snapshots = path + "/particles"
 # Parse inputs and create folders etc.
-config, particle_filepath = get_config_particlepath()
+config, particle_filepath, object_filepath = get_config()
 box = config["sim_box_size"]
 
 os.makedirs(path_to_snapshots, exist_ok=True)
@@ -59,6 +59,7 @@ df = df.with_columns(
 
 
 df.write_parquet(particle_filepath)
+df.write_parquet(object_filepath)
 print(df)
 
 display(df, box)

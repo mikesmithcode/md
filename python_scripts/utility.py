@@ -9,7 +9,7 @@ import numpy as np
 import sys
 
 
-def get_config_particlepath(*args, **kwargs):
+def get_config(*args, **kwargs):
     """
     Parses the required input argument (e.g., 'silo' or 'silo_123') passed from the shell script.
     Splits at the first underscore to determine the target folder/config name.
@@ -32,11 +32,15 @@ def get_config_particlepath(*args, **kwargs):
     config_path = Path("input") / f"{target_name}.json"
     particles_filepath = particles_dir / "particles_0000000000.parquet"
     
+    # Define file paths (loads config based on the target name, e.g., 'silo.toml')
+    config_path = Path("input") / f"{target_name}.json"
+    objects_filepath = particles_dir / "objects_0000000000.parquet"
+    
     # Load configuration file
     with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
         
-    return config, particles_filepath
+    return config, particles_filepath, objects_filepath
 
 def quaternion(axis: tuple[float, float, float], theta: float) -> tuple[float, float, float, float]:
     """

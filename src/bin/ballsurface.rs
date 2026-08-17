@@ -85,15 +85,14 @@ pub fn main() {
     
     
     let size = sim_settings.sim_box_size;
-    
-    let mut center = size / 2.0;
-    let normal = DVec3::new(0.0,1.0,1.0).normalize();
-    let tangent = DVec3::new(1.0,0.0,0.0);
-    center.z = 0.1;
-    let half_size = DVec2::new(size.x, size.y)/2.0;
+   
+    let x=size.x;
+    let y=size.y;
+    let z=0.005;
+    let vertices = [DVec3::new(0.0,0.0, z),DVec3::new(x,0.0, z),DVec3::new(x,y, z),DVec3::new(0.0,y, z)];
     let color = Srgba::RED;
 
-    let rectspec = RectSpec::new(center,normal,tangent, half_size, color);
+    let rectspec = RectSpec::new(vertices, color);
     let surface = ObjectSpec::Rectangle(rectspec);
     let objects = Some(vec![surface]);
 
@@ -141,14 +140,14 @@ pub fn main() {
 
         sim.update();
 
-        if step %100 ==0{
+        //if step %100 ==0{
         if scene.poll_events(&mut event_loop) {
                 break; 
             }
-        }
+        //}
 
         // update scene every dump timesteps
-        if step % sim.settings.dump == 0 {
+        //if step % sim.settings.dump == 0 {
             // exit if window close requested
             
             
@@ -159,7 +158,7 @@ pub fn main() {
 
             //save a snapshot of particle positions etc
             save_particles(&particle_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
-        }
+        //}
         
     }
     scene.close();

@@ -163,6 +163,9 @@ pub fn create_orthographic_camera(viewport: Viewport, scene_settings: SceneSetti
         z_far = z_mid - dim_z;  
     }; //  
 
+    //let z_near = -0.25;
+    //let z_far = 0.25;
+
     let screen_scaling = 4.0;
     let padding_factor=1.20;
 
@@ -175,7 +178,8 @@ pub fn create_orthographic_camera(viewport: Viewport, scene_settings: SceneSetti
         z_near,
         z_far
     );
-    
+    println!("DEBUG: Camera pos {:?} view dir {:?}", camera.position(), camera.position()-camera.target());
+    println!("DEBUG Camera near: {:?}, far: {:?}", z_near, z_far);
     camera
 }
 

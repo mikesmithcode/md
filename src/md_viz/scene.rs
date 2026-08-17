@@ -24,22 +24,22 @@ use crate::md_viz::scene_settings::GpuResources;
 
 
 
-pub struct Scene {
-    scene_settings: SceneSettings,
-    pub camera: Camera,
-    pub camera_control: CameraControl,
+    pub struct Scene {
+        scene_settings: SceneSettings,
+        pub camera: Camera,
+        pub camera_control: CameraControl,
 
-    // Unified Graphics State
-    context: Option<Context>,
-    windowed_context: Option<WindowedContext>, // Replaces ContextOwner enum
-    resources: Option<GpuResources>,
-    
-    // Window State
-    winit_window: Option<WinitWindow>,
-    frame_input_generator: Option<FrameInputGenerator>,
-    
-    video_exporter: Option<VideoExporter>,
-}
+        // Unified Graphics State
+        context: Option<Context>,
+        windowed_context: Option<WindowedContext>, // Replaces ContextOwner enum
+        resources: Option<GpuResources>,
+        
+        // Window State
+        winit_window: Option<WinitWindow>,
+        frame_input_generator: Option<FrameInputGenerator>,
+        
+        video_exporter: Option<VideoExporter>,
+    }
 
 impl Scene {
     ///------------------------------------------------------------------
@@ -180,26 +180,8 @@ impl Scene {
     }
 
 
-    /// This is used to update all the objects in the Scene if they need recreating. Only needed
-    /// if one is created, destroyed. Rebuilds if len of objects vec changes
-    pub fn update_objects(&mut self, context: &Context, object_specs: &[ObjectSpec]) {
-        if let Some(resources) = &mut self.resources {
-            if resources.object_templates.len() != object_specs.len() {
-                resources.object_templates = object_specs
-                    .iter()
-                    .map(|spec| match spec {
-                        ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(context, *boxspec)),
-                        ObjectSpec::Rectangle(rectspec)=> ObjectTemplate::Rectangle(RectTemplate::new(context, *rectspec)),
-                        ObjectSpec::Triangle(trispec)=> ObjectTemplate::Triangle(TriTemplate::new(context, *trispec)),
-                    })
-                    .collect();
-            }
-        }
-    }
-
-
     /// Central rendering logic used by both display() and save_frame()
-    fn render_to_target(
+    fn render_to_target(context: &Context,
         camera: &Camera,
         resources: &mut GpuResources,
         target: &mut RenderTarget,
@@ -211,11 +193,28 @@ impl Scene {
         // update particle graphics instances
         Self::update_particle_instances(camera, resources, particles);
 
+        // Handle dynamic creation or recreation if object specs change / are first loaded
+        if let Some(specs) = objects {
+            if resources.object_templates.len() != specs.len() {
+                resources.object_templates = specs
+                    .iter()
+                    .map(|spec| match spec {
+                        ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(&context, *boxspec)),
+                        ObjectSpec::Rectangle(rectspec) => ObjectTemplate::Rectangle(RectTemplate::new(&context, *rectspec)),
+                        ObjectSpec::Triangle(trispec) => ObjectTemplate::Triangle(TriTemplate::new(&context, *trispec)),
+                    })
+                    .collect();
+            }
+        } else if !resources.object_templates.is_empty() {
+            // Clear templates if specs became None
+            resources.object_templates.clear();
+        }
+
         // Gather renderable objects dynamically using a vector collection
         let mut scene_objects: Vec<&dyn Object> = Vec::new();
 
         // Push particles mesh
-        //scene_objects.push(&resources.sphere_template.mesh);
+        scene_objects.push(&resources.sphere_template.mesh);
 
         
         // Add additional scene objects if present, updating their transforms/colors as needed
@@ -225,6 +224,7 @@ impl Scene {
                     ObjectTemplate::Rectangle(t) => {
                         t.push_transform_and_color(spec);
                         scene_objects.push(&t.mesh);
+                        //println!("Rendering object type at index, total objects: {}", scene_objects.len());
                     }
                     ObjectTemplate::Triangle(t) => {
                         t.push_transform_and_color(spec);
@@ -237,7 +237,6 @@ impl Scene {
                 }
             }
         }
-        println!("Rendering {} scene objects", scene_objects.len());
         
         //Display simulation box outline
         if resources.simbox_template.boxspec.visible {
@@ -247,7 +246,8 @@ impl Scene {
 
         // Setup lights and execute draw call
         let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
-        println!("Rendering {} scene objects", scene_objects.len());
+        
+
         target.render(camera, scene_objects, &lights);
         
         Ok(())
@@ -270,8 +270,8 @@ impl Scene {
         self.camera.set_viewport(frame_input.viewport);
 
         let mut target = RenderTarget::screen(context, frame_input.viewport.width, frame_input.viewport.height);
-            
-        Self::render_to_target(&self.camera,resources,&mut target,particles, objects)?;
+        
+        Self::render_to_target(context, &self.camera,resources,&mut target,particles, objects)?;
 
         if let Some(w_ctx) = &self.windowed_context {
             w_ctx.swap_buffers()?;
@@ -302,6 +302,8 @@ impl Scene {
 
     /// Capture the current state to the video exporter
     pub fn save_frame(&mut self, particles: &ParticleVec, objects: Option<&[ObjectSpec]>) -> Result<(), Box<dyn std::error::Error>> {
+        let context = self.context.as_ref().ok_or("No context")?;
+
         if let Some(ref mut exporter) = self.video_exporter {
             let (w, h) = self.scene_settings.window_size;
             
@@ -310,7 +312,7 @@ impl Scene {
 
             let mut target = RenderTarget::screen(context, w, h);
 
-            Self::render_to_target(&self.camera,resources,&mut target, particles, objects)?;
+            Self::render_to_target(context, &self.camera,resources,&mut target, particles, objects)?;
 
             exporter.write_frame(&target.read_color::<[u8; 4]>())?;
         }

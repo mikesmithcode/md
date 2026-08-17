@@ -103,25 +103,76 @@
     }
 
     impl RectSpec {
-        pub fn new(
-        center: DVec3,
-        normal: DVec3,
-        tangent: DVec3,
-        half_size: DVec2,
-        color: three_d::Srgba,
-    ) -> Self {
-        let mut rect = Self {
-            center,
-            normal,
-            tangent,
-            half_size,
-            color,
-            vertices: [DVec3::ZERO; 4], // Temporary placeholder
-        };
-        rect.update_vertices();
-        rect
-    }
+        /// Creates a RectSpec from 4 corner vertices.
+        /// Order expected: [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
+        pub fn new(vertices: [DVec3; 4], color: three_d::Srgba) -> Self {
+            let [v0, v1, v2, v3] = vertices;
 
+            // --- 1. Validate input vertices before doing any math ---
+            assert!(
+                !v0.is_nan() && !v1.is_nan() && !v2.is_nan() && !v3.is_nan(),
+                "RectSpec error: One or more input vertices contain NaN values."
+            );
+
+            let e01 = v1 - v0; // Top edge
+            let e12 = v2 - v1; // Right edge
+            let e23 = v3 - v2; // Bottom edge
+            let e30 = v0 - v3; // Left edge
+
+            assert!(
+                e01.length_squared() > 1.0e-12 && e12.length_squared() > 1.0e-12,
+                "RectSpec error: Degenerate rectangle with zero-length edges."
+            );
+
+            // Planarity check
+            let n1 = e01.cross(e12).normalize();
+            let n2 = e23.cross(e30).normalize();
+            assert!(
+                n1.dot(n2) > 0.999,
+                "RectSpec error: The 4 input vertices are not coplanar."
+            );
+
+            // Orthogonality check (adjacent edges must be perpendicular)
+            let dot_product = e01.normalize().dot(e12.normalize());
+            assert!(
+                dot_product.abs() < 1e-4,
+                "RectSpec error: Adjacent edges are not perpendicular! Dot product was {}.",
+                dot_product
+            );
+            // --------------------------------------------------------
+
+            // 2. Calculate center as the average of all 4 corners
+            let center = (v0 + v1 + v2 + v3) / 4.0;
+
+            // 3. Half sizes are half the lengths of the respective edges
+            let half_width = e01.length() * 0.5;
+            let half_height = e12.length() * 0.5;
+            let half_size = DVec2::new(half_width, half_height);
+
+            // 4. Tangent and Normal
+            let tangent = e01.normalize();
+            let normal = e01.cross(e12).normalize();
+
+            // 5. Convert absolute vertices into local-space coordinates relative to (0,0,0)
+            let local_vertices = [
+                v0 - center,
+                v1 - center,
+                v2 - center,
+                v3 - center,
+            ];
+
+            println!("center {:?}",center);
+            println!("half_size {:?}",half_size);
+
+            Self {
+                center,
+                normal,
+                tangent,
+                half_size,
+                color,
+                vertices: local_vertices,
+            }
+        }
 
 
         /// Recalculates vertices based on current center, normal, tangent, and half_size.
@@ -159,7 +210,6 @@
             // Recompute vertices and normalize basis vectors together
             self.update_vertices();
         }
-
     }
 
 
@@ -179,6 +229,50 @@ pub struct TriSpec {
 }
 
 impl TriSpec {
+    pub fn new(id: usize, v0: DVec3, v1: DVec3, v2: DVec3, color: Srgba) -> Self {
+        // 1. Calculate center as the average of the 3 vertices
+        let center = (v0 + v1 + v2) / 3.0;
+
+        // 2. Calculate edges
+        let edge1 = v1 - v0;
+        let edge2 = v2 - v0;
+
+        let cross = edge1.cross(edge2);
+        assert!(
+            cross.length_squared() > 1.0e-14,
+            "TriSpec (id: {}) is degenerate (zero area or duplicate vertices). Vertices: {:?}, {:?}, {:?}",
+            id, v0, v1, v2
+        );
+
+        // Normal from cross product (STL right-hand rule convention)
+        let normal = edge1.cross(edge2).normalize();
+
+        // Tangent along the first edge direction
+        let tangent = edge1.normalize();
+
+        // Convert absolute vertices into local-space coordinates relative to (0,0,0)
+        let local_triangles = [
+            v0 - center,
+            v1 - center,
+            v2 - center,
+        ];
+
+        let mut tri = Self {
+            id,
+            visible: true,
+            center,
+            normal,
+            tangent,
+            color,
+            local_triangles,
+        };
+
+        // Validate that everything checks out
+        tri.validate();
+
+        tri
+    }
+
     /// Ensures normal and tangent are orthogonal and normalized.
     pub fn normalize_basis(&mut self) {
         self.normal = self.normal.normalize();
@@ -223,5 +317,17 @@ impl TriSpec {
         self.normal = new_normal;
         self.tangent = new_tangent;
         self.normalize_basis();
+    }
+
+    /// Panics if normal and tangent are not orthogonal.
+    pub fn validate(&self) {
+        let n = self.normal.normalize();
+        let t = (self.tangent - n * self.tangent.dot(n)).normalize();
+        
+        assert!(
+            n.dot(t).abs() < 1e-5,
+            "TriSpec (id: {}) normal and tangent are not orthogonal!",
+            self.id
+        );
     }
 }
