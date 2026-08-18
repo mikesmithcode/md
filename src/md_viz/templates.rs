@@ -5,13 +5,13 @@
 //! for high-performance rendering.
 
 
-use glam::{DVec3, Mat4 as GMat4, Vec3 as GVec3, Vec4 as GVec4};
+use glam::{DVec3, Mat4 as GMat4, Vec3 as GVec3};
 use three_d::{Context, CpuMesh,Mesh, Gm, InstancedMesh, Instances, Srgba, PhysicalMaterial,
     Blend, BlendEquationType, BlendMultiplierType, Cull, DepthTest,
     RenderStates, WriteMask};
 use three_d::InnerSpace;
 
-use crate::md_sim::{ParticleVec, BoxSpec, RectSpec, TriSpec, ObjectSpec};
+use crate::md_sim::{ParticleVec, BoxSpec, RectSpec, TriSpec, ObjectSpec, Visibility};
 
 ///Used by all shapes except SphereTemplate which is used for particles
 pub enum ObjectTemplate {
@@ -44,8 +44,8 @@ pub struct SphereTemplate {
 impl SphereTemplate {
     pub fn new(context: &Context) -> Self {
         let cpu_mesh = CpuMesh::sphere(16);
-        
-        let mat = create_transparent_material();
+
+        let mat = create_transparent_material(None);
 
         let mesh = Gm::new(
             InstancedMesh::new(context, &Instances::default(), &cpu_mesh),
@@ -56,7 +56,7 @@ impl SphereTemplate {
     }
 
     // Helper to update instance of particle
-    pub fn push_transform_and_color(&self, i: usize, particles: &ParticleVec, transforms: &mut Vec<three_d::Mat4>, colors: &mut Vec<Srgba>) {
+    pub fn push_transform(&self, i: usize, particles: &ParticleVec, transforms: &mut Vec<three_d::Mat4>) {
         let glam_mat = GMat4::from_translation(GVec3::new(particles.position[i].x as f32, particles.position[i].y as f32, particles.position[i].z as f32)) 
             * GMat4::from_scale(GVec3::splat(particles.radius[i] as f32));
         
@@ -67,6 +67,10 @@ impl SphereTemplate {
             three_d::Vector4::new(cols[8], cols[9], cols[10], cols[11]),
             three_d::Vector4::new(cols[12], cols[13], cols[14], cols[15]),
         ));
+    }
+
+    pub fn push_color_and_visibility(&self, i: usize, particles: &ParticleVec, transforms: &mut Vec<three_d::Mat4>, colors: &mut Vec<Srgba>) {
+        
         colors.push(particles.color[i]);
     }
 }
@@ -84,7 +88,7 @@ pub struct WireBoxTemplate {
 
 impl WireBoxTemplate {
     pub fn new(context: &Context, boxspec: BoxSpec) -> Self {
-        let center = boxspec.position;
+        let center = boxspec.center;
         let half_size = boxspec.box_size * 0.5;
         let thickness = boxspec.thickness.abs();
 
@@ -152,7 +156,7 @@ impl WireBoxTemplate {
             })
             .collect();
 
-        let mat = create_transparent_material();
+        let mat = create_transparent_material(None);
         let mesh = Gm::new(
             InstancedMesh::new(
                 context,
@@ -180,7 +184,7 @@ impl WireBoxTemplate {
         }
 
         //otherwise update position and colour.
-        let pos = boxspec.position;
+        let pos = boxspec.center;
         let glam_mat = GMat4::from_rotation_translation(
             glam::DQuat::from(boxspec.orientation).as_quat(),
             glam::Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32),
@@ -209,7 +213,7 @@ pub struct RectTemplate {
 
 impl RectTemplate {
     pub fn new(context: &Context, rectspec: RectSpec) -> Self {
-        let mut mat = create_opaque_material();
+        let mut mat = create_opaque_material(None);
         mat.albedo = rectspec.color;
 
         let mesh = Gm::new(
@@ -316,10 +320,10 @@ impl TriTemplate {
         };
         cpu_mesh.compute_normals();
 
-        let mat_transform = trispec_to_three_d_matrix(&trispec);
-
-        let mut mat = create_opaque_material();
+        let mut mat = create_opaque_material(None);
         mat.albedo = trispec.color;
+
+        let mat_transform = Self::compute_transformation(&trispec);
 
         let mesh = Gm::new(
             InstancedMesh::new(
@@ -333,7 +337,9 @@ impl TriTemplate {
             mat,
         );
 
-        Self { mesh, trispec }
+        let mut template = Self { mesh, trispec: trispec.clone() };
+        template.update_transform_and_color(&trispec);
+        template
     }
 
     pub fn push_transform_and_color(&mut self, spec: &ObjectSpec) {
@@ -346,25 +352,76 @@ impl TriTemplate {
             return;
         }
 
-        let mat_transform = trispec_to_three_d_matrix(trispec);
+        self.update_transform_and_color(trispec);
+        self.trispec = *trispec;
+    }
+
+    fn update_transform_and_color(&mut self, trispec: &TriSpec) {
+        let mat_transform = Self::compute_transformation(trispec);
 
         self.mesh.geometry.set_instances(&Instances {
             transformations: vec![mat_transform],
             ..Default::default()
         });
         self.mesh.material.albedo = trispec.color;
-        self.trispec = *trispec;
+
+        // Disable back-face culling to ensure it renders from any angle
+        self.mesh.material.render_states = three_d::RenderStates {
+            write_mask: three_d::WriteMask::COLOR_AND_DEPTH,
+            cull: three_d::Cull::None,
+            ..Default::default()
+        };
     }
 
+    fn compute_transformation(trispec: &TriSpec) -> three_d::Mat4 {
+        let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
+            trispec.center.x as f32,
+            trispec.center.y as f32,
+            trispec.center.z as f32,
+        ));
+
+        let normal = three_d::Vec3::new(
+            trispec.normal.x as f32,
+            trispec.normal.y as f32,
+            trispec.normal.z as f32,
+        ).normalize();
+
+        let tangent = three_d::Vec3::new(
+            trispec.tangent.x as f32,
+            trispec.tangent.y as f32,
+            trispec.tangent.z as f32,
+        ).normalize();
+
+        let bitangent = normal.cross(tangent).normalize();
+
+        // Construct the rotation matrix from the orientation frame matching RectTemplate
+        let rotation = three_d::Mat4::from_cols(
+            tangent.extend(0.0),
+            bitangent.extend(0.0),
+            normal.extend(0.0),
+            three_d::Vec4::unit_w(),
+        );
+
+        // Since the local triangle vertices are already stored at true scale relative to center,
+        // no additional scaling matrix is required here (identity scale).
+        translation * rotation
+    }
 }
 
 
 //---------------------------------------------------------------------------------------
 // Material
 //--------------------------------------------------------------------------------------
-fn create_transparent_material() -> PhysicalMaterial {
+
+
+
+fn create_transparent_material(colour: Option<Srgba>) -> PhysicalMaterial {
     let mut mat = PhysicalMaterial::default();
-    mat.albedo = Srgba::WHITE;
+    if let Some(colour)=colour{
+        mat.albedo = colour;
+    }else{
+        mat.albedo = Srgba::RED;
+    }
     mat.render_states = RenderStates {
         blend: Blend::Enabled {
             source_rgb_multiplier: BlendMultiplierType::SrcAlpha,
@@ -381,9 +438,14 @@ fn create_transparent_material() -> PhysicalMaterial {
     mat
 }
 
-fn create_opaque_material() -> PhysicalMaterial {
+fn create_opaque_material(colour: Option<Srgba>) -> PhysicalMaterial {
     let mut mat = PhysicalMaterial::default();
-    mat.albedo = Srgba::WHITE;
+    if let Some(colour)=colour{
+        mat.albedo = colour;
+    }else{
+        mat.albedo = Srgba::RED;
+    }
+    
     // Disable backface culling so surfaces render from both sides
     mat.render_states = three_d::RenderStates {
         cull: three_d::Cull::None,
@@ -403,20 +465,4 @@ fn glam_to_three_d(mat: GMat4) -> three_d::Mat4 {
         three_d::Vector4::new(cols[8], cols[9], cols[10], cols[11]),
         three_d::Vector4::new(cols[12], cols[13], cols[14], cols[15]),
     )
-}
-
-// Helper function to build the 4x4 matrix compatible with three_d
-fn trispec_to_three_d_matrix(trispec: &TriSpec) -> three_d::Mat4 {
-    let normal = trispec.normal.normalize();
-    let tangent = (trispec.tangent - normal * trispec.tangent.dot(normal)).normalize();
-    let bitangent = normal.cross(tangent);
-
-    let glam_mat = glam::DMat4::from_cols(
-        glam::DVec4::new(tangent.x, tangent.y, tangent.z, 0.0),
-        glam::DVec4::new(bitangent.x, bitangent.y, bitangent.z, 0.0),
-        glam::DVec4::new(normal.x, normal.y, normal.z, 0.0),
-        glam::DVec4::new(trispec.center.x, trispec.center.y, trispec.center.z, 1.0),
-    );
-
-    glam_to_three_d(glam_mat.as_mat4())
 }

@@ -22,6 +22,8 @@ use glam::f64::{DVec3,DQuat};
 use three_d::*;
 use soa_derive::StructOfArray;
 
+use super::Visibility;
+
 
 ///Particle defines a particle object which defines key properties: position, velocity etc
 /// 
@@ -46,8 +48,8 @@ pub struct Particle {
     pub radius: f64, 
     pub mass: f64,  
     pub charge: f64,
-    pub visible: bool,
     pub color: Srgba, 
+    pub visibility: Visibility,
     // Verlet lists tracker fields
     pub ref_pos: DVec3,    
 }
@@ -71,8 +73,7 @@ impl Particle {
     /// * `radius` - The physical radius of the spherical particle.
     /// * `density` - The mass per unit volume.
     /// * `charge` - charge
-    /// * `visible` - false hides particle from display
-    /// * `color` - The RGBA colour used for rendering.
+    /// * `color` - The Colour enum used for rendering. Determines whether hidden, transparent or Opaque and holds the Srgba colour.
     ///
     pub fn new(
         id: usize,
@@ -86,15 +87,14 @@ impl Particle {
         radius: f64, 
         density: f64, 
         charge: f64,
-        visible: bool,
-        color: Srgba
+        color: Srgba,
+        visibility: Visibility
     ) -> Self {
         // Calculate mass: m = volume * density
         let volume = (4.0 / 3.0) * std::f64::consts::PI * radius.powi(3);
         let mass = volume * density;
         let ref_pos = DVec3::ZERO;
 
-        
 
         Particle { 
             id, 
@@ -108,8 +108,8 @@ impl Particle {
             radius, 
             mass, 
             charge,
-            visible,
             color,
+            visibility,
             ref_pos
         }
     }

@@ -13,7 +13,7 @@ use three_d::Srgba;
 use md::md_viz::scene::Scene;
 
 // Imports from simulation library
-use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, Simulation, SimulationSettings};
+use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, Visibility, Simulation, SimulationSettings};
 use md::md_sim::force::{add_weight, add_granular_collision};
 use md::md_sim::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
 use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
@@ -92,7 +92,7 @@ pub fn main() {
     let vertices = [DVec3::new(0.0,0.0, z),DVec3::new(x,0.0, z),DVec3::new(x,y, z),DVec3::new(0.0,y, z)];
     let color = Srgba::RED;
 
-    let rectspec = RectSpec::new(vertices, color);
+    let rectspec = RectSpec::new(vertices, color, Visibility::Opaque);
     let surface = ObjectSpec::Rectangle(rectspec);
     let objects = Some(vec![surface]);
 
@@ -140,14 +140,14 @@ pub fn main() {
 
         sim.update();
 
-        //if step %100 ==0{
+        if step %100 ==0{
         if scene.poll_events(&mut event_loop) {
                 break; 
             }
-        //}
+        }
 
         // update scene every dump timesteps
-        //if step % sim.settings.dump == 0 {
+        if step % sim.settings.dump == 0 {
             // exit if window close requested
             
             
@@ -158,7 +158,7 @@ pub fn main() {
 
             //save a snapshot of particle positions etc
             save_particles(&particle_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
-        //}
+        }
         
     }
     scene.close();

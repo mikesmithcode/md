@@ -13,7 +13,7 @@ use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::event::{Event as WinitEvent, WindowEvent};
 
 use crate::md_sim::SimulationSettings;
-use crate::md_sim::particle::{ParticleVec, ObjectSpec};
+use crate::md_sim::particle::{ParticleVec, ObjectSpec, Visibility};
 
 use crate::md_viz::lights::{create_ambient_light, create_directional_light};
 use crate::md_viz::templates::{SphereTemplate, RectTemplate, TriTemplate, WireBoxTemplate, ObjectTemplate};
@@ -71,7 +71,7 @@ impl Scene {
 
         // Update the box_size from simulation
         settings.sim_box.box_size = sim_settings.sim_box_size;
-        settings.sim_box.position = sim_settings.sim_box_size*0.5;
+        settings.sim_box.center = sim_settings.sim_box_size*0.5;
 
         Self::new(settings)
     }
@@ -159,7 +159,7 @@ impl Scene {
             });
 
             for i in indices {
-                resources.sphere_template.push_transform_and_color(i, particles, &mut transforms, &mut colors);
+                resources.sphere_template.push_transform(i, particles, &mut transforms);
             }
         } else {
             for (pos, rad, col) in soa_zip!(particles, [position, radius, color]) {
@@ -239,7 +239,7 @@ impl Scene {
         }
         
         //Display simulation box outline
-        if resources.simbox_template.boxspec.visible {
+        if resources.simbox_template.boxspec.visibility != Visibility::Hidden{
             scene_objects.push(&resources.simbox_template.mesh);
         }
         

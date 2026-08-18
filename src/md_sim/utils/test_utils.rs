@@ -4,7 +4,7 @@
 
     use crate::md_sim::force::CellGrid;
     use crate::md_sim::SimulationSettings;
-    use crate::md_sim::particle::{Particle, ParticleVec, MoleculeData};
+    use crate::md_sim::particle::{Particle, ParticleVec, MoleculeData, Visibility};
 
     pub fn create_particle_vec()-> ParticleVec{
         let mut particles = ParticleVec::new();
@@ -22,7 +22,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
-                visible: true,
+                visibility: Visibility::Opaque,
                 ref_pos: DVec3::ZERO,
             });
         particles.push(
@@ -39,7 +39,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
-                visible: true,
+                visibility: Visibility::Opaque,
                 ref_pos: DVec3::ZERO,
             });
         particles.push(
@@ -56,7 +56,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
-                visible: true,
+                visibility: Visibility::Opaque,
                 ref_pos: DVec3::ZERO,
             });
         particles.push(
@@ -73,7 +73,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
-                visible: true,
+                visibility: Visibility::Opaque,
                 ref_pos: DVec3::ZERO,
             });
             particles.push(
@@ -90,7 +90,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
-                visible: true,
+                visibility: Visibility::Opaque,
                 ref_pos: DVec3::ZERO,
             });
             particles.push(
@@ -107,7 +107,7 @@
                 mass: 1.0,
                 charge: 0.0,
                 color: Srgba::new(255, 0, 0, 255),
-                visible:true,
+                visibility: Visibility::Opaque,
                 ref_pos: DVec3::ZERO,
             });
       
@@ -134,7 +134,7 @@ pub fn create_single_molecule()-> ParticleVec{
         mass: 1.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
-        visible: true,
+        visibility: Visibility::Opaque,
         ref_pos: DVec3::ZERO,
     });
     
@@ -152,7 +152,7 @@ pub fn create_single_molecule()-> ParticleVec{
         mass: 0.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
-        visible: true,
+        visibility: Visibility::Opaque,
         ref_pos: DVec3::ZERO,
     });
 
@@ -179,7 +179,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 1.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
-        visible: true,
+        visibility: Visibility::Opaque,
         ref_pos: DVec3::ZERO,
     });
     
@@ -197,7 +197,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 0.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
-        visible: true,
+        visibility: Visibility::Opaque,
         ref_pos: DVec3::ZERO,
     });
 
@@ -218,7 +218,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 1.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
-        visible: true,
+        visibility: Visibility::Opaque,
         ref_pos: DVec3::ZERO,
     });
     
@@ -236,7 +236,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 0.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
-        visible: true,
+        visibility: Visibility::Opaque,
         ref_pos: DVec3::ZERO,
     });
 
@@ -255,7 +255,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 1.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
-        visible: true,
+        visibility: Visibility::Opaque,
         ref_pos: DVec3::ZERO,
     });
     
@@ -273,7 +273,7 @@ pub fn create_molecule_vec() -> ParticleVec {
         mass: 0.5,
         charge: 0.0,
         color: Srgba::new(255, 0, 0, 255),
-        visible: true,
+        visibility: Visibility::Opaque,
         ref_pos: DVec3::ZERO,
     });
 

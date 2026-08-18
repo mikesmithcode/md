@@ -23,7 +23,7 @@ use glam::{DVec3,DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
-use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec};
+use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec, Visibility};
 use crate::md_viz::SceneSettings;
 
 
@@ -264,9 +264,13 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
     let col_b = b_series.f64()?;
     let a_series = get_f64_col(&df, "a", 255.0);
     let col_a = a_series.f64()?;
+    let vis_series = get_u64_col_or_filler(&df, "visibility", 2); // e.g. 2 = Opaque
+    let vis_col = vis_series.u64()?;
     
 
     let t = t_col.get(0).unwrap_or(0.0);
+
+    
 
     // Efficiently populate the ParticleVec
     // We use izip! to iterate through all columns simultaneously
@@ -293,12 +297,19 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
         r_col.into_iter(),
         m_col.into_iter(),
         q_col.into_iter(),
-        visible_col.into_iter(),
+        vis_col.into_iter(),
         col_r.into_iter(),
         col_g.into_iter(),
         col_b.into_iter(),
         col_a.into_iter()
     ) {
+
+        let vis = match visible.unwrap_or(2) {
+            0 => Visibility::Hidden,
+            1 => Visibility::Transparent,
+            _ => Visibility::Opaque,
+        };
+
         // We use .unwrap_or because Polars columns are technically nullable
         particles.push(Particle {
             id: id.unwrap_or(0) as usize,
@@ -333,7 +344,7 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
             radius: rad.unwrap_or(0.0),
             mass: mass.unwrap_or(0.0),
             charge: charge.unwrap_or(0.0),
-            visible: visible.unwrap_or(true),
+            visibility: vis,
             color: Srgba::new(
                 r.unwrap_or(0.0) as u8,
                 g.unwrap_or(0.0) as u8,
@@ -402,6 +413,12 @@ pub fn save_particles(
     let id: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
     let molecule_id: Vec<u64> = particles.molecule_id.iter().map(|&molecule_id| molecule_id as u64).collect();
     let ptype: Vec<u64> = particles.ptype.iter().map(|&ptype| ptype as u64).collect();
+    let visibility: Vec<u64> = particles.visibility.iter().map(|vis| 
+        match vis {
+            Visibility::Hidden=> 0,
+            Visibility::Transparent => 1,
+            Visibility::Opaque => 2
+        }).collect();
 
     let mut df = df!(
         "t" => &t,
@@ -427,7 +444,7 @@ pub fn save_particles(
         "radius" => &particles.radius,
         "mass" => &particles.mass,
         "charge" => &particles.charge,
-        "visible" => &particles.visible,
+        "visible" => &visibility,
         "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
         "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
         "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),

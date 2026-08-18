@@ -9,7 +9,7 @@ import numpy as np
 import sys
 
 
-def get_config(*args, **kwargs):
+def get_config(*args, objects=False, videos=True, **kwargs):
     """
     Parses the required input argument (e.g., 'silo' or 'silo_123') passed from the shell script.
     Splits at the first underscore to determine the target folder/config name.
@@ -19,22 +19,34 @@ def get_config(*args, **kwargs):
     # Extract target name (everything before the first underscore, or the whole thing if no underscore)
     target_name = input_name.split('_', 1)[0]
     
+    print(target_name)
+    
     # Construct exact nested folder path:
     # output/<target_name>/<input_name>/particles/
+    
     particles_dir = Path("output") / target_name / input_name / "particles"
-    video_dir = Path("output") / target_name / input_name / "video"
-    
-    # Ensure directories exist
     particles_dir.mkdir(parents=True, exist_ok=True)
-    video_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Define file paths (loads config based on the target name, e.g., 'silo.toml')
-    config_path = Path("input") / f"{target_name}.json"
     particles_filepath = particles_dir / "particles_0000000000.parquet"
     
+    
     # Define file paths (loads config based on the target name, e.g., 'silo.toml')
     config_path = Path("input") / f"{target_name}.json"
-    objects_filepath = particles_dir / "objects_0000000000.parquet"
+    
+    
+    if objects:
+        objects_dir = Path("output") / target_name / input_name / "objects"
+        objects_dir.mkdir(parents=True, exist_ok=True)
+        objects_filepath = objects_dir / "objects_0000000000.parquet"
+    else:
+        objects_filepath = None
+    
+    if videos:
+        video_dir = Path("output") / target_name / input_name / "video"
+        video_dir.mkdir(parents=True, exist_ok=True)
+    
+    
+    # Define file paths (loads config based on the target name, e.g., 'silo.toml')
+    config_path = Path("input") / f"{target_name}.json"
     
     # Load configuration file
     with open(config_path, "r", encoding="utf-8") as f:
@@ -88,20 +100,7 @@ def theta_from_quaternion_xz(df):
     
     return (cos_theta, sin_theta)
 
-def get_config(script_name):
-    """call this function with get_config(__file__)"""
-    input_path = Path(script_name).parent.parent.joinpath("input")
-    name = Path(script_name).stem
-    config_path = input_path.joinpath(f"{name}.json")
 
-    with open(config_path, 'r') as f:
-        config = json.load(f)
-    
-    path_to_snapshots = Path(f"output/{name}/particles/")
-    os.makedirs(path_to_snapshots, exist_ok=True)
-    snapshot_filepath = path_to_snapshots.joinpath("particles_0000000000.parquet")
-
-    return config, snapshot_filepath
 
 colours = {
     0: 'red',

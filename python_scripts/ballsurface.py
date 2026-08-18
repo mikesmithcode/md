@@ -8,17 +8,18 @@ import sys
 from utility import display, get_config
 
 
-name = sys.argv[1]
 
-path = "output/" + name
-path_to_snapshots = path + "/particles"
+
+
 # Parse inputs and create folders etc.
-config, particle_filepath, object_filepath = get_config()
+config, particle_filepath, object_filepath = get_config(objects=True)
 box = config["sim_box_size"]
 
-os.makedirs(path_to_snapshots, exist_ok=True)
-
 root_path = Path.cwd()
+
+#----------------------------------------------------------------------------------
+# Particles
+#----------------------------------------------------------------------------------
 
 print(particle_filepath)
 base_particle = {
@@ -49,7 +50,6 @@ particle2["id"] = 0
 particle2["ptype"] = 0
 
 
-
 df = pl.DataFrame(particle2)
 
 df = df.with_columns(
@@ -57,8 +57,20 @@ df = df.with_columns(
     pl.col("ptype").cast(pl.UInt64)
 )
 
-
 df.write_parquet(particle_filepath)
+
+
+#--------------------------------------------------------------------------------------------
+# Objects
+#--------------------------------------------------------------------------------------------
+
+rectangle = []
+
+
+
+
+
+
 df.write_parquet(object_filepath)
 print(df)
 
