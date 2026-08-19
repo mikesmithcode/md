@@ -8,7 +8,7 @@ use crate::md_sim::particle::{ActiveParams, CollisionParams, SimulationModel};
 use crate::md_sim::utils::{create_particle_vec,create_molecule_vec, create_grid_and_settings};
 use crate::md_sim::utils::InteractionContext;
 
-use super::{add_weight,add_viscous_drag, add_granular_collision, add_coulomb};
+use super::{add_weight,add_viscous_drag, add_particle_particle_collision, add_coulomb};
 use super::neighbours::CellGrid;
 use std::f64::consts::PI;
 
@@ -61,7 +61,7 @@ fn test_add_drag() {
 // -----------------------------------------------------------------
 
 #[test]
-fn test_granular_collision() {
+fn test_particle_particle_collision() {
     let particles = create_particle_vec();
     
     // Bundle params into the specific Enum variant
@@ -95,7 +95,7 @@ fn test_granular_collision() {
     particles.velocity[0] = DVec3::new(1.0, 0.0, 0.0);
     particles.velocity[1] = DVec3::new(-1.0, 0.0, 0.0);
 
-    (force, _) = add_granular_collision(0, 1, &particles, force, DVec3::ZERO, &settings);
+    (force, _) = add_particle_particle_collision(0, 1, &particles, force, DVec3::ZERO, &settings);
 
     assert!(force.x < 0.0, "Force should be repulsive for particle 0");
     let force_with_damping = force.length();
@@ -105,7 +105,7 @@ fn test_granular_collision() {
     particles.velocity[0] = DVec3::new(-1.0, 0.0, 0.0);
     particles.velocity[1] = DVec3::new(1.0, 0.0, 0.0);
 
-    (force, _ )=add_granular_collision(0, 1, &particles, force,DVec3::ZERO, &settings);
+    (force, _ )=add_particle_particle_collision(0, 1, &particles, force,DVec3::ZERO, &settings);
     let force_no_damping = force.length();
 
     // force_with_damping (Compression) should be > force_no_damping (Restitution).

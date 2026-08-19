@@ -3,12 +3,14 @@ mod bonds;
 mod neighbours;
 mod pairwise;
 mod single;
+mod objects;
 
 
 // Re-export the traits and key functions for easier access
 // This allows you to call forces::Force instead of forces::force::Force
 pub use single::{add_weight, add_viscous_drag, add_active_force};
-pub use pairwise::{add_granular_collision, add_weeks_chandler_andersen, add_coulomb};
+pub use objects::add_particle_object_collision;
+pub use pairwise::{add_particle_particle_collision, add_weeks_chandler_andersen, add_coulomb};
 pub use neighbours::CellGrid;
 //pub use bonds::*;
 
@@ -79,7 +81,7 @@ pub trait Forces {
         force: DVec3,
         torque: DVec3,
         particles: &ParticleVec, 
-        objects: Option<&[ObjectSpec]>,
+        objects: &ObjectSpec,
         settings: &SimulationSettings
     )->(DVec3, DVec3);
 

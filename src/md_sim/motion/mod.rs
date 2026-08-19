@@ -74,10 +74,9 @@ pub trait Motion {
     /// Can be used to update any property of the ObjectSpec. 
     /// If Option<Vec<ObjectSpec>> = None this is bypassed otherwise Vec<ObjectSpec> extracted
     /// and modified in place.
-    fn update_objects(&self, _objects: &mut [ObjectSpec], _settings: &SimulationSettings, _time: f64){
+    fn update_objects(&self, _object: &mut ObjectSpec, _settings: &SimulationSettings, _time: f64){
         //Optional no movement by default. It is assumed all objects are passive moving according to prescribed rules
-        //for obj in objects {
-        //match obj {
+        //match object {
         //    ObjectSpec::Rect(rect) => {
         //        // Example: apply a velocity or prescribed motion
         //        rect.transform(translation_delta, Some(rotation_delta));

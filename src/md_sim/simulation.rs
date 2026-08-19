@@ -39,6 +39,7 @@ use crate::md_sim::force::CellGrid;
 use crate::md_sim::Forces;
 use crate::md_sim::Motion;
 use crate::md_sim::SimulationSettings;
+use crate::md_viz::scene;
 
 /// The main simulation engine
 /// 
@@ -114,7 +115,9 @@ impl<S> Simulation<S>
 
             //Move any objects
             if let Some(scene_objects) = self.objects.as_deref_mut(){
-                self.sim_update.update_objects(scene_objects, &self.settings, self.time);
+                for object in scene_objects{
+                    self.sim_update.update_objects(object, &self.settings, self.time);
+                }
             }
 
             //----------------------------------------------------------------------------
@@ -133,12 +136,29 @@ impl<S> Simulation<S>
                 }
             }
 
-            if self.sim_update.has_object_forces(){
-                let (mut force, mut torque);
-                for i in 0..self.particles.len(){
-                    (force, torque) = self.sim_update.update_object_forces(i, DVec3::ZERO, DVec3::ZERO, &self.particles, self.objects.as_deref(), &self.settings);
-                    self.forces[i] += force;
-                    self.torques[i] += torque;
+            if self.sim_update.has_object_forces() {
+                if let Some(objects) = self.objects.as_deref() {
+                    for i in 0..self.particles.len() {
+                        let mut total_force = DVec3::ZERO;
+                        let mut total_torque = DVec3::ZERO;
+
+                        // Loop through every object in the slice
+                        for obj in objects {
+                            let (force, torque) = self.sim_update.update_object_forces(
+                                i, 
+                                DVec3::ZERO, 
+                                DVec3::ZERO, 
+                                &self.particles, 
+                                obj, // Pass a single &ObjectSpec instead of the whole slice if update_object_forces takes one
+                                &self.settings
+                            );
+                            total_force += force;
+                            total_torque += torque;
+                        }
+
+                        self.forces[i] += total_force;
+                        self.torques[i] += total_torque;
+                    }
                 }
             }
 

@@ -147,39 +147,20 @@ pub fn create_orthographic_camera(viewport: Viewport, scene_settings: SceneSetti
     let centre = Vector3::new(x_mid, y_mid, z_mid);
     let position = centre + rel_pos;//Vector3::new(x_mid, y_mid + distance, z_mid);
 
-    
-    
-    let z_near: f32;
-    let z_far: f32;
-
-    let _max_axis = if rel_pos.x >= rel_pos.y && rel_pos.x >= rel_pos.z {
-        z_near = position.x;
-        z_far = x_mid - dim_x;    
-    } else if rel_pos.y >= rel_pos.z {
-        z_near = position.y;
-        z_far = y_mid - dim_y;  
-    } else {
-        z_near = position.z;
-        z_far = z_mid - dim_z;  
-    }; //  
-
-    //let z_near = -0.25;
-    //let z_far = 0.25;
-
-    let screen_scaling = 4.0;
-    let padding_factor=1.20;
+    let z_near = position.y;
+    let z_far = -centre.y;  
+    let factor = 1.75/(rel_pos.y);
 
     let camera = Camera::new_orthographic(
         viewport,
         position,
         centre,
         up,
-        max_dim*screen_scaling*padding_factor,
+        max_dim * factor,
         z_near,
         z_far
     );
-    println!("DEBUG: Camera pos {:?} view dir {:?}", camera.position(), camera.position()-camera.target());
-    println!("DEBUG Camera near: {:?}, far: {:?}", z_near, z_far);
+    
     camera
 }
 

@@ -23,7 +23,7 @@ use glam::{DVec3,DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
-use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec, Visibility};
+use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec};
 use crate::md_viz::SceneSettings;
 
 
@@ -264,8 +264,7 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
     let col_b = b_series.f64()?;
     let a_series = get_f64_col(&df, "a", 255.0);
     let col_a = a_series.f64()?;
-    let vis_series = get_u64_col_or_filler(&df, "visibility", 2); // e.g. 2 = Opaque
-    let vis_col = vis_series.u64()?;
+
     
 
     let t = t_col.get(0).unwrap_or(0.0);
@@ -297,18 +296,12 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
         r_col.into_iter(),
         m_col.into_iter(),
         q_col.into_iter(),
-        vis_col.into_iter(),
+        visible_col.into_iter(),
         col_r.into_iter(),
         col_g.into_iter(),
         col_b.into_iter(),
         col_a.into_iter()
     ) {
-
-        let vis = match visible.unwrap_or(2) {
-            0 => Visibility::Hidden,
-            1 => Visibility::Transparent,
-            _ => Visibility::Opaque,
-        };
 
         // We use .unwrap_or because Polars columns are technically nullable
         particles.push(Particle {
@@ -344,7 +337,7 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
             radius: rad.unwrap_or(0.0),
             mass: mass.unwrap_or(0.0),
             charge: charge.unwrap_or(0.0),
-            visibility: vis,
+            visible: visible.unwrap_or(true),
             color: Srgba::new(
                 r.unwrap_or(0.0) as u8,
                 g.unwrap_or(0.0) as u8,
@@ -372,21 +365,49 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
 pub fn load_latest_particles(
     dir_path: &Path,
 ) -> Result<(ParticleVec, usize, f64), Box<dyn std::error::Error>> {
-    let (latest_path, latest_step) = fs::read_dir(dir_path)?
-        .flatten() // Ignore entries we can't read
+    // Find all valid snapshot files and sort them descending by step
+    let mut entries: Vec<(std::path::PathBuf, usize)> = fs::read_dir(dir_path)?
+        .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
             let step = name.strip_prefix("particles_")?
                            .strip_suffix(".parquet")?
                            .parse::<usize>().ok()?;
-
             Some((entry.path(), step))
         })
-        .max_by_key(|&(_, step)| step) // Find the entry with the highest step
-        .ok_or("No snapshot files found")?;
+        .collect();
 
-    let (particles, time) = load_particles(&latest_path)?;
-    Ok((particles, latest_step, time))
+    if entries.is_empty() {
+        return Err("No snapshot files found".into());
+    }
+
+    // Sort descending by step (highest/latest first)
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+
+    for (path, step) in entries {
+        match load_particles(&path) {
+            Ok((particles, time)) => {
+                return Ok((particles, step, time));
+            }
+            Err(e) => {
+                // Check if it's a parquet corruption / file truncation error
+                let err_msg = e.to_string();
+                if err_msg.contains("PAR1") || err_msg.contains("parquet") {
+                    eprintln!("Warning: Corrupted snapshot found at {:?}. Removing and trying previous...", path);
+                    if let Err(del_err) = fs::remove_file(&path) {
+                        eprintln!("Failed to delete corrupted file: {}", del_err);
+                    }
+                    // Continue loop to try the next highest step file
+                    continue;
+                } else {
+                    // If it's some other unexpected error, bubble it up immediately
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    Err("All available snapshot files were corrupted or could not be read".into())
 }
 
 /// saves particle snapshot to Parquet file
@@ -413,12 +434,6 @@ pub fn save_particles(
     let id: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
     let molecule_id: Vec<u64> = particles.molecule_id.iter().map(|&molecule_id| molecule_id as u64).collect();
     let ptype: Vec<u64> = particles.ptype.iter().map(|&ptype| ptype as u64).collect();
-    let visibility: Vec<u64> = particles.visibility.iter().map(|vis| 
-        match vis {
-            Visibility::Hidden=> 0,
-            Visibility::Transparent => 1,
-            Visibility::Opaque => 2
-        }).collect();
 
     let mut df = df!(
         "t" => &t,
@@ -444,7 +459,7 @@ pub fn save_particles(
         "radius" => &particles.radius,
         "mass" => &particles.mass,
         "charge" => &particles.charge,
-        "visible" => &visibility,
+        "visible" => &particles.visible,
         "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
         "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
         "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
@@ -453,19 +468,11 @@ pub fn save_particles(
 
     // Write to Parquet (with temp file for safety)
     let filename = format!("particles_{:010}.parquet", step);
-    let temp_filename = format!("particles_{:010}.parquet.tmp", step);
-    
-
-    let temp_path = dir_path.join(&temp_filename);
     let final_path = dir_path.join(&filename);
     
-    // Write to temporary file first with metadata
-    {
-        let file = std::fs::File::create(&temp_path)?;
-        ParquetWriter::new(file).finish(&mut df)?;
-    }
 
-    fs::rename(&temp_path, &final_path)?;
+    let file = std::fs::File::create(&final_path)?;
+    ParquetWriter::new(file).finish(&mut df)?;
 
     Ok(())
 }

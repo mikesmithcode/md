@@ -9,7 +9,7 @@ pub mod simulation_settings;
 
 
 // Re-export main Structs
-pub use self::particle::{Particle, ParticleVec, ObjectSpec, RectSpec, TriSpec, BoxSpec, Visibility};
+pub use self::particle::{Particle, ParticleVec, ObjectSpec, RectSpec, TriSpec, BoxSpec};
 pub use self::simulation::Simulation;
 pub use self::simulation_settings::SimulationSettings;
 //Reexport Traits

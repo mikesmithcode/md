@@ -39,7 +39,7 @@ base_particle = {
         "mass" : 5.2E-4,#density 1000kgm^-3
         "inertia": 0.0,
         "r": 255.0,
-        "g": 0.0,
+        "g": 255.0,
         "b" : 0.0,
         "a" : 255.0,
     }

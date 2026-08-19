@@ -13,8 +13,8 @@ use three_d::Srgba;
 use md::md_viz::scene::Scene;
 
 // Imports from simulation library
-use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, Visibility, Simulation, SimulationSettings};
-use md::md_sim::force::{add_weight, add_granular_collision};
+use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, TriSpec, Simulation, SimulationSettings};
+use md::md_sim::force::{add_weight, add_particle_particle_collision, add_particle_object_collision};
 use md::md_sim::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
 use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
 use md::md_sim::particle::MoleculeData;
@@ -45,8 +45,8 @@ impl Forces for SimUpdate{
         (force, _torque)
     }
 
-    fn update_object_forces(&self, i: usize, force: DVec3, torque: DVec3, particles: &ParticleVec, objects: Option<&[ObjectSpec]>, settings: &SimulationSettings)->(DVec3, DVec3){
-        //Assume flat rectangular plane with surface normal in z direction (upwards). Interaction on overlap.
+    fn update_object_forces(&self, i: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec, objects: &ObjectSpec, settings: &SimulationSettings)->(DVec3, DVec3){
+        (force,torque) = add_particle_object_collision(i, particles, objects, force, torque, settings);
         (force, torque)
     }
 
@@ -63,6 +63,19 @@ impl Motion for SimUpdate{
     }
     fn correct_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>) {
         integrate_singleparticle_correct(forces, particles, settings);
+    }
+
+    fn update_objects(&self, object: &mut ObjectSpec, settings: &SimulationSettings, time: f64){
+        
+        
+        match object {
+            ObjectSpec::Rectangle(rect) => {
+                let ang_freq = 1000.0;
+                let velocity = DVec3::new(0.0,0.0,0.05)*f64::sin(ang_freq*time);
+                rect.step(velocity, DVec3::ZERO, settings.dt);
+            },
+            _ => {}   
+        }
     }
 }
 
@@ -89,13 +102,16 @@ pub fn main() {
     let x=size.x;
     let y=size.y;
     let z=0.005;
-    let vertices = [DVec3::new(0.0,0.0, z),DVec3::new(x,0.0, z),DVec3::new(x,y, z),DVec3::new(0.0,y, z)];
-    let color = Srgba::RED;
-
-    let rectspec = RectSpec::new(vertices, color, Visibility::Opaque);
+    let z2 = 0.035;
+    let rect_vertices = [DVec3::new(0.0,0.0, z),DVec3::new(x,0.0, z),DVec3::new(x,y, z),DVec3::new(0.0,y, z)];
+    let tri_vertices = [DVec3::new(0.0,0.0, z2),DVec3::new(x,0.0, z2),DVec3::new(x,y, z2)];
+    
+    let rectspec = RectSpec::new(rect_vertices, Srgba::RED, true);
+    let trispec = TriSpec::new(tri_vertices, Srgba::GREEN, true);
+    
     let surface = ObjectSpec::Rectangle(rectspec);
-    let objects = Some(vec![surface]);
-
+    let surface2 = ObjectSpec::Triangle(trispec);
+    let objects = Some(vec![surface, surface2]);
 
 
     let mut sim= Simulation::new(particles, objects, SimUpdate, sim_settings.clone(), time);
@@ -107,9 +123,9 @@ pub fn main() {
     //  Call scene.display() to update window, scene.save_img() to write
     //--------------------------------------------------------------   
 
-    let mut scene: Scene = Scene::from_config(scene_config_path, &sim_settings);   
     let mut event_loop = EventLoop::new(); 
-    let _ = scene.view(&event_loop);
+    let mut scene: Scene = Scene::new(&event_loop, sim.get_particles(), sim.get_objects(), scene_config_path, &sim_settings);   
+    
     //let _ = scene.start_recording(&video_path, start_step);
 
     //-------------------------------------------------------------
@@ -140,10 +156,8 @@ pub fn main() {
 
         sim.update();
 
-        if step %100 ==0{
-        if scene.poll_events(&mut event_loop) {
-                break; 
-            }
+        if step % 100 == 0 && scene.poll_events(&mut event_loop) {
+            break;
         }
 
         // update scene every dump timesteps
@@ -157,7 +171,7 @@ pub fn main() {
             //let _ = scene.save_frame(&sim.get_particles(), None);
 
             //save a snapshot of particle positions etc
-            save_particles(&particle_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+            save_particles(&particle_path, step, sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
         }
         
     }

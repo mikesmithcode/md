@@ -12,13 +12,6 @@ pub fn next_id() -> usize {
     GLOBAL_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub enum Visibility{
-    Hidden,
-    Transparent,
-    Opaque
-}
-
 
 #[derive(Debug, Clone)]
 pub enum ObjectSpec{
@@ -78,7 +71,7 @@ pub struct BoxSpec {
     pub orientation: DQuat,
     #[serde(skip)]
     pub color: Srgba,
-    pub visibility: Visibility
+    pub visible: bool
 }
 
 impl Default for BoxSpec {
@@ -90,14 +83,14 @@ impl Default for BoxSpec {
             box_size: DVec3::new(10.0, 0.1, 10.0),
             orientation: DQuat::IDENTITY,
             color: Srgba::WHITE,
-            visibility: Visibility::Opaque
+            visible: true
         }
     }
 }
 
 impl BoxSpec {
     /// Creates a BoxSpec using explicit dimensions, automatically assigning a unique ID.
-    pub fn new(center: DVec3, box_size: DVec3, thickness: f64, color: Srgba, visibility: Visibility) -> Self {
+    pub fn new(center: DVec3, box_size: DVec3, thickness: f64, color: Srgba, visible: bool) -> Self {
         let id = next_id();
 
         let box_spec = Self {
@@ -107,7 +100,7 @@ impl BoxSpec {
             box_size,
             orientation: DQuat::IDENTITY,
             color,
-            visibility
+            visible
         };
         box_spec.validate();
         box_spec
@@ -138,19 +131,19 @@ impl BoxSpec {
 pub struct RectSpec {
     pub id: usize,
     pub center: DVec3,
-    pub normal: DVec3,
-    pub tangent: DVec3,
     pub velocity: DVec3,
-    pub half_size: DVec2,        // [half_width, half_height]
-    pub vertices: [DVec3; 4],    // [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
+    pub orientation: DQuat, // Rotation from local to world space
+    pub omega: DVec3,       // Angular velocity vector
+    pub half_size: DVec2,   // [half_width, half_height]
+    pub vertices: [DVec3; 4],
     pub color: Srgba,
-    pub visibility: Visibility
+    pub visible: bool,
 }
 
 impl RectSpec {
     /// Creates a RectSpec from 4 corner vertices.
     /// Order expected: [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
-    pub fn new(vertices: [DVec3; 4], color: Srgba, visibility: Visibility) -> Self {
+    pub fn new(vertices: [DVec3; 4], color: Srgba, visible: bool) -> Self {
         let id = next_id();
 
         let [v0, v1, v2, v3] = vertices;
@@ -160,37 +153,32 @@ impl RectSpec {
 
         // 2. Calculate edges to find tangent (width direction) and bitangent (height direction)
         let edge_width = v1 - v0;   // Top edge vector
-        let edge_height = v2 - v1;  // Right edge vector
+        let edge_height = v3 - v0;  // Left edge vector (using v3 - v0 matches Top-Left to Bottom-Left)
 
         // 3. Half sizes are half the lengths of the respective edges
         let half_width = edge_width.length() * 0.5;
         let half_height = edge_height.length() * 0.5;
         let half_size = DVec2::new(half_width, half_height);
 
-        // 4. Tangent and Normal
+        // 4. Build local basis vectors
         let tangent = edge_width.normalize();
         let normal = edge_width.cross(edge_height).normalize();
+        let bitangent = normal.cross(tangent).normalize();
 
-        // 5. Convert absolute vertices into local-space coordinates relative to (0,0,0)
-        let local_vertices = [
-            v0 - center,
-            v1 - center,
-            v2 - center,
-            v3 - center,
-        ];
-
-        let velocity = DVec3::ZERO;
+        // 5. Build orientation quaternion from the rotation matrix columns
+        let mat3 = glam::DMat3::from_cols(tangent, bitangent, normal);
+        let orientation = glam::DQuat::from_mat3(&mat3);
 
         let mut rect = Self {
             id,
             center,
-            normal,
-            tangent,
-            velocity,
+            orientation,
+            velocity: DVec3::ZERO,
+            omega: DVec3::ZERO,
             half_size,
-            vertices: local_vertices,
+            vertices: [DVec3::ZERO; 4],
             color,
-            visibility
+            visible,
         };
 
         rect.validate();
@@ -198,23 +186,40 @@ impl RectSpec {
         rect
     }
 
-    /// Recalculates vertices based on current center, normal, tangent, and half_size.
-    pub fn update_vertices(&mut self) {
-        let normal = self.normal.normalize();
-        let tangent = (self.tangent - normal * self.tangent.dot(normal)).normalize();
-        let bitangent = normal.cross(tangent);
+    /// Helper to get the world-space normal on the fly
+    pub fn normal(&self) -> DVec3 {
+        self.orientation * DVec3::Z
+    }
 
+    /// Helper to get the world-space tangent (local X axis)
+    pub fn tangent(&self) -> DVec3 {
+        self.orientation * DVec3::X
+    }
+
+    /// Helper to get the world-space bitangent (local Y axis)
+    pub fn bitangent(&self) -> DVec3 {
+        self.orientation * DVec3::Y
+    }
+
+    /// Recalculates world-space vertices based on current center, orientation, and half_size.
+    pub fn update_vertices(&mut self) {
         let hx = self.half_size.x;
         let hy = self.half_size.y;
 
-        let scaled_tangent = tangent * hx;
-        let scaled_bitangent = bitangent * hy;
+        // Local corners relative to center: [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
+        let local_verts = [
+            DVec3::new(-hx,  hy, 0.0), // Top-Left
+            DVec3::new( hx,  hy, 0.0), // Top-Right
+            DVec3::new( hx, -hy, 0.0), // Bottom-Right
+            DVec3::new(-hx, -hy, 0.0), // Bottom-Left
+        ];
 
+        // Transform local corners to world space using orientation and center
         self.vertices = [
-            self.center - scaled_tangent + scaled_bitangent, // Top-Left
-            self.center + scaled_tangent + scaled_bitangent, // Top-Right
-            self.center + scaled_tangent - scaled_bitangent, // Bottom-Right
-            self.center - scaled_tangent - scaled_bitangent, // Bottom-Left
+            self.center + self.orientation * local_verts[0],
+            self.center + self.orientation * local_verts[1],
+            self.center + self.orientation * local_verts[2],
+            self.center + self.orientation * local_verts[3],
         ];
     }
 
@@ -222,21 +227,33 @@ impl RectSpec {
     pub fn transform(&mut self, translation_delta: DVec3, rotation: Option<DQuat>) {
         self.center += translation_delta;
         if let Some(rot) = rotation {
-            self.normal = rot * self.normal;
-            self.tangent = rot * self.tangent;
+            self.orientation = rot * self.orientation;
         }
         self.update_vertices();
     }
 
-    pub fn step(&mut self, vel: DVec3, dt: f64){
+    /// Advances the rectangle's position and orientation over time step `dt`.
+    pub fn step(&mut self, vel: DVec3, omega: DVec3, dt: f64) {
         self.velocity = vel;
-        self.transform(vel*dt, None);
+        self.omega = omega;
+
+        let translation_delta = vel * dt;
+        
+        // Convert angular velocity vector (omega * dt) into a rotation quaternion update delta
+        let angle = omega.length() * dt;
+        let rotation_delta = if angle > 1e-12 {
+            Some(glam::DQuat::from_axis_angle(omega.normalize(), angle))
+        } else {
+            None
+        };
+
+        self.transform(translation_delta, rotation_delta);
     }
 
     /// Panics if the rectangle geometry, planarity, or basis vectors are invalid.
     pub fn validate(&self) {
-        let n = self.normal.normalize();
-        let t = (self.tangent - n * self.tangent.dot(n)).normalize();
+        let n = self.normal();
+        let t = self.tangent();
         let dot = n.dot(t);
 
         assert!(
@@ -268,12 +285,12 @@ pub struct TriSpec {
     pub vertices: [DVec3; 3],    // World-space vertices [v0, v1, v2]
     pub local_triangles: [DVec3; 3], // Pre-scaled raw triangles loaded relative to (0,0,0)
     pub color: Srgba,
-    pub visibility: Visibility 
+    pub visible: bool
 }
 
 impl TriSpec {
     /// Creates a TriSpec from 3 corner vertices.
-    pub fn new(vertices: [DVec3; 3], color: Srgba, visibility: Visibility) -> Self {
+    pub fn new(vertices: [DVec3; 3], color: Srgba, visible: bool) -> Self {
         let id = next_id();
         
         let [v0, v1, v2] = vertices;
@@ -322,7 +339,7 @@ impl TriSpec {
             vertices,
             local_triangles,
             color,
-            visibility
+            visible
         };
 
         tri.validate();

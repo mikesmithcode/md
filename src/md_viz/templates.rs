@@ -11,7 +11,7 @@ use three_d::{Context, CpuMesh,Mesh, Gm, InstancedMesh, Instances, Srgba, Physic
     RenderStates, WriteMask};
 use three_d::InnerSpace;
 
-use crate::md_sim::{ParticleVec, BoxSpec, RectSpec, TriSpec, ObjectSpec, Visibility};
+use crate::md_sim::{ParticleVec, BoxSpec, RectSpec, TriSpec, ObjectSpec};
 
 ///Used by all shapes except SphereTemplate which is used for particles
 pub enum ObjectTemplate {
@@ -42,10 +42,21 @@ pub struct SphereTemplate {
 }
 
 impl SphereTemplate {
-    pub fn new(context: &Context) -> Self {
+    pub fn new(context: &Context, particles: &ParticleVec) -> Self {
         let cpu_mesh = CpuMesh::sphere(16);
 
-        let mat = create_transparent_material(None);
+        let colour = Srgba::new(
+            particles.color[0].r,
+            particles.color[0].g,
+            particles.color[0].b,
+            particles.color[0].a
+        );
+
+        let mat = if colour.a < 255 { 
+            create_transparent_material(Some(colour))
+        } else {
+            create_opaque_material(Some(colour))
+        };
 
         let mesh = Gm::new(
             InstancedMesh::new(context, &Instances::default(), &cpu_mesh),
@@ -69,9 +80,8 @@ impl SphereTemplate {
         ));
     }
 
-    pub fn push_color_and_visibility(&self, i: usize, particles: &ParticleVec, transforms: &mut Vec<three_d::Mat4>, colors: &mut Vec<Srgba>) {
-        
-        colors.push(particles.color[i]);
+    pub fn push_colour_and_visibility(&self, i: usize, particles: &ParticleVec, colours: &mut Vec<Srgba>) {
+        colours.push(particles.color[i]);
     }
 }
 
@@ -81,82 +91,16 @@ impl SphereTemplate {
 /// If you use a box dimension a negative thickness
 /// preserves the outer dimension whilst a positive one preserves the inner.
 /// -----------------------------------------------------------------------------------
-pub struct WireBoxTemplate {
-    pub mesh: Gm<InstancedMesh, PhysicalMaterial>,
-    pub boxspec: BoxSpec,
-}
+    pub struct WireBoxTemplate {
+        pub mesh: Gm<InstancedMesh, PhysicalMaterial>,
+        pub boxspec: BoxSpec,
+    }
 
-impl WireBoxTemplate {
+    impl WireBoxTemplate {
     pub fn new(context: &Context, boxspec: BoxSpec) -> Self {
-        let center = boxspec.center;
-        let half_size = boxspec.box_size * 0.5;
-        let thickness = boxspec.thickness.abs();
-
-        // Compute effective outer bounds including thickness
-        let (e_min, e_max) = if boxspec.thickness > 0.0 {
-            (center - half_size - DVec3::splat(thickness), center + half_size + DVec3::splat(thickness))
-        } else {
-            (center - half_size, center + half_size)
-        };
-
-        let strut_t = if boxspec.thickness == 0.0 { 0.0 } else { thickness };
-        let span = e_max - e_min;
+        let local_transformations = Self::construct_template(&boxspec);
+        let mat = create_opaque_material(None);
         
-        // Net length of the strut (excluding corner overlaps)
-        let net_span = span;// - DVec3::splat(strut_t * 2.0);
-        let half_t = strut_t * 0.5;
-
-        // Define the base coordinates for the inner core corners
-        let x0 = e_min.x + half_t;
-        let x1 = e_max.x - half_t;
-        let y0 = e_min.y + half_t;
-        let y1 = e_max.y - half_t;
-        let z0 = e_min.z + half_t;
-        let z1 = e_max.z - half_t;
-
-        // 3. Define the 12 edge midpoints directly at the center of each strut,
-        // and scales (halved for CpuMesh::cube() which spans from -1.0 to 1.0).
-        let edges = [
-            // --- X-axis aligned edges (4 bottom, 4 top) ---
-            // Y and Z are shifted to e_min/e_max faces offset by half_t
-            (DVec3::new(center.x, y0, z0), DVec3::new(net_span.x, strut_t, strut_t) * 0.5),
-            (DVec3::new(center.x, y1, z0), DVec3::new(net_span.x, strut_t, strut_t) * 0.5),
-            (DVec3::new(center.x, y0, z1), DVec3::new(net_span.x, strut_t, strut_t) * 0.5),
-            (DVec3::new(center.x, y1, z1), DVec3::new(net_span.x, strut_t, strut_t) * 0.5),
-
-            // --- Y-axis aligned edges (4 vertical bottom-to-top) ---
-            // X and Z are shifted to e_min/e_max faces offset by half_t
-            (DVec3::new(x0, center.y, z0), DVec3::new(strut_t, net_span.y, strut_t) * 0.5),
-            (DVec3::new(x1, center.y, z0), DVec3::new(strut_t, net_span.y, strut_t) * 0.5),
-            (DVec3::new(x0, center.y, z1), DVec3::new(strut_t, net_span.y, strut_t) * 0.5),
-            (DVec3::new(x1, center.y, z1), DVec3::new(strut_t, net_span.y, strut_t) * 0.5),
-
-            // --- Z-axis aligned edges (4 front-to-back) ---
-            // X and Y are shifted to e_min/e_max faces offset by half_t
-            (DVec3::new(x0, y0, center.z), DVec3::new(strut_t, strut_t, net_span.z) * 0.5),
-            (DVec3::new(x1, y0, center.z), DVec3::new(strut_t, strut_t, net_span.z) * 0.5),
-            (DVec3::new(x0, y1, center.z), DVec3::new(strut_t, strut_t, net_span.z) * 0.5),
-            (DVec3::new(x1, y1, center.z), DVec3::new(strut_t, strut_t, net_span.z) * 0.5),
-        ];
-
-        let local_transformations: Vec<three_d::Mat4> = edges
-            .iter()
-            .map(|(midpoint, scale)| {
-                let glam_mat = GMat4::from_translation(GVec3::new(
-                    midpoint.x as f32,
-                    midpoint.y as f32,
-                    midpoint.z as f32,
-                )) * GMat4::from_scale(GVec3::new(
-                    scale.x as f32,
-                    scale.y as f32,
-                    scale.z as f32,
-                ));
-
-                glam_to_three_d(glam_mat)
-            })
-            .collect();
-
-        let mat = create_transparent_material(None);
         let mesh = Gm::new(
             InstancedMesh::new(
                 context,
@@ -172,32 +116,91 @@ impl WireBoxTemplate {
         Self { mesh, boxspec }
     }
 
-    // Helper to update instance of particle
-    pub fn push_transform_and_color(
-        &mut self, // Note: This must now be mutable
-        spec: &ObjectSpec
-    ) {
-        let boxspec = spec.get_box_spec().expect("Not valid boxspec");
-        //If nothing has changed ignore
-        if self.boxspec == boxspec {
-            return;
-        }
+    fn construct_template(boxspec: &BoxSpec) -> Vec<three_d::Mat4> {
+        let center = boxspec.center;
+        let half_size = boxspec.box_size * 0.5;
+        let thickness = boxspec.thickness.abs();
 
-        //otherwise update position and colour.
+        // Compute effective outer bounds including thickness
+        let (e_min, e_max) = if boxspec.thickness > 0.0 {
+            (center - half_size - DVec3::splat(thickness), center + half_size + DVec3::splat(thickness))
+        } else {
+            (center - half_size, center + half_size)
+        };
+
+        let strut_t = if boxspec.thickness == 0.0 { 0.0 } else { thickness };
+        let span = e_max - e_min;
+        let half_t = strut_t * 0.5;
+
+        // Define base coordinates for the inner core corners
+        let x0 = e_min.x + half_t;
+        let x1 = e_max.x - half_t;
+        let y0 = e_min.y + half_t;
+        let y1 = e_max.y - half_t;
+        let z0 = e_min.z + half_t;
+        let z1 = e_max.z - half_t;
+
+        let edges = [
+            // --- X-axis aligned edges (4 bottom, 4 top) ---
+            (DVec3::new(center.x, y0, z0), DVec3::new(span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(center.x, y1, z0), DVec3::new(span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(center.x, y0, z1), DVec3::new(span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(center.x, y1, z1), DVec3::new(span.x, strut_t, strut_t) * 0.5),
+
+            // --- Y-axis aligned edges (4 vertical bottom-to-top) ---
+            (DVec3::new(x0, center.y, z0), DVec3::new(strut_t, span.y, strut_t) * 0.5),
+            (DVec3::new(x1, center.y, z0), DVec3::new(strut_t, span.y, strut_t) * 0.5),
+            (DVec3::new(x0, center.y, z1), DVec3::new(strut_t, span.y, strut_t) * 0.5),
+            (DVec3::new(x1, center.y, z1), DVec3::new(strut_t, span.y, strut_t) * 0.5),
+
+            // --- Z-axis aligned edges (4 front-to-back) ---
+            (DVec3::new(x0, y0, center.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
+            (DVec3::new(x1, y0, center.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
+            (DVec3::new(x0, y1, center.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
+            (DVec3::new(x1, y1, center.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
+        ];
+
+        edges
+            .iter()
+            .map(|(midpoint, scale)| {
+                let glam_mat = GMat4::from_translation(GVec3::new(
+                    midpoint.x as f32,
+                    midpoint.y as f32,
+                    midpoint.z as f32,
+                )) * GMat4::from_scale(GVec3::new(
+                    scale.x as f32,
+                    scale.y as f32,
+                    scale.z as f32,
+                ));
+
+                glam_to_three_d(glam_mat)
+            })
+            .collect()
+    }
+
+    // Called every frame during render/display (fast path)
+    pub fn update_transform(&mut self, spec: &ObjectSpec) {
+        let boxspec = spec.get_box_spec().expect("Not valid boxspec");
+        
         let pos = boxspec.center;
         let glam_mat = GMat4::from_rotation_translation(
             glam::DQuat::from(boxspec.orientation).as_quat(),
             glam::Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32),
         );
 
-        // Update the mesh's transform directly
         self.mesh.set_transformation(glam_to_three_d(glam_mat));
+    }
+
+    // Called during update_templates() when colors or properties change
+    pub fn update_colour(&mut self, spec: &ObjectSpec) {
+        let boxspec = spec.get_box_spec().expect("Not valid boxspec");
         
-        // If your material/color needs updating:
+        if self.boxspec == boxspec {
+            return;
+        }
+
         self.mesh.material.albedo = boxspec.color;
-        
-        // Update the stored specification so it only triggers with a change
-        self.boxspec = boxspec; 
+        self.boxspec = boxspec;
     }
 }
 
@@ -222,11 +225,47 @@ impl RectTemplate {
         );
 
         let mut template = Self { mesh, rectspec: rectspec.clone() };
-        template.update_transform_and_color(&rectspec);
+        template.update_transform(&ObjectSpec::Rectangle(rectspec));
+        template.update_colour(&ObjectSpec::Rectangle(rectspec));
         template
     }
 
-    pub fn push_transform_and_color(&mut self, spec: &ObjectSpec) {
+    // Called every frame during render/display (fast path for positions/orientations)
+    pub fn update_transform(&mut self, spec: &ObjectSpec) {
+        let rectspec = match spec.get_rect_spec() {
+            Some(s) => s,
+            None => return,
+        };
+
+        let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
+            rectspec.center.x as f32, 
+            rectspec.center.y as f32, 
+            rectspec.center.z as f32,
+        ));
+
+        // Get the 3x3 rotation matrix from glam and extract its axes
+        let m = glam::DMat3::from_quat(rectspec.orientation);
+        
+        // Construct three-d / cgmath compatible column vectors
+        let rotation = three_d::Mat4::from_cols(
+            three_d::Vec4::new(m.x_axis.x as f32, m.x_axis.y as f32, m.x_axis.z as f32, 0.0),
+            three_d::Vec4::new(m.y_axis.x as f32, m.y_axis.y as f32, m.y_axis.z as f32, 0.0),
+            three_d::Vec4::new(m.z_axis.x as f32, m.z_axis.y as f32, m.z_axis.z as f32, 0.0),
+            three_d::Vec4::new(0.0, 0.0, 0.0, 1.0),
+        );
+
+        let scale_mat = three_d::Mat4::from_nonuniform_scale(
+            rectspec.half_size.x as f32,
+            rectspec.half_size.y as f32,
+            0.01,
+        );
+
+        let transform = translation * rotation * scale_mat;
+        self.mesh.set_transformation(transform);
+    }
+
+    // Called during update_templates() when colors or properties change
+    pub fn update_colour(&mut self, spec: &ObjectSpec) {
         let rectspec = match spec.get_rect_spec() {
             Some(s) => s,
             None => return,
@@ -236,59 +275,15 @@ impl RectTemplate {
             return;
         }
 
-        self.update_transform_and_color(&rectspec);
-        self.rectspec = rectspec;
-    }
-
-    fn update_transform_and_color(&mut self, rectspec: &RectSpec) {
-        println!("center {:?}", rectspec.center);
-        
-        let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
-            rectspec.center.x as f32, 
-            rectspec.center.y as f32, 
-            rectspec.center.z as f32,
-        ));
-
-        let tangent = three_d::Vec3::new(
-            rectspec.tangent.x as f32,
-            rectspec.tangent.y as f32,
-            rectspec.tangent.z as f32,
-        ).normalize();
-
-        let normal = three_d::Vec3::new(
-            rectspec.normal.x as f32,
-            rectspec.normal.y as f32,
-            rectspec.normal.z as f32,
-        ).normalize();
-
-        let bitangent = normal.cross(tangent).normalize();
-
-        // Construct the rotation matrix from the orientation frame
-        let rotation = three_d::Mat4::from_cols(
-            tangent.extend(0.0),
-            bitangent.extend(0.0),
-            normal.extend(0.0),
-            three_d::Vec4::unit_w(),
-        );
-
-        let scale_mat = three_d::Mat4::from_nonuniform_scale(
-            rectspec.half_size.x as f32,
-            rectspec.half_size.y as f32,
-            0.01,
-        );
-
-        // Include rotation between translation and scaling
-        let transform = translation * rotation * scale_mat;
-
-        self.mesh.set_transformation(transform);
         self.mesh.material.albedo = rectspec.color;
         
-        // Disable back-face culling to ensure it renders from any angle
         self.mesh.material.render_states = three_d::RenderStates {
             write_mask: three_d::WriteMask::COLOR_AND_DEPTH,
             cull: three_d::Cull::None, 
             ..Default::default()
         };
+
+        self.rectspec = rectspec;
     }
 }
 //self.mesh.set_transformation(three_d::Mat4::from_scale(0.1)); 
@@ -320,49 +315,60 @@ impl TriTemplate {
         };
         cpu_mesh.compute_normals();
 
-        let mut mat = create_opaque_material(None);
-        mat.albedo = trispec.color;
+        let mat = if trispec.color.a < 255 { 
+            create_transparent_material(Some(trispec.color))
+        } else {
+            create_opaque_material(Some(trispec.color))
+        };
 
-        let mat_transform = Self::compute_transformation(&trispec);
-
+        // Create the mesh with default instances
         let mesh = Gm::new(
             InstancedMesh::new(
                 context,
-                &Instances {
-                    transformations: vec![mat_transform],
-                    ..Default::default()
-                },
+                &Instances::default(),
                 &cpu_mesh,
             ),
             mat,
         );
 
-        let mut template = Self { mesh, trispec: trispec.clone() };
-        template.update_transform_and_color(&trispec);
+        // Initialize with default/empty spec data so the helper methods have a valid baseline
+        let mut template = Self { 
+            mesh, 
+            trispec // or a default/zeroed spec if you prefer
+        };
+        
+        template.update_transform(&ObjectSpec::Triangle(trispec));
+        template.update_colour(&ObjectSpec::Triangle(trispec));
+
         template
     }
 
-    pub fn push_transform_and_color(&mut self, spec: &ObjectSpec) {
+
+    pub fn update_transform(&mut self, spec: &ObjectSpec) {
         let trispec = match spec {
             ObjectSpec::Triangle(t) => t,
             _ => return,
         };
 
-        if &self.trispec == trispec {
-            return;
-        }
-
-        self.update_transform_and_color(trispec);
-        self.trispec = *trispec;
-    }
-
-    fn update_transform_and_color(&mut self, trispec: &TriSpec) {
+        // Always update the transform matrix so moving objects stay smooth
         let mat_transform = Self::compute_transformation(trispec);
-
         self.mesh.geometry.set_instances(&Instances {
             transformations: vec![mat_transform],
             ..Default::default()
         });
+    }
+
+    pub fn update_colour(&mut self, spec: &ObjectSpec) {
+        let trispec = match spec {
+            ObjectSpec::Triangle(t) => t,
+            _ => return,
+        };
+
+        // If the spec hasn't changed, skip expensive material/render-state updates
+        if &self.trispec == trispec {
+            return;
+        }
+
         self.mesh.material.albedo = trispec.color;
 
         // Disable back-face culling to ensure it renders from any angle
@@ -371,6 +377,8 @@ impl TriTemplate {
             cull: three_d::Cull::None,
             ..Default::default()
         };
+
+        self.trispec = *trispec;
     }
 
     fn compute_transformation(trispec: &TriSpec) -> three_d::Mat4 {
@@ -420,7 +428,7 @@ fn create_transparent_material(colour: Option<Srgba>) -> PhysicalMaterial {
     if let Some(colour)=colour{
         mat.albedo = colour;
     }else{
-        mat.albedo = Srgba::RED;
+        mat.albedo = Srgba::WHITE;
     }
     mat.render_states = RenderStates {
         blend: Blend::Enabled {
@@ -443,7 +451,7 @@ fn create_opaque_material(colour: Option<Srgba>) -> PhysicalMaterial {
     if let Some(colour)=colour{
         mat.albedo = colour;
     }else{
-        mat.albedo = Srgba::RED;
+        mat.albedo = Srgba::WHITE;
     }
     
     // Disable backface culling so surfaces render from both sides

@@ -11,6 +11,6 @@
   "model": {
     "type": "Solid",
     "stiffness": 665000.0,
-    "damping": 2.97
+    "damping": 1.0
   }
 }

@@ -22,8 +22,6 @@ use glam::f64::{DVec3,DQuat};
 use three_d::*;
 use soa_derive::StructOfArray;
 
-use super::Visibility;
-
 
 ///Particle defines a particle object which defines key properties: position, velocity etc
 /// 
@@ -49,7 +47,7 @@ pub struct Particle {
     pub mass: f64,  
     pub charge: f64,
     pub color: Srgba, 
-    pub visibility: Visibility,
+    pub visible: bool,
     // Verlet lists tracker fields
     pub ref_pos: DVec3,    
 }
@@ -88,7 +86,7 @@ impl Particle {
         density: f64, 
         charge: f64,
         color: Srgba,
-        visibility: Visibility
+        visible: bool
     ) -> Self {
         // Calculate mass: m = volume * density
         let volume = (4.0 / 3.0) * std::f64::consts::PI * radius.powi(3);
@@ -109,7 +107,7 @@ impl Particle {
             mass, 
             charge,
             color,
-            visibility,
+            visible,
             ref_pos
         }
     }

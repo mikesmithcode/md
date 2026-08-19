@@ -1,11 +1,12 @@
   {
     "camera": {
       "cam_type": "Perspective",
-      "fov": 45.0,
-      "rel_pos": [0.0, 0.35, 0.0], 
+      "fov": 35.0,
+      "rel_pos": [0.0, 0.1, 0.0], 
       "up":[0.0, 0.0, 1.0]
       },
     "window_size": [1280, 960],
+    "window_visible":true,
     "vid_fps": 30,
     "sim_box": {
       "visible": true,

@@ -56,7 +56,7 @@ use crate::md_sim::utils::check_delta;
 /// search loops. For models without friction, the tangential and torque logic is 
 /// bypassed to maintain high execution speeds.
 #[inline(always)]
-pub fn add_granular_collision(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3, mut torque: DVec3, settings: &SimulationSettings)->(DVec3, DVec3) {   
+pub fn add_particle_particle_collision(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3, mut torque: DVec3, settings: &SimulationSettings)->(DVec3, DVec3) {   
     // Extract params
     let (stiffness, damping, mu_opt) = match &settings.model {
             SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
