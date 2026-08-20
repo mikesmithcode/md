@@ -193,47 +193,45 @@ impl Scene {
         Ok(resources)
     }
 
-    // Updates particle transformation matrices per frame, sorting transparent particles by depth if necessary.
     fn update_particle_transforms(camera: &Camera, resources: &mut GpuResources, particles: &ParticleVec) {
         let mut transforms = std::mem::take(&mut resources.instance_transforms);
+        let mut colours = std::mem::take(&mut resources.instance_colours);
         transforms.clear();
+        colours.clear();
         
+        for (pos, rad, col) in soa_zip!(particles, [position, radius, colour]) {
+                transforms.push(Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) * Mat4::from_scale(*rad as f32));
+                colours.push(*col);
+            }
+        /*
         let needs_sorting = particles.colour.iter().any(|c| c.a < 255);
 
         if needs_sorting {
             let cam_pos = camera.position();
             let mut indices: Vec<usize> = (0..particles.len()).collect();
-            /*indices.sort_by(|&a, &b| {
+            indices.sort_by(|&a, &b| {
                 let pos_a = vec3(particles.position[a].x as f32, particles.position[a].y as f32, particles.position[a].z as f32);
                 let pos_b = vec3(particles.position[b].x as f32, particles.position[b].y as f32, particles.position[b].z as f32);
                 let dist_a = cam_pos.distance2(pos_a);
                 let dist_b = cam_pos.distance2(pos_b);
-                dist_b.partial_cmp(&dist_a).unwrap()
+                dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal)
             });
-            */
+            
             for i in indices {
                 resources.sphere_template.push_transform(i, particles, &mut transforms);
+                colours.push(particles.colour[i]); // Keep colors locked to the exact sorted index order!
             }
         } else {
-            for (pos, rad, _col) in soa_zip!(particles, [position, radius, colour]) {
+            for (pos, rad, col) in soa_zip!(particles, [position, radius, colour]) {
                 transforms.push(Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) * Mat4::from_scale(*rad as f32));
+                colours.push(*col);
             }
         }
-
+        */
         resources.instance_transforms = transforms;
-    }
-
-    // Updates particle color buffers from current particle data.
-    fn update_particle_colours(resources: &mut GpuResources, particles: &ParticleVec) {
-        let mut colours = std::mem::take(&mut resources.instance_colours);
-        colours.clear();
-
-        for col in &particles.colour {
-            colours.push(*col);
-        }
-
         resources.instance_colours = colours;
     }
+
 
     // Updates fast-changing per-frame object transformation properties.
     fn update_object_transforms(
@@ -261,7 +259,7 @@ impl Scene {
 
         // 1. Particle updates
         Self::update_particle_transforms(camera, resources, particles);
-        Self::update_particle_colours(resources, particles);
+        //Self::update_particle_colours(resources, particles);
 
         let instances = Instances {
             transformations: resources.instance_transforms.clone(),

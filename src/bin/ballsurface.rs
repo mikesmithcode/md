@@ -58,11 +58,11 @@ impl Forces for SimUpdate{
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
-        integrate_singleparticle_update(forces, particles, settings);
+    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
+        integrate_rigid_bodies(forces,torques, particles, molecule_map, settings);
     }
-    fn correct_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>) {
-        integrate_singleparticle_correct(forces, particles, settings);
+    fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
+        integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
     }
 
     fn update_objects(&self, object: &mut ObjectSpec, settings: &SimulationSettings, time: f64){

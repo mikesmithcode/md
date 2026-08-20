@@ -15,7 +15,7 @@ use md::md_viz::scene::Scene;
 // Imports from simulation library
 use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, Simulation, SimulationSettings};
 use md::md_sim::force::{add_coulomb, add_particle_object_collision, add_particle_particle_collision, add_weight};
-use md::md_sim::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
+use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct, integrate_singleparticle_correct, integrate_singleparticle_update};
 use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
 use md::md_sim::particle::MoleculeData;
 
@@ -40,17 +40,17 @@ impl Forces for SimUpdate{
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
         // Only the main particle has weight
-        //if particles.ptype[i] == 0{
-        //    force=add_weight(i, force, particles);
-        //}
+        if particles.ptype[i] == 0{
+            force=add_weight(i, force, particles);
+        }
         (force, _torque)
     }
 
     fn update_object_forces(&self, i: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec, objects: &ObjectSpec, settings: &SimulationSettings)->(DVec3, DVec3){
         //Only main particle collides with the surface
-        //if particles.ptype[i] == 0{
-        //    (force,torque) = add_particle_object_collision(i, particles, objects, force, torque, settings);
-        ///}
+        if particles.ptype[i] == 0{
+           (force,torque) = add_particle_object_collision(i, particles, objects, force, torque, settings);
+        }
         (force, torque)
     }
 
@@ -59,11 +59,11 @@ impl Forces for SimUpdate{
         // guaranteed that i and j will be same ptype due to verlet list specs
         if particles.ptype[i]==0{
             //main particles have granular collisions. 
-            //(force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);
+            (force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);
 
         } else{
             // charges interact via coulomb's law
-            //force=add_coulomb(i, j, particles, force, settings);
+            force=add_coulomb(i, j, particles, force, settings);
         }
 
 
@@ -75,11 +75,12 @@ impl Forces for SimUpdate{
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
-        integrate_singleparticle_update(forces, particles, settings);
+    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
+        integrate_rigid_bodies(forces,torques, particles, molecule_map, settings);
     }
-    fn correct_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>) {
-        integrate_singleparticle_correct(forces, particles, settings);
+
+    fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
+        integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
     }
 
     fn update_objects(&self, object: &mut ObjectSpec, settings: &SimulationSettings, time: f64){
@@ -99,7 +100,7 @@ impl Motion for SimUpdate{
 //Creates a horizontal rectangle which fills simulation box
 fn create_plane(x: f64,y: f64,z:f64)-> ObjectSpec{
     let rect_vertices = [DVec3::new(0.0,0.0, z),DVec3::new(x,0.0, z),DVec3::new(x,y, z),DVec3::new(0.0,y, z)];    
-    let rectspec = RectSpec::new(rect_vertices, Srgba::RED, true);
+    let rectspec = RectSpec::new(rect_vertices, Srgba::GREEN, true);
     
     ObjectSpec::Rectangle(rectspec)    
 }
@@ -139,6 +140,8 @@ pub fn main() {
     // sim.update() to advance the simulation by one step
     // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
     //--------------------------------------------------------------  
+    println!("before sim init {:?}",&particles.position);
+
     let mut sim= Simulation::new(particles, objects, SimUpdate, sim_settings.clone(), time);
 
     //----------------------------------------------------------------
@@ -148,15 +151,11 @@ pub fn main() {
     //  scene.init_headless() for headless video 
     //  Call scene.display() to update window, scene.save_img() to write
     //--------------------------------------------------------------   
-
     let mut event_loop = EventLoop::new(); 
     let mut scene: Scene = Scene::new(&event_loop, sim.get_particles(), sim.get_objects(), scene_config_path, &sim_settings);   
     //let _ = scene.start_recording(&video_path, start_step);
 
-    
-    println!("particles {:?}", sim.get_particles().position);
-    println!("particles {:?}", sim.get_particles().ptype);
-    
+
     println!("Simulation started...");
     //--------------------------------------------------------------
     // Start simulation loop
@@ -170,7 +169,6 @@ pub fn main() {
     for step in start_step..= (start_step+sim.settings.num_steps){
 
         sim.update();
-
         if step % 100 == 0 && scene.poll_events(&mut event_loop) {
             break;
         }
@@ -181,7 +179,8 @@ pub fn main() {
             
             
             //Handle graphics
-            //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img"); 
+            //scene.save_img(&sim.get_particles(), &OUTPUT_PATH, step).expect("Error saving img");
+            
             scene.display(sim.get_particles(), sim.get_objects()).expect("Error updating display");
             //let _ = scene.save_frame(&sim.get_particles(), None);
 

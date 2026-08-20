@@ -1,9 +1,9 @@
 import numpy as np
 import polars as pl
 
-def generate_molecules(positions, vel=(0.0,0.0,0.0),w=(0.0,0.0,0.0), rad=0.005, q=1E-9, d_r=0.5, density=1200,
-                          particle_colour=(255.0, 0.0, 0.0, 200.0),
-                          charge_colour=(0.0, 255.0, 255.0, 240.0)):
+def generate_molecules(positions, charges, vel=(0.0,0.0,0.0),w=(0.0,0.0,0.0), rad=0.005, d_r=0.0, density=1200,
+                          particle_colour=(255.0, 0.0, 0.0, 245.0),
+                          charge_colour=(0.0, 0.0, 255.0, 255.0)):
     """
     A generator that yields a Polars DataFrame containing both the particle 
     and its charge for each molecule.
@@ -35,7 +35,7 @@ def generate_molecules(positions, vel=(0.0,0.0,0.0),w=(0.0,0.0,0.0), rad=0.005, 
             "wx": [wx], "wy": [wy], "wz": [wz],
             "radius": [rad],
             "mass": [mass],
-            "charge": [0.0],
+            "charge": [charges[i]],
             "r": [particle_colour[0]], "g": [particle_colour[1]], 
             "b": [particle_colour[2]], "a": [particle_colour[3]]
         }
@@ -49,7 +49,7 @@ def generate_molecules(positions, vel=(0.0,0.0,0.0),w=(0.0,0.0,0.0), rad=0.005, 
             "id": [particle_id],
             "molecule_id": [mol_id],
             "ptype": [1],
-            "x": [x - 2*rad+rel_pos * np.cos(phi[i])], "y": [y], "z": [z + rel_pos * np.sin(phi[i])],
+            "x": [x + rel_pos * np.cos(phi[i])], "y": [y], "z": [z  + rel_pos * np.sin(phi[i])],
             "rel_x": [rel_pos * np.cos(phi[i])], "rel_y": [0.0], "rel_z": [rel_pos * np.sin(phi[i])],
             "vx": [vx], "vy": [vy], "vz": [vz],
             "wx": [wx], "wy": [wy], "wz": [wz],

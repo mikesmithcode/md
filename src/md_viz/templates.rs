@@ -52,10 +52,16 @@ impl SphereTemplate {
         );
 
         let mat = if colour.a < 255 { 
-            create_transparent_material(Some(colour))
+            create_transparent_material(Some(Srgba::WHITE))
         } else {
-            create_opaque_material(Some(colour))
+            create_opaque_material(Some(Srgba::WHITE))
         };
+
+        // Build the initial color buffer once
+        let mut initial_colours = Vec::with_capacity(particles.len());
+        for i in 0..particles.len() {
+            initial_colours.push(particles.colour[i]);
+        }
 
         let mesh = Gm::new(
             InstancedMesh::new(context, &Instances::default(), &cpu_mesh),

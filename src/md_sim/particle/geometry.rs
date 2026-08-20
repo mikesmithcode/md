@@ -45,6 +45,7 @@ pub fn calculate_molecule_com(pids: &[usize], particles: &ParticleVec) -> (f64, 
     let mut vel = DVec3::ZERO;
 
     for &idx in pids {
+        
         let mass = particles.mass[idx];
         total_mass += mass;
         com_pos += particles.position[idx] * mass;

@@ -150,12 +150,12 @@ pub fn integrate_rigid_bodies(
     let sim_box_size = settings.sim_box_size;
     let periodic = settings.periodic;
 
-    for (_mol_id, mol) in molecule_map {   
+    for (mol_id, mol) in molecule_map {   
         let lead_idx = mol.pids[0];    
         
         // Calculate current COM etc
         let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, &particles);
-
+    
         // Calculate aggregate forces and torques
         let mut total_force = DVec3::ZERO;
         let mut total_torque = DVec3::ZERO;
@@ -278,7 +278,7 @@ pub fn integrate_rigid_bodies_correct(
 
 //Not yet tested
 pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
-    println!("{:?}", forces);
+
     if let SimulationModel::Active(params) = &settings.model {
         let inv_gamma = 1.0 / params.gamma;
         let mut _rng = rand::thread_rng();

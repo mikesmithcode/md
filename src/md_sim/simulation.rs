@@ -99,7 +99,7 @@ impl<S> Simulation<S>
         //----------------------------------------------------------------------------
         // Initial position and velocity updates
         //----------------------------------------------------------------------------
-
+        
         // Predict the new positions, velocities, etc.
         self.sim_update.update_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, &self.molecule_map, self.time);
 
@@ -167,11 +167,11 @@ impl<S> Simulation<S>
         //----------------------------------------------------------------------------
         // Final velocity correction updates
         //----------------------------------------------------------------------------
-
+        
 
         // Perform correction to the motion based on the updated forces
         self.sim_update.correct_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, &self.molecule_map);
-
+        
         // Update simulation time
         self.time += self.settings.dt;
     }
