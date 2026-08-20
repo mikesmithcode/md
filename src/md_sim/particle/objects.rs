@@ -12,16 +12,18 @@ pub fn next_id() -> usize {
     GLOBAL_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
-
 #[derive(Debug, Clone)]
-pub enum ObjectSpec{
+pub enum ObjectSpec {
+    /// A wireframe or solid box object specification.
     WireBox(BoxSpec),
+    /// A 2D rectangular plane object specification.
     Rectangle(RectSpec),
+    /// A triangular surface object specification.
     Triangle(TriSpec),
 }
 
-impl ObjectSpec{
-    ///Returns a reference to the underlying spec e.g BoxSpec
+impl ObjectSpec {
+    /// Returns an optional reference to the underlying `BoxSpec` if this variant is a wire box.
     pub fn get_box_spec(&self) -> Option<BoxSpec> {
         match self {
             ObjectSpec::WireBox(boxspec) => Some(*boxspec),
@@ -29,16 +31,18 @@ impl ObjectSpec{
         }
     }
 
+    /// Returns an optional reference to the underlying `RectSpec` if this variant is a rectangle.
     pub fn get_rect_spec(&self) -> Option<RectSpec> {
         match self {
-            ObjectSpec::Rectangle(rectspec)=> Some(*rectspec),
+            ObjectSpec::Rectangle(rectspec) => Some(*rectspec),
             _ => None,
         }
     }
 
+    /// Returns an optional reference to the underlying `TriSpec` if this variant is a triangle.
     pub fn get_tri_spec(&self) -> Option<TriSpec> {
         match self {
-            ObjectSpec::Triangle(trispec)=> Some(*trispec),
+            ObjectSpec::Triangle(trispec) => Some(*trispec),
             _ => None,
         }
     }
@@ -49,32 +53,40 @@ impl ObjectSpec{
 /// BoxSpec
 /// 
 /// This is the configuration of a box on the simulation side. It is rendered
-/// in md_viz by a BoxRenderable in md_viz::objects.rs
+/// in md_viz by a WireBoxTemplate in md_viz::templates.rs
 ///------------------------------------------------------------------------------
-/// Configuration for a generic box-like object in the scene.
+/// Configuration for a generic wire box-like object in the scene. Used to visualise the extent of the simulation box.
 /// 
 /// Fields:
 /// 
-/// visible - turn graphic display on and off
+/// visible - turn display of item on and off
 /// thickness - is internal if negative but external if positive
 /// position - this coord sets the centre of the box. The axis of system is 0,0,0 in bottom, left, back corner
 /// box_size - dimensions. The axis of system is x across, y front-back, z up down 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct BoxSpec {
+    /// Unique identifier for the box instance.
     pub id: usize,
+    /// Collision or rendering boundary thickness (internal if negative, external if positive).
     pub thickness: f64, 
+    /// Center coordinates of the box in world space.
     pub center: DVec3,          
     #[serde(skip)]
+    /// Dimensions of the box along the x, y, and z axes.
     pub box_size: DVec3,
     #[serde(skip)]
+    /// Orientation quaternion representing rotation from local to world space.
     pub orientation: DQuat,
     #[serde(skip)]
-    pub color: Srgba,
+    /// RGBA colour representation for rendering.
+    pub colour: Srgba,
+    /// Flag determining whether the box is rendered in the visualization scene.
     pub visible: bool
 }
 
 impl Default for BoxSpec {
+    /// Returns default configuration values for a standard simulation boundary box.
     fn default() -> Self {
         Self {
             id: 0,
@@ -82,15 +94,27 @@ impl Default for BoxSpec {
             center: DVec3::ZERO,
             box_size: DVec3::new(10.0, 0.1, 10.0),
             orientation: DQuat::IDENTITY,
-            color: Srgba::WHITE,
+            colour: Srgba::WHITE,
             visible: true
         }
     }
 }
 
 impl BoxSpec {
-    /// Creates a BoxSpec using explicit dimensions, automatically assigning a unique ID.
-    pub fn new(center: DVec3, box_size: DVec3, thickness: f64, color: Srgba, visible: bool) -> Self {
+    /// Creates a BoxSpec using explicit dimensions and attributes, automatically assigning a unique object ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `center` - Center position vector in world space.
+    /// * `box_size` - Full dimensions along the x, y, and z axes.
+    /// * `thickness` - Shell thickness value.
+    /// * `colour` - RGBA visual colour.
+    /// * `visible` - Display toggle flag.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - An validated instance of `BoxSpec`.
+    pub fn new(center: DVec3, box_size: DVec3, thickness: f64, colour: Srgba, visible: bool) -> Self {
         let id = next_id();
 
         let box_spec = Self {
@@ -99,14 +123,19 @@ impl BoxSpec {
             center,
             box_size,
             orientation: DQuat::IDENTITY,
-            color,
+            colour,
             visible
         };
         box_spec.validate();
         box_spec
     }
 
-    /// Applies a rigid-body translation and rotation to the box.
+    /// Applies a rigid-body translation delta and optional rotation to the box.
+    ///
+    /// # Arguments
+    ///
+    /// * `translation_delta` - Vector displacement added to the center.
+    /// * `rotation` - Optional rotational quaternion to multiply against the current orientation.
     pub fn transform(&mut self, translation_delta: DVec3, rotation: Option<DQuat>) {
         self.center += translation_delta;
         if let Some(rot) = rotation {
@@ -129,21 +158,40 @@ impl BoxSpec {
 /// 2D rectangular plane in 3d space
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RectSpec {
+    /// Unique identifier for the rectangle instance.
     pub id: usize,
+    /// Center position vector in world space.
     pub center: DVec3,
+    /// Linear velocity vector of the rectangle.
     pub velocity: DVec3,
-    pub orientation: DQuat, // Rotation from local to world space
-    pub omega: DVec3,       // Angular velocity vector
-    pub half_size: DVec2,   // [half_width, half_height]
+    /// Rotation quaternion transforming local space to world space.
+    pub orientation: DQuat,
+    /// Angular velocity vector.
+    pub omega: DVec3,
+    /// Half-dimensions along the local axes `[half_width, half_height]`.
+    pub half_size: DVec2,
+    /// Evaluated world-space coordinates of the four corners.
     pub vertices: [DVec3; 4],
-    pub color: Srgba,
+    /// RGBA colour representation for rendering.
+    pub colour: Srgba,
+    /// Flag determining whether the rectangle is rendered in the visualization scene.
     pub visible: bool,
 }
 
 impl RectSpec {
     /// Creates a RectSpec from 4 corner vertices.
     /// Order expected: [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
-    pub fn new(vertices: [DVec3; 4], color: Srgba, visible: bool) -> Self {
+    ///
+    /// # Arguments
+    ///
+    /// * `vertices` - Array of four world-space vertex positions.
+    /// * `colour` - RGBA visual colour.
+    /// * `visible` - Display toggle.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - An initialized and validated `RectSpec` instance.
+    pub fn new(vertices: [DVec3; 4], colour: Srgba, visible: bool) -> Self {
         let id = next_id();
 
         let [v0, v1, v2, v3] = vertices;
@@ -177,7 +225,7 @@ impl RectSpec {
             omega: DVec3::ZERO,
             half_size,
             vertices: [DVec3::ZERO; 4],
-            color,
+            colour,
             visible,
         };
 
@@ -224,6 +272,11 @@ impl RectSpec {
     }
 
     /// Applies a rigid-body translation and rotation (via a DQuat) to the plane.
+    ///
+    /// # Arguments
+    ///
+    /// * `translation_delta` - Positional displacement vector.
+    /// * `rotation` - Optional rotation quaternion delta.
     pub fn transform(&mut self, translation_delta: DVec3, rotation: Option<DQuat>) {
         self.center += translation_delta;
         if let Some(rot) = rotation {
@@ -233,6 +286,12 @@ impl RectSpec {
     }
 
     /// Advances the rectangle's position and orientation over time step `dt`.
+    ///
+    /// # Arguments
+    ///
+    /// * `vel` - Linear velocity vector.
+    /// * `omega` - Angular velocity vector.
+    /// * `dt` - Time step size.
     pub fn step(&mut self, vel: DVec3, omega: DVec3, dt: f64) {
         self.velocity = vel;
         self.omega = omega;
@@ -275,22 +334,42 @@ impl RectSpec {
 ///--------------------------------------------------------------------------------------------------------
 /// TriSpec
 /// -------------------------------------------------------------------------------------------------------
+/// 3D triangular surface in space
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub struct TriSpec {
+    /// Unique identifier for the triangle instance.
     pub id: usize,
+    /// Center position vector in world space.
     pub center: DVec3,
-    pub normal: DVec3,          // Primary orientation vector
-    pub tangent: DVec3,         // Secondary vector to resolve rotation around the normal
+    /// Linear velocity vector of the triangle.
     pub velocity: DVec3,
-    pub vertices: [DVec3; 3],    // World-space vertices [v0, v1, v2]
-    pub local_triangles: [DVec3; 3], // Pre-scaled raw triangles loaded relative to (0,0,0)
-    pub color: Srgba,
-    pub visible: bool
+    /// Rotation quaternion transforming local space to world space.
+    pub orientation: DQuat,
+    /// Angular velocity vector.
+    pub omega: DVec3,
+    /// Evaluated world-space coordinates of the three corners `[v0, v1, v2]`.
+    pub vertices: [DVec3; 3],    
+    /// Pre-scaled raw vertices stored relative to the local center `(0,0,0)`.
+    pub local_vertices: [DVec3; 3], 
+    /// RGBA colour representation for rendering.
+    pub colour: Srgba,
+    /// Flag determining whether the triangle is rendered in the visualization scene.
+    pub visible: bool,
 }
 
 impl TriSpec {
     /// Creates a TriSpec from 3 corner vertices.
-    pub fn new(vertices: [DVec3; 3], color: Srgba, visible: bool) -> Self {
+    ///
+    /// # Arguments
+    ///
+    /// * `vertices` - Array of three world-space vertex positions.
+    /// * `colour` - RGBA visual colour.
+    /// * `visible` - Display toggle flag.
+    ///
+    /// # Returns
+    ///
+    /// * `Self` - An initialized and validated `TriSpec` instance.
+    pub fn new(vertices: [DVec3; 3], colour: Srgba, visible: bool) -> Self {
         let id = next_id();
         
         let [v0, v1, v2] = vertices;
@@ -301,7 +380,7 @@ impl TriSpec {
             id
         );
 
-        // 2. Calculate edges
+        // 1. Calculate edges
         let edge1 = v1 - v0;
         let edge2 = v2 - v0;
 
@@ -312,96 +391,129 @@ impl TriSpec {
             id, vertices
         );
 
-        // 3. Calculate center as the average of the 3 vertices
+        // 2. Calculate center as the average of the 3 vertices
         let center = (v0 + v1 + v2) / 3.0;
 
-        // 4. Normal from cross product (STL right-hand rule convention)
-        let normal = cross.normalize();
-
-        // 5. Tangent along the first edge direction
+        // 3. Build local basis vectors
         let tangent = edge1.normalize();
+        let normal = cross.normalize();
+        let bitangent = normal.cross(tangent).normalize();
 
-        // 6. Convert absolute vertices into local-space coordinates relative to (0,0,0)
-        let local_triangles = [
+        // 4. Build orientation quaternion from the rotation matrix columns
+        let mat3 = glam::DMat3::from_cols(tangent, bitangent, normal);
+        let orientation = glam::DQuat::from_mat3(&mat3);
+
+        // 5. Convert absolute vertices into local-space coordinates relative to (0,0,0)
+        let local_vertices = [
             v0 - center,
             v1 - center,
             v2 - center,
         ];
 
-        let velocity = DVec3::ZERO;
-
-        let tri = Self {
+        let mut tri = Self {
             id,
             center,
-            normal,
-            tangent,
-            velocity,
-            vertices,
-            local_triangles,
-            color,
-            visible
+            velocity: DVec3::ZERO,
+            orientation,
+            omega: DVec3::ZERO,
+            vertices: [DVec3::ZERO; 3],
+            local_vertices,
+            colour,
+            visible,
         };
 
         tri.validate();
+        tri.update_vertices(); // Populates world-space vertices correctly
         tri
     }
 
-    /// Recalculates world-space vertices based on current center, normal, tangent, and local geometry.
-    pub fn update_vertices(&mut self) {
-        let normal = self.normal.normalize();
-        let tangent = (self.tangent - normal * self.tangent.dot(normal)).normalize();
-        let bitangent = normal.cross(tangent);
+    /// Helper to get the world-space normal on the fly
+    pub fn normal(&self) -> DVec3 {
+        self.orientation * DVec3::Z
+    }
 
+    /// Helper to get the world-space tangent (local X axis)
+    pub fn tangent(&self) -> DVec3 {
+        self.orientation * DVec3::X
+    }
+
+    /// Helper to get the world-space bitangent (local Y axis)
+    pub fn bitangent(&self) -> DVec3 {
+        self.orientation * DVec3::Y
+    }
+
+    /// Recalculates world-space vertices based on current center, orientation, and local geometry.
+    pub fn update_vertices(&mut self) {
         self.vertices = [
-            self.transform_point(self.local_triangles[0], &tangent, &bitangent, &normal),
-            self.transform_point(self.local_triangles[1], &tangent, &bitangent, &normal),
-            self.transform_point(self.local_triangles[2], &tangent, &bitangent, &normal),
+            self.center + self.orientation * self.local_vertices[0],
+            self.center + self.orientation * self.local_vertices[1],
+            self.center + self.orientation * self.local_vertices[2],
         ];
     }
 
-    #[inline]
-    fn transform_point(&self, p: DVec3, t: &DVec3, b: &DVec3, n: &DVec3) -> DVec3 {
-        let rotated = *t * p.x + *b * p.y + *n * p.z;
-        rotated + self.center
-    }
-
     /// Applies a rigid-body translation and rotation (via a DQuat) to the triangle.
+    ///
+    /// # Arguments
+    ///
+    /// * `translation_delta` - Positional displacement vector.
+    /// * `rotation` - Optional rotation quaternion delta.
     pub fn transform(&mut self, translation_delta: DVec3, rotation: Option<DQuat>) {
-        // Update center
         self.center += translation_delta;
-
-        // If a rotation is provided, rotate the normal and tangent vectors
         if let Some(rot) = rotation {
-            self.normal = rot * self.normal;
-            self.tangent = rot * self.tangent;
+            self.orientation = rot * self.orientation;
         }
-
-        // Recompute vertices and normalize basis vectors together
         self.update_vertices();
     }
 
-
-    pub fn step(&mut self, vel: DVec3, dt: f64){
+    /// Advances the triangle's position and orientation over time step `dt`.
+    ///
+    /// # Arguments
+    ///
+    /// * `vel` - Linear velocity vector.
+    /// * `omega` - Angular velocity vector.
+    /// * `dt` - Time step size.
+    pub fn step(&mut self, vel: DVec3, omega: DVec3, dt: f64) {
         self.velocity = vel;
-        self.transform(vel*dt, None);
+        self.omega = omega;
+
+        let translation_delta = vel * dt;
+        
+        // Convert angular velocity vector (omega * dt) into a rotation quaternion update delta
+        let angle = omega.length() * dt;
+        let rotation_delta = if angle > 1e-12 {
+            Some(glam::DQuat::from_axis_angle(omega.normalize(), angle))
+        } else {
+            None
+        };
+
+        self.transform(translation_delta, rotation_delta);
     }
 
     /// Directly set a new position and orientation.
-    pub fn set(&mut self, new_center: DVec3, new_normal: DVec3, new_tangent: DVec3) {
+    pub fn set(&mut self, new_center: DVec3, new_orientation: DQuat) {
         self.center = new_center;
-        self.normal = new_normal;
-        self.tangent = new_tangent;
+        self.orientation = new_orientation;
         self.update_vertices();
     }
 
-    /// Panics if normal and tangent are not orthogonal.
+    /// Panics if the triangle geometry or orientation basis vectors are invalid.
     pub fn validate(&self) {
-        let n = self.normal.normalize();
-        let t = (self.tangent - n * self.tangent.dot(n)).normalize();
-        
+        let n = self.normal();
+        let t = self.tangent();
+        let dot = n.dot(t);
+
         assert!(
-            n.dot(t).abs() < 1e-5,
-            "TriSpec (id: {}) normal and tangent are not orthogonal!",
+            dot.abs() < 1e-4,
+            "TriSpec error: Normal and tangent are not orthogonal! Dot product was {}.",
+            dot
+        );
+
+        // Verify that the local vertices are not degenerate
+        let [v0, v1, v2] = self.local_vertices;
+        let cross = (v1 - v0).cross(v2 - v0);
+        assert!(
+            cross.length_squared() > 1.0e-14,
+            "TriSpec (id: {}) error: Local vertices are degenerate (zero area).",
             self.id
         );
     }

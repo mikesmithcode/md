@@ -5,7 +5,7 @@
 
 
 use winit::event_loop::EventLoop;
-use glam::{DVec2,DVec3};
+use glam::DVec3;
 use std::collections::HashMap;
 use three_d::Srgba;
 
@@ -14,7 +14,7 @@ use md::md_viz::scene::Scene;
 
 // Imports from simulation library
 use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, TriSpec, Simulation, SimulationSettings};
-use md::md_sim::force::{add_weight, add_particle_particle_collision, add_particle_object_collision};
+use md::md_sim::force::{add_weight, add_particle_object_collision};
 use md::md_sim::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
 use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
 use md::md_sim::particle::MoleculeData;
@@ -51,8 +51,8 @@ impl Forces for SimUpdate{
     }
 
     // forces that operate between pairs of particles
-    fn update_pair_forces(&self,i: usize,j: usize,mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
-        (force, torque)
+    fn update_pair_forces(&self,_i: usize,_j: usize,_force: DVec3, _torque: DVec3, _particles: &ParticleVec,_settings: &SimulationSettings)->(DVec3, DVec3){
+        (_force, _torque)
     }
 
 }

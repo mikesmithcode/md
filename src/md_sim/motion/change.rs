@@ -9,19 +9,23 @@ use crate::md_sim::{SimulationSettings, particle::ParticleVec};
 // Special functions
 //-------------------------------------------------------------------------------------------------------
 
-/// Enforces boundary conditions
+/// Enforces boundary conditions (periodic wrapping or elastic reflection) dimension by dimension.
 /// 
-/// periodic specifies either true (periodic) or false (not) for each dimension.
-/// If a BC is periodic it wraps the position in the primary simulation box. (The forces are also wrapped
-/// in the neighbours). If a BC is not periodic the appropriate faces of the simulation box are perfectly elastic
-/// reflecting particles and forces do not wrap.
-///
 /// # Arguments
 ///
-/// * `pos` - The mutable position vector to be wrapped.
-/// * `vel` - The mutable velocity vector to be reflected.
-/// * `sim_box_size` - The dimensions of the periodic simulation cell.
-/// * `periodic` - true = periodic and false = non-periodic. Each dimension is treated separately
+/// * `pos` - Mutable reference to the position vector of the particle.
+/// * `vel` - Mutable reference to the velocity vector of the particle.
+/// * `sim_box_size` - The 3D dimensions of the simulation box.
+/// * `periodic` - Boolean array `[bool; 3]` specifying whether each dimension $(x, y, z)$ is periodic (`true`) or bounded (`false`).
+///
+/// # Notes
+/// 
+/// Each spatial dimension is treated independently:
+/// 
+/// 1. **Periodic Boundaries (`true`):** Wraps the coordinate back into the primary simulation box $[0, \text{sim\_box\_size})$ using floor-based modular arithmetic. 
+/// 2. **Non-Periodic Boundaries (`false`):** Implements perfectly elastic reflection off the box walls:
+///    * If the particle crosses the lower boundary ($< 0.0$), position is reflected inward and velocity is inverted ($v_i = -v_i$).
+///    * If the particle crosses the upper boundary ($\ge \text{sim\_box\_size}$), position is bounced back relative to the wall and velocity is inverted.
 #[inline(always)]
 pub fn enforce_boundary(pos: &mut DVec3, vel: &mut DVec3, sim_box_size: DVec3, periodic: [bool; 3]) {
     for i in 0..3 {
@@ -68,6 +72,18 @@ pub fn change_rad(particles: &mut ParticleVec, ptype: usize) {
     }
 }
 
+
+/// Usually used to move a surface constructed of particles up and down sinusoidally
+/// 
+/// # Arguments
+/// 
+/// * `particles` - The mutable particle buffer
+/// * `settings` - The SimulationSettings struct which carries the time step equivalent in seconds
+/// 
+/// # Notes
+/// 
+/// Need to assign the particles you want to move this way a ptype=1 to distinguish them from other particles
+/// The motion is set locally using amplitude and frequency.
 pub fn move_sinwave(particles: &mut ParticleVec, settings: &SimulationSettings, time: f64){
     let amplitude: f64 = 0.1;
     let frequency: f64= 250.0;
@@ -82,12 +98,23 @@ pub fn move_sinwave(particles: &mut ParticleVec, settings: &SimulationSettings, 
 
 }
 
-pub fn change_colour(particles: &mut ParticleVec, _settings: &SimulationSettings){
+
+/// Change colour of particular type of particles.
+/// 
+/// # Arguments
+/// 
+/// * `particles` - The mutable particle buffer
+/// * `_settings` - unused
+/// 
+/// # Notes
+/// 
+/// Currently set to look for particular type of particle above certain height but could look for any condition.
+pub fn change_particle_colour(particles: &mut ParticleVec, _settings: &SimulationSettings){
     let threshold: f64 = 0.01;
     
     let new_colour = Srgba::new(0, 255, 0, 255);
     //change colour of particles
-    for (pos, col, &ptype) in izip!(&mut particles.position, &mut particles.color,  &particles.ptype){
+    for (pos, col, &ptype) in izip!(&mut particles.position, &mut particles.colour,  &particles.ptype){
         if (ptype == 0) && (pos.z > threshold){
                 *col = new_colour; 
             }

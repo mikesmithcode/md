@@ -11,9 +11,7 @@ use crate::md_sim::BoxSpec;
 use crate::md_viz::camera::MyCamera;
 use crate::md_viz::templates::{SphereTemplate, WireBoxTemplate, ObjectTemplate};
 
-
-
-
+/// Configuration parameters governing rendering window dimensions, capture frame rates, camera view settings, and simulation boundary display boxes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)] 
 pub struct SceneSettings {
@@ -27,26 +25,24 @@ pub struct SceneSettings {
 
 impl Default for SceneSettings {
     fn default() -> Self {
-
         Self {
             camera: MyCamera::default(),
             window_size: (1280, 960),
             window_visible: true,
             vid_fps: 30,
-            sim_box: BoxSpec::default(),//The sim_box_size will be overwritten with values from the Simulation config.
+            sim_box: BoxSpec::default(), // The sim_box_size will be overwritten with values from the Simulation config.
         }
     }
 }
 
-
-
+/// Container holding shared GPU rendering assets, lighting configurations, geometry templates, and instance buffers.
 pub struct GpuResources {
     pub ambient_light: AmbientLight,
     pub directional_light: DirectionalLight,
     pub simbox_template: WireBoxTemplate,
     #[allow(dead_code)]
-    pub sphere_template: SphereTemplate,//Create instances which are updated starting from a single template
-    pub object_templates: Vec<ObjectTemplate>,//Each object gets its own template which is transformed.
+    pub sphere_template: SphereTemplate, // Create instances which are updated starting from a single template
+    pub object_templates: Vec<ObjectTemplate>, // Each object gets its own template stored in the Vec which is transformed
     pub instance_transforms: Vec<Mat4>,
-    pub instance_colors: Vec<Srgba>,
+    pub instance_colours: Vec<Srgba>,
 }

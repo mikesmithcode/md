@@ -1,13 +1,13 @@
 """This is a utility script for looking at output"""
 
 import polars as pl
-from filehandling import BatchProcess
 from pathlib import Path
 
-path_to_snapshots = "output/snapshots/"
+path_to_snapshots = Path("output/2drotation/2drotation/particles")
 
-root_path = Path(__file__).parent.parent
-filepath = root_path.joinpath(path_to_snapshots,  "snapshot_00000000010.parquet")
-
+root = Path(__file__).parent.parent
+print(root)
+filepath = root.joinpath(path_to_snapshots, "particles_0000000000.parquet")
+print("filepath", filepath)
 df = pl.read_parquet(filepath)
-print(df)
+print(df[['id','molecule_id','ptype','x','z']])

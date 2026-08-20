@@ -73,6 +73,14 @@ pub fn check_delta(delta: &mut DVec3, sim_box_size: DVec3,periodic:[bool;3]) {
     }
 }
 
+
+/// Context and parameters required for neighbor searches and pairwise particle interactions.
+///
+/// # Fields
+/// * `sim_box_size` - The physical dimensions of the periodic simulation boundary box $(L_x, L_y, L_z)$.
+/// * `periodic` - Boolean flags specifying periodicity along each of the three Cartesian axes `[x, y, z]`.
+/// * `search_radius_sq` - Pre-squared neighbor cutoff search radius to avoid expensive square root operations during distance checks.
+/// * `interaction_ptypes` - Slice of allowed particle type pairs `[type_a, type_b]` that evaluate interaction forces.
 pub struct InteractionContext<'a> {
     pub sim_box_size: DVec3,
     pub periodic: [bool; 3],

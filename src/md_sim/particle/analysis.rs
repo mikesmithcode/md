@@ -5,7 +5,16 @@ use std::collections::HashMap;
 use super::ParticleVec;
 use super::{MoleculeData, calculate_molecule_com};
 
-/// Calculates total system kinetic energy (Translational + Rotational)
+//// Calculates total system kinetic energy (Translational + Rotational)
+///
+/// # Arguments
+///
+/// * `particles` - Reference to the particle state buffers containing positions, velocities, masses, and angular velocities.
+/// * `molecules` - Reference map containing pre-calculated molecule structures and inertial properties.
+///
+/// # Returns
+///
+/// * `f64` - The aggregated kinetic energy of all rigid molecules in the simulation system.
 pub fn calculate_kinetic_energy(particles: &ParticleVec, molecules: &HashMap<usize, MoleculeData>) -> f64 {
     let mut total_ke = 0.0;
 
@@ -30,6 +39,15 @@ pub fn calculate_kinetic_energy(particles: &ParticleVec, molecules: &HashMap<usi
 }
 
 /// Calculates total angular momentum (Orbital + Spin)
+///
+/// # Arguments
+///
+/// * `particles` - Reference to the particle state buffers containing positions, velocities, masses, and orientations.
+/// * `molecules` - Reference map containing molecule metadata and body-frame inertia tensors.
+///
+/// # Returns
+///
+/// * `DVec3` - The integrated 3D vector representing total angular momentum across all molecules.
 pub fn calculate_total_angular_momentum(particles: &ParticleVec, molecules: &HashMap<usize, MoleculeData>) -> DVec3 {
     let mut total_l = DVec3::ZERO;
 

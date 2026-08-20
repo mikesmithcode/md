@@ -1,25 +1,24 @@
-//! input and output of simulation states and config.
+//! Input and output of simulation states and config.
 //!
 //! This module handles two primary formats:
 //!
-//! 1. **Metadata (JSON)**: Handled by [`save_simsettings`], this stores / loads the 
-//!    parameters of the experiment (e.g., simulation path, start time).
-//! 2. **State Snapshots (Parquet)**: Handled by [`save_snapshot`] and [`load_snapshot`], 
-//!    this uses the **Polars** library to efficiently store particle positions, 
-//!    velocities, and properties.
+//! 1. **Metadata (JSON)**: Handled by [`save_simsettings`] and [`load_simsettings`], 
+//!    this stores and loads the parameters of the experiment (e.g., time step, box size, 
+//!    simulation models).
+//! 2. **State Snapshots (Parquet)**: Handled by [`save_particles`] and [`load_particles`], 
+//!    this uses the **Polars** library to efficiently store particle positions, velocities, 
+//!    orientations, angular velocities, and optical properties.
 //!
 //! ### Data Workflow
 //! The simulation periodically saves snapshots. These files can be reloaded 
-//! using [`load_latest_snapshot`] to resume a previously stopped experiment.
-
-
+//! using [`load_latest_particles`] to resume a previously stopped experiment.
 
 use serde_json;
 use std::{fs, path::Path, path::PathBuf};
 
-use std::io::{Error,BufReader};
+use std::io::{Error, BufReader};
 use polars::prelude::*;
-use glam::{DVec3,DQuat};
+use glam::{DVec3, DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
@@ -27,10 +26,10 @@ use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec};
 use crate::md_viz::SceneSettings;
 
 
-/// Generate all the filepaths
+/// Generate all the filepaths for simulation inputs, snapshots, and video outputs.
 /// 
-/// use the file!() macro as input. Do this [sim_config,scene_config, snapshot, video]=filepaths(file!());
-/// This returns three filepaths of type Path
+/// Returns an array of five `PathBuf` elements: `[sim_config_path, scene_config_path, 
+/// object_snapshot_path, particle_snapshot_path, video_path]`.
 pub fn filepaths() -> [PathBuf; 5] {
     // Grab command line arguments directly at the top of the function
     let args: Vec<String> = std::env::args().collect();
@@ -91,21 +90,17 @@ pub fn filepaths() -> [PathBuf; 5] {
 // Config of simulation
 //-------------------------------------------------------------
 
-/// saves a json representation of the current [`SimulationSettings`]. 
+/// Saves a JSON representation of the current [`SimulationSettings`]. 
 /// 
-/// The info is serialised and saved as json.
+/// The configuration is serialized and saved into the provided path directory.
 ///
 /// # File Naming
-/// The filename is automatically generated using the `start` timestamp to ensure 
+/// The filename is automatically generated using the `start` step counter to ensure 
 /// uniqueness (e.g., `sim_config_0000000001.json`).
 ///
 /// # Errors
-/// This function will return an [`Error`] if:
-/// * The `sim_path` directory does not exist or is not writable.
-/// * There is an underlying I/O issue when writing to the disk.
-///
-/// # Panics
-/// Panics if the `SimulationSettings` cannot be converted to JSON.
+/// This function will return an [`Error`] if the directory is not writable 
+/// or if an I/O issue occurs during writing.
 pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path) -> Result<(), Error> 
 {
     let filename = format!("sim_config_{:010}.json", sim_settings.start);
@@ -116,45 +111,12 @@ pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path)
     Ok(())
 }
 
-/// loads a json config file into a SimulationSettings struct
+/// Loads a JSON config file into a [`SimulationSettings`] struct and updates its start index.
 /// 
-/// SimulationSettings has standard fields and a catch all enum of structs called SimulationModel which is used for
-/// additional params for particular simulations e.g if you want a fluid viscosity:
-/// 
-/// ```rust, ignore
-/// pub struct SimulationSettings{
-/// pub dt: f64,
-/// pub sim_box_size: DVec3, 
-/// pub periodic: [true;3],
-/// pub cutoff: f64,
-/// pub skin: f64,
-/// pub start: usize,
-/// pub num_steps: usize,
-/// pub dump: usize
-/// pub model: SimulationModel,
-/// }
-/// ```
-/// 
-/// These are loaded from json files with the same name as the simulation in the input folder. They look like this:
-/// 
-/// {
-///  "dt": 3e-6,
-///  "sim_box_size": [0.05, 0.01, 0.05],
-///  "periodic": [true,true,true],
-///  "cutoff": 0.01,
-///  "skin": 0.002,
-///  "start": 0,
-///  "num_steps": 1500000,
-///  "dump": 100,
-///  "model": {
-///    "type": "Solid",
-///    "stiffness": 665000.0,
-///    "damping": 2.97
-///  }
-///}
-/// 
-/// We update the start field to match index the initial value of the loop. Thus if you restart
-/// simulation start will be at the correct value.
+/// # Arguments
+/// * `input_filepath` - Path to the source JSON configuration file.
+/// * `output_path` - Directory where a copy of the loaded config should be archived.
+/// * `index` - The simulation step index to update within the loaded settings.
 pub fn load_simsettings(input_filepath: &Path, output_path: &Path, index: usize) -> Result<SimulationSettings, Box<dyn std::error::Error>>
 {   
     let file = fs::File::open(input_filepath)?;
@@ -163,7 +125,7 @@ pub fn load_simsettings(input_filepath: &Path, output_path: &Path, index: usize)
     let mut sim_settings: SimulationSettings = serde_json::from_reader(reader).expect("Does your config file match an enum variant in simulation.rs?");
     sim_settings.start = index;
 
-    //Save a copy of config to output with simulation index as suffix.
+    // Save a copy of config to output with simulation index as suffix.
     save_simsettings(&sim_settings, output_path)?;
     
     Ok(sim_settings)
@@ -183,7 +145,6 @@ pub fn save_objects(_dir_path: &Path,
     _time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())   
-
 }
 
 
@@ -191,22 +152,16 @@ pub fn save_objects(_dir_path: &Path,
 // Load and save particles
 //--------------------------------------------------------
 
-/// Load particle from Parquet file
+/// Loads particle snapshot data from a Parquet file into a [`ParticleVec`] and returns simulation time.
 /// 
-/// Each row in file represents a particle. Each column is a field
-/// to be added the Particle struct. These are combined in a Vec.
+/// Each row in the file represents a particle, mapped to fields within the [`Particle`] struct.
+/// Missing optional columns are populated with standard default values.
 /// 
 /// # Arguments
-/// * `file_path` - Path to the snapshot file
-/// 
-/// The input from python script has compulsory params. All optional params
-/// are filled with default values. These may not be physically meaningful. 
-/// compulsory : id, x,y,z,radius,mass
-/// optional : molecule_id,rel_x,rel_y,rel_z,vx,vy,vz,qx,qy,qz,qw,wx,wy,wz,r,g,b,a
+/// * `file_path` - Path to the particle Parquet snapshot file.
 /// 
 /// # Returns
-/// * `(particles, time)` - Vector of particles and simulation time
-/// Load particle snapshot from Parquet file into a ParticleVec
+/// * `(ParticleVec, f64)` - The vector containing populated particles and the simulation timestamp.
 pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std::error::Error>> {
     println!("load_particles {:?}", file_path );
     let file = std::fs::File::open(file_path)?;
@@ -217,7 +172,6 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
 
     let t_col = df.column("t")?.f64()?;
     let id_col = df.column("id")?.u64()?;
-    // Use .clone() to own the data, avoiding the "temporary borrow" error
     let molecule_id_col = get_u64_col_or_id(&df)?.u64()?.clone();
     let ptype_series = get_u64_col_or_filler(&df, "ptype", 0 as u64);
     let ptype_col = ptype_series.u64()?;
@@ -265,15 +219,9 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
     let a_series = get_f64_col(&df, "a", 255.0);
     let col_a = a_series.f64()?;
 
-    
-
     let t = t_col.get(0).unwrap_or(0.0);
 
-    
-
-    // Efficiently populate the ParticleVec
-    // We use izip! to iterate through all columns simultaneously
-    for (id, molecule_id,  ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz,qx, qy, qz, qw, wx ,wy,wz, rad, mass, charge, visible, r, g, b, a) in izip!(
+    for (id, molecule_id, ptype, x, y, z, rel_x, rel_y, rel_z, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz, rad, mass, charge, visible, r, g, b, a) in izip!(
         id_col.into_iter(),
         molecule_id_col.into_iter(),
         ptype_col.into_iter(),
@@ -302,8 +250,6 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
         col_b.into_iter(),
         col_a.into_iter()
     ) {
-
-        // We use .unwrap_or because Polars columns are technically nullable
         particles.push(Particle {
             id: id.unwrap_or(0) as usize,
             molecule_id: molecule_id.unwrap_or(0) as usize,
@@ -338,34 +284,32 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
             mass: mass.unwrap_or(0.0),
             charge: charge.unwrap_or(0.0),
             visible: visible.unwrap_or(true),
-            color: Srgba::new(
+            colour: Srgba::new(
                 r.unwrap_or(0.0) as u8,
                 g.unwrap_or(0.0) as u8,
                 b.unwrap_or(0.0) as u8,
                 a.unwrap_or(255.0) as u8,
             ),
-            ref_pos : DVec3::ZERO,        
+            ref_pos: DVec3::ZERO,        
         });
     }
     
     Ok((particles, t))
 }
 
-/// Load the latest particle snapshot from a directory
+/// Finds and loads the latest valid particle snapshot file from the specified directory.
 /// 
-/// Searches files in output/snapshots for the latest
-/// set of particle positions and then uses load_snapshot to
-/// generate `Vec<Particle>`, simulation index and simulation time.
+/// Scans the directory for files matching `particles_*.parquet`, sorts them descending 
+/// by step index, and loads the newest uncorrupted snapshot.
 /// 
 /// # Arguments
-/// * `dir_path` - Directory containing snapshot files
+/// * `dir_path` - Directory path containing particle snapshot files.
 /// 
 /// # Returns
-/// * `(particles, step, time)` - Vector of particles, step number, and simulation time
+/// * `(ParticleVec, usize, f64)` - Vector of particles, step number, and simulation timestamp.
 pub fn load_latest_particles(
     dir_path: &Path,
 ) -> Result<(ParticleVec, usize, f64), Box<dyn std::error::Error>> {
-    // Find all valid snapshot files and sort them descending by step
     let mut entries: Vec<(std::path::PathBuf, usize)> = fs::read_dir(dir_path)?
         .flatten()
         .filter_map(|entry| {
@@ -381,7 +325,6 @@ pub fn load_latest_particles(
         return Err("No snapshot files found".into());
     }
 
-    // Sort descending by step (highest/latest first)
     entries.sort_by(|a, b| b.1.cmp(&a.1));
 
     for (path, step) in entries {
@@ -390,17 +333,14 @@ pub fn load_latest_particles(
                 return Ok((particles, step, time));
             }
             Err(e) => {
-                // Check if it's a parquet corruption / file truncation error
                 let err_msg = e.to_string();
                 if err_msg.contains("PAR1") || err_msg.contains("parquet") {
                     eprintln!("Warning: Corrupted snapshot found at {:?}. Removing and trying previous...", path);
                     if let Err(del_err) = fs::remove_file(&path) {
                         eprintln!("Failed to delete corrupted file: {}", del_err);
                     }
-                    // Continue loop to try the next highest step file
                     continue;
                 } else {
-                    // If it's some other unexpected error, bubble it up immediately
                     return Err(e);
                 }
             }
@@ -410,27 +350,25 @@ pub fn load_latest_particles(
     Err("All available snapshot files were corrupted or could not be read".into())
 }
 
-/// saves particle snapshot to Parquet file
+/// Saves a [`ParticleVec`] snapshot to a Parquet file.
 /// 
-/// Its taking a `Vec<Particle>` and storing each field as an individual
-/// column in a Parquet file in output/snapshots.
+/// Flattens the particle structure fields into individual columns and writes 
+/// them to a Parquet file named `particles_{step:010}.parquet` within the target directory.
 /// 
 /// # Arguments
-/// * `dir_path` - Directory to save snapshots in
-/// * `step` - the index of the simulation loop
-/// * `particles` - Vector of particles to save
-/// * `time` - Simulation time
+/// * `dir_path` - Target directory to save the snapshot.
+/// * `step` - The current index of the simulation loop.
+/// * `particles` - Reference to the [`ParticleVec`] collection.
+/// * `time` - Current simulation time timestamp.
 pub fn save_particles(
     dir_path: &Path,
     step: usize,
     particles: &ParticleVec,
     time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Create directory if it doesn't exist
     fs::create_dir_all(dir_path)?;
 
-
-    let t: Vec<f64> = vec![time;particles.len()];
+    let t: Vec<f64> = vec![time; particles.len()];
     let id: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
     let molecule_id: Vec<u64> = particles.molecule_id.iter().map(|&molecule_id| molecule_id as u64).collect();
     let ptype: Vec<u64> = particles.ptype.iter().map(|&ptype| ptype as u64).collect();
@@ -449,28 +387,26 @@ pub fn save_particles(
         "vx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
         "vy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
         "vz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
-        "qx" => &particles.position.iter().map(|p| p.x).collect::<Vec<_>>(),
-        "qy" => &particles.position.iter().map(|p| p.y).collect::<Vec<_>>(),
-        "qz" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
-        "qw" => &particles.position.iter().map(|p| p.z).collect::<Vec<_>>(),
-        "wx" => &particles.velocity.iter().map(|v| v.x).collect::<Vec<_>>(),
-        "wy" => &particles.velocity.iter().map(|v| v.y).collect::<Vec<_>>(),
-        "wz" => &particles.velocity.iter().map(|v| v.z).collect::<Vec<_>>(),
+        "qx" => &particles.orientation.iter().map(|q| q.x).collect::<Vec<_>>(),
+        "qy" => &particles.orientation.iter().map(|q| q.y).collect::<Vec<_>>(),
+        "qz" => &particles.orientation.iter().map(|q| q.z).collect::<Vec<_>>(),
+        "qw" => &particles.orientation.iter().map(|q| q.w).collect::<Vec<_>>(),
+        "wx" => &particles.omega.iter().map(|w| w.x).collect::<Vec<_>>(),
+        "wy" => &particles.omega.iter().map(|w| w.y).collect::<Vec<_>>(),
+        "wz" => &particles.omega.iter().map(|w| w.z).collect::<Vec<_>>(),
         "radius" => &particles.radius,
         "mass" => &particles.mass,
         "charge" => &particles.charge,
         "visible" => &particles.visible,
-        "r" => &particles.color.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
-        "g" => &particles.color.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
-        "b" => &particles.color.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
-        "a" => &particles.color.iter().map(|c| c.a as f64).collect::<Vec<_>>(),
+        "r" => &particles.colour.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
+        "g" => &particles.colour.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
+        "b" => &particles.colour.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
+        "a" => &particles.colour.iter().map(|c| c.a as f64).collect::<Vec<_>>(),
     )?;
 
-    // Write to Parquet (with temp file for safety)
     let filename = format!("particles_{:010}.parquet", step);
     let final_path = dir_path.join(&filename);
     
-
     let file = std::fs::File::create(&final_path)?;
     ParquetWriter::new(file).finish(&mut df)?;
 
@@ -481,31 +417,22 @@ pub fn save_particles(
 // Graphics config
 //--------------------------------------------------------
 
-/// Loads the special json file (input/scene.json) into a SceneSettings struct which controls things like video fps, window_size.
+/// Loads the JSON configuration file into a [`SceneSettings`] struct controlling visual properties.
 pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSettings, Box<dyn std::error::Error>> {
-    // Open the file in read-only mode
     let file = fs::File::open(path)?;
     let reader = BufReader::new(file);
-
-    // Deserialise the JSON into the struct
     let settings = serde_json::from_reader(reader)?;
-
     Ok(settings)
 }
-
-
 
 //-----------------------------------------------------
 // private helpers
 //-----------------------------------------------------
-/// Helper to get a column or return a fallback Series of a specific type
-/// 
-/// Specialized helper for ID columns (u64)
+
 fn get_u64_col_or_id(df: &DataFrame) -> PolarsResult<Series> {
     match df.column("molecule_id") {
         Ok(col) => Ok(col.clone()),
         Err(_) => {
-            // Fallback: If "molecule_id" is missing, use the "id" column
             Ok(df.column("id")?.clone())
         }
     }
@@ -519,7 +446,6 @@ fn get_u64_col_or_filler(df: &DataFrame, name: &str, filler: u64) -> Series {
         })
 }
 
-/// Specialized helper for Physical columns (f64)
 fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
     df.column(name)
         .cloned()
@@ -528,7 +454,6 @@ fn get_f64_col(df: &DataFrame, name: &str, filler: f64) -> Series {
         })
 }
 
-/// Specialized helper for Boolean columns
 fn get_bool_col(df: &DataFrame, name: &str, filler: bool) -> Series {
     df.column(name)
         .cloned()
