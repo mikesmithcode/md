@@ -150,7 +150,7 @@ pub fn integrate_rigid_bodies(
     let sim_box_size = settings.sim_box_size;
     let periodic = settings.periodic;
 
-    for (mol_id, mol) in molecule_map {   
+    for (_mol_id, mol) in molecule_map {   
         let lead_idx = mol.pids[0];    
         
         // Calculate current COM etc

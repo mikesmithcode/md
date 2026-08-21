@@ -25,11 +25,10 @@
 
 use glam::DVec3;
 use serde::{Serialize, Deserialize};
-use std::fs::File;
-use std::io::BufReader;
-use std::path::Path;
 
 use crate::md_sim::particle::{SimulationModel, CollisionParams};
+use crate::md_sim::utils::SimulationPaths;
+use crate::md_sim::utils::file_io::load_sim_settings;
 
 /// Global configuration parameters governing the execution and physical properties of a simulation.
 ///
@@ -60,21 +59,9 @@ pub struct SimulationSettings {
 
 impl SimulationSettings {
     /// Loads simulation configuration from a JSON file path, providing a formatted error message if unreadable.
-    pub fn new(path: &Path) -> Result<SimulationSettings, Box<dyn std::error::Error>> {
-        let file = File::open(path).map_err(|e| {
-            format!(
-                "\n==========================================\n\
-                Error: Couldn't find config at {}\n\
-                Details: {}\n\
-                ==========================================\n", 
-                path.display(), e
-            )
-        })?;
-        
-        let reader = BufReader::new(file);
-        let sim_settings: SimulationSettings = serde_json::from_reader(reader)?;
-
-        Ok(sim_settings)
+    pub fn new(sim_paths: &SimulationPaths, start_step: usize) -> Result<SimulationSettings, Box<dyn std::error::Error>> {
+        let sim_settings = load_sim_settings(&sim_paths, start_step);
+        sim_settings
     }
 }
 

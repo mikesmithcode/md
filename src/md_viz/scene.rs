@@ -3,7 +3,6 @@
 //! This module is responsible for drawing everything either to a live window or a video stream.
 //! It uses a unified rendering pipeline to ensure visual consistency across all outputs.
 
-use std::path::PathBuf;
 use three_d::*;
 use soa_derive::soa_zip;
 
@@ -13,9 +12,9 @@ use winit::event_loop::EventLoop;
 use winit::platform::run_return::EventLoopExtRunReturn;
 use winit::event::{Event as WinitEvent, WindowEvent};
 
-use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::{ParticleVec, ObjectSpec};
 
+use crate::md_sim::utils::SimulationPaths;
 use crate::md_viz::lights::{create_ambient_light, create_directional_light};
 use crate::md_viz::templates::{SphereTemplate, RectTemplate, TriTemplate, WireBoxTemplate, ObjectTemplate};
 use crate::md_viz::camera::{create_camera, CameraControl};
@@ -48,13 +47,9 @@ impl Scene {
     
     /// Initializes a new `Scene` instance, loading scene configurations from file, setting up the camera, 
     /// window context, and allocating necessary GPU rendering resources.
-    pub fn new(event_loop: &EventLoop<()>, particles: &ParticleVec, objects: Option<&[ObjectSpec]>, scene_config_path: PathBuf, sim_settings: &SimulationSettings) -> Self {
-        let mut scene_settings: SceneSettings = Self::load_json(scene_config_path).unwrap_or_default();
-        println!("Scene Settings \n\n {:?}", scene_settings);
-
-        // Update the box_size from simulation
-        scene_settings.sim_box.box_size = sim_settings.sim_box_size;
-        scene_settings.sim_box.center = sim_settings.sim_box_size * 0.5;
+    pub fn new(event_loop: &EventLoop<()>, particles: &ParticleVec, objects: Option<&[ObjectSpec]>, scene_settings: SceneSettings) -> Self {
+        
+        
         
         let (w, h) = scene_settings.window_size;
         let viewport = Viewport::new_at_origo(w, h);
@@ -76,12 +71,6 @@ impl Scene {
         }
     }
 
-    // Used to load Scene config from a JSON file.
-    fn load_json(path: PathBuf) -> Result<SceneSettings, Box<dyn std::error::Error>> {
-        let file = std::fs::File::open(path)?;
-        let reader = std::io::BufReader::new(file);
-        Ok(serde_json::from_reader(reader)?)
-    }
 
     // Sets up the live winit window, three-d context, and GPU resources.
     fn init_window(event_loop: &EventLoop<()>, scene_settings: &SceneSettings, particles: &ParticleVec, objects: Option<&[ObjectSpec]>) -> (winit::window::Window, WindowedContext, Context, GpuResources, FrameInputGenerator) {
@@ -104,56 +93,11 @@ impl Scene {
         (window, w_context, context, resources, frame_input_generator)
     }
 
-    ///-----------------------------------------------------------------------------------
-    /// Controlling rendering of graphics
-    /// ----------------------------------------------------------------------------------
-    /// 
-    /// Updates or rebuilds object templates and color buffers without rendering anything.
-    /// This should be called if anything graphical in your objects or particles changes 
-    /// (e.g., particles created or destroyed, colors changed). 
-    /// 
-    /// # Note
-    /// Changes in particle sizes do not require this method, but changes to simulation objects do.
-    pub fn update_templates(&mut self, particles: &ParticleVec, objects: Option<&[ObjectSpec]>) -> Result<(), Box<dyn std::error::Error>> {
-        // 1. Particle colours
-        let mut colours = std::mem::take(&mut self.resources.instance_colours);
-        colours.clear();
-        for col in &particles.colour {
-            colours.push(*col);
-        }
-        self.resources.instance_colours = colours;
-
-        // 2. Object templates & colours
-        if let Some(specs) = objects {
-            if self.resources.object_templates.len() != specs.len() {
-                self.resources.object_templates = specs
-                    .iter()
-                    .map(|spec| match spec {
-                        ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(&self.context, *boxspec)),
-                        ObjectSpec::Rectangle(rectspec) => ObjectTemplate::Rectangle(RectTemplate::new(&self.context, *rectspec)),
-                        ObjectSpec::Triangle(trispec) => ObjectTemplate::Triangle(TriTemplate::new(&self.context, *trispec)),
-                    })
-                    .collect();
-            }
-
-            // Update colours/materials for each object template
-            for (template, spec) in self.resources.object_templates.iter_mut().zip(specs.iter()) {
-                match template {
-                    ObjectTemplate::Rectangle(t) => t.update_colour(spec),
-                    ObjectTemplate::Triangle(t) => t.update_colour(spec),
-                    ObjectTemplate::WireBox(t) => t.update_colour(spec),
-                }
-            }
-        } else {
-            // Activates when the last object is removed
-            if !self.resources.object_templates.is_empty() {
-                self.resources.object_templates.clear();
-            }
-        }
-
-        Ok(())
-    }
-    
+    // -----------------------------------------------------------------------------------
+    // Controlling rendering of graphics
+    // ----------------------------------------------------------------------------------
+    // 
+    // 
     // Creates and stores the initial graphic templates for rendering.
     fn _init_gpu_resources(context: &Context, particles: &ParticleVec, objects: Option<&[ObjectSpec]>, scene_settings: &SceneSettings) -> Result<GpuResources, Box<dyn std::error::Error>> { 
         let simbox_template = WireBoxTemplate::new(context, scene_settings.sim_box);
@@ -193,7 +137,9 @@ impl Scene {
         Ok(resources)
     }
 
-    fn update_particle_transforms(camera: &Camera, resources: &mut GpuResources, particles: &ParticleVec) {
+    // Particles use a single Sphere template but multiple instances. Every step we 
+    // update there positions, radii and colours.
+    fn update_particles(resources: &mut GpuResources, particles: &ParticleVec) {
         let mut transforms = std::mem::take(&mut resources.instance_transforms);
         let mut colours = std::mem::take(&mut resources.instance_colours);
         transforms.clear();
@@ -203,37 +149,16 @@ impl Scene {
                 transforms.push(Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) * Mat4::from_scale(*rad as f32));
                 colours.push(*col);
             }
-        /*
-        let needs_sorting = particles.colour.iter().any(|c| c.a < 255);
-
-        if needs_sorting {
-            let cam_pos = camera.position();
-            let mut indices: Vec<usize> = (0..particles.len()).collect();
-            indices.sort_by(|&a, &b| {
-                let pos_a = vec3(particles.position[a].x as f32, particles.position[a].y as f32, particles.position[a].z as f32);
-                let pos_b = vec3(particles.position[b].x as f32, particles.position[b].y as f32, particles.position[b].z as f32);
-                let dist_a = cam_pos.distance2(pos_a);
-                let dist_b = cam_pos.distance2(pos_b);
-                dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal)
-            });
-            
-            for i in indices {
-                resources.sphere_template.push_transform(i, particles, &mut transforms);
-                colours.push(particles.colour[i]); // Keep colors locked to the exact sorted index order!
-            }
-        } else {
-            for (pos, rad, col) in soa_zip!(particles, [position, radius, colour]) {
-                transforms.push(Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) * Mat4::from_scale(*rad as f32));
-                colours.push(*col);
-            }
-        }
-        */
+        
         resources.instance_transforms = transforms;
         resources.instance_colours = colours;
     }
 
-
-    // Updates fast-changing per-frame object transformation properties.
+    
+    /// Objects, if they exist each have their own template stored in the gpu resources.
+    /// 
+    /// We split updating the position from other updates like colour changes.
+    /// If you update the ObjectSpec this will update the position or orientation.
     fn update_object_transforms(
         resources: &mut GpuResources,
         objects: &[ObjectSpec],
@@ -247,6 +172,43 @@ impl Scene {
         }
     }
 
+    /// For more complicated changes to objects e.g. you remove one, change its colour etc.
+    /// You will need to change the stored templates. This is a manual step you 
+    /// need to build into your simulation loop or wherever you change the objects. 
+    /// This updates the object templates without rendering anything.
+    /// 
+    /// Note particles update automatically    
+    pub fn update_object_templates(&mut self, objects: Option<&[ObjectSpec]>) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(specs) = objects {
+            if self.resources.object_templates.len() != specs.len() {
+                self.resources.object_templates = specs
+                    .iter()
+                    .map(|spec| match spec {
+                        ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(&self.context, *boxspec)),
+                        ObjectSpec::Rectangle(rectspec) => ObjectTemplate::Rectangle(RectTemplate::new(&self.context, *rectspec)),
+                        ObjectSpec::Triangle(trispec) => ObjectTemplate::Triangle(TriTemplate::new(&self.context, *trispec)),
+                    })
+                    .collect();
+            }
+
+            // Update colours/materials for each object template
+            for (template, spec) in self.resources.object_templates.iter_mut().zip(specs.iter()) {
+                match template {
+                    ObjectTemplate::Rectangle(t) => t.update_colour(spec),
+                    ObjectTemplate::Triangle(t) => t.update_colour(spec),
+                    ObjectTemplate::WireBox(t) => t.update_colour(spec),
+                }
+            }
+        } else {
+            // Activates when the last object is removed
+            if !self.resources.object_templates.is_empty() {
+                self.resources.object_templates.clear();
+            }
+        }
+
+        Ok(())
+    } 
+
     // Renders the current scene state (particles, objects, simulation box, and lights) onto a target.
     fn render_to_target(
         camera: &Camera,
@@ -258,8 +220,8 @@ impl Scene {
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
 
         // 1. Particle updates
-        Self::update_particle_transforms(camera, resources, particles);
-        //Self::update_particle_colours(resources, particles);
+        Self::update_particles(resources, particles);
+        
 
         let instances = Instances {
             transformations: resources.instance_transforms.clone(),
@@ -316,11 +278,11 @@ impl Scene {
     }
 
     /// Initializes a video exporter to begin recording frames to disk with an optional step-based suffix.
-    pub fn start_recording(&mut self, path: &PathBuf, step: usize) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn start_recording(&mut self, sim_paths: &SimulationPaths, step: usize) -> Result<(), Box<dyn std::error::Error>> {
         let step_suffix = format!("_{:010}", step);
-        let mut new_path = path.clone();
+        let mut new_path = sim_paths.video.clone();
         
-        if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+        if let Some(file_stem) = sim_paths.video.file_stem().and_then(|s| s.to_str()) {
             let filename_string = format!("{}{}.mp4", file_stem, step_suffix);
             new_path.set_file_name(filename_string);
         } else {

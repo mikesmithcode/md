@@ -11,13 +11,15 @@ use three_d::Srgba;
 
 // Import everything from your md_viz library
 use md::md_viz::scene::Scene;
+use md::md_viz::scene_settings::SceneSettings;
 
 // Imports from simulation library
 use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, Simulation, SimulationSettings};
 use md::md_sim::force::{add_coulomb, add_particle_object_collision, add_particle_particle_collision, add_weight};
-use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct, integrate_singleparticle_correct, integrate_singleparticle_update};
-use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
+use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
+use md::md_sim::utils::{filepaths, save_particles, save_objects, load_latest_particles, load_latest_objects, SimulationPaths};
 use md::md_sim::particle::MoleculeData;
+
 
 
 pub struct SimUpdate;
@@ -97,39 +99,29 @@ impl Motion for SimUpdate{
     }
 }
 
-//Creates a horizontal rectangle which fills simulation box
-fn create_plane(x: f64,y: f64,z:f64)-> ObjectSpec{
-    let rect_vertices = [DVec3::new(0.0,0.0, z),DVec3::new(x,0.0, z),DVec3::new(x,y, z),DVec3::new(0.0,y, z)];    
-    let rectspec = RectSpec::new(rect_vertices, Srgba::GREEN, true);
-    
-    ObjectSpec::Rectangle(rectspec)    
-}
 
 
 
 pub fn main() {    
 
     // Construct filepaths
-    let [sim_config_path, scene_config_path, _object_path, particle_path, _video_path] = filepaths();
+    let sim_filepaths: SimulationPaths = filepaths();
     
-    // load settings
-    let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
-    let size = sim_settings.sim_box_size;
-
     //------------------------------------------------------------
     // Initialise simulation with bunch of particles from a snapshot file and define simulation parameters with a config file. Takes latest snapshot in output
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
+    let (particles, start_step, time) = load_latest_particles(&sim_filepaths).expect("Failed to return latest particle snapshot");
     
-    let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return latest snapshot");
-    
-    
+
+    // load settings
+    let sim_settings: SimulationSettings = SimulationSettings::new(&sim_filepaths, start_step).expect("sim settings not loaded correctly"); 
+    let size = sim_settings.sim_box_size;
     
     //--------------------------------------------------------------
-    //Create surface
+    //Load surface
     //--------------------------------------------------------------
-    let surface = create_plane(size.x, size.y, 0.005);
-    let objects = Some(vec![surface]);
+    let (objects, start_step, time) = load_latest_objects(&sim_filepaths).expect("Failed to return latest object snapshot");
 
     //-------------------------------------------------------------
     // Create simulation
@@ -140,8 +132,6 @@ pub fn main() {
     // sim.update() to advance the simulation by one step
     // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
     //--------------------------------------------------------------  
-    println!("before sim init {:?}",&particles.position);
-
     let mut sim= Simulation::new(particles, objects, SimUpdate, sim_settings.clone(), time);
 
     //----------------------------------------------------------------
@@ -152,18 +142,19 @@ pub fn main() {
     //  Call scene.display() to update window, scene.save_img() to write
     //--------------------------------------------------------------   
     let mut event_loop = EventLoop::new(); 
-    let mut scene: Scene = Scene::new(&event_loop, sim.get_particles(), sim.get_objects(), scene_config_path, &sim_settings);   
-    //let _ = scene.start_recording(&video_path, start_step);
+    let scene_settings: SceneSettings = SceneSettings::new(&sim_filepaths, &sim_settings); 
+    let mut scene: Scene = Scene::new(&event_loop, sim.get_particles(), sim.get_objects(), scene_settings.clone());   
+    //let _ = scene.start_recording(&sim_paths, start_step);
 
 
-    println!("Simulation started...");
+    
     //--------------------------------------------------------------
     // Start simulation loop
     //
     // Call scene.display() to update window, scene.save_img() to write
     // img to file. simulation.update() to advance the simulation by one step
     //--------------------------------------------------------------
-    
+    println!("Simulation started...");
     
     // Run simulation loop for num_steps
     for step in start_step..= (start_step+sim.settings.num_steps){
@@ -185,7 +176,9 @@ pub fn main() {
             //let _ = scene.save_frame(&sim.get_particles(), None);
 
             //save a snapshot of particle positions etc
-            save_particles(&particle_path, step, sim.get_particles(), sim.time).expect("Error saving simulation snapshot");
+            save_particles(&sim_filepaths, step, sim.get_particles(), sim.time).expect("Error saving particles snapshot");
+            save_objects(&sim_filepaths, step, sim.get_objects(), sim.time).expect("Error saving objects snapshot");
+
         }
         
     }

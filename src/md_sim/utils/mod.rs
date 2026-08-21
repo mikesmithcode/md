@@ -1,14 +1,13 @@
-mod file_io;
-mod test_utils;
+
+pub mod file_io;
+pub mod test_utils;
 
 use glam::DVec3;
 
-pub use file_io::{filepaths, save_simsettings, load_simsettings, save_particles, load_latest_particles, load_particles, load_scene_settings, load_objects, save_objects};
+pub use file_io::{filepaths, save_sim_settings, load_sim_settings, save_particles, load_latest_particles, load_particles, load_scene_settings, load_latest_objects, save_objects, SimulationPaths};
 pub use test_utils::{create_molecule_vec, create_single_molecule, create_particle_vec, setup_single_molecule_data, create_grid_and_settings};
 
 
-#[cfg(test)]
-pub mod tests;
 
 
 // -------------------------------------------------------------------------------------------------

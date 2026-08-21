@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from utility import display, get_config_particlepath
+from python_scripts.utils.file_io import display, get_config_particlepath
 
 import sys
 print(f"DEBUG: Using Python at {sys.executable}")

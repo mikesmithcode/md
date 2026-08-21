@@ -14,81 +14,140 @@
 //! using [`load_latest_particles`] to resume a previously stopped experiment.
 
 use serde_json;
-use std::{fs, path::Path, path::PathBuf};
-
+use std::{fs, path::Path, path::PathBuf, io};
 use std::io::{Error, BufReader};
 use polars::prelude::*;
 use glam::{DVec3, DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
-use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec};
+use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec, RectSpec, TriSpec};
 use crate::md_viz::SceneSettings;
 
 
-/// Generate all the filepaths for simulation inputs, snapshots, and video outputs.
-/// 
-/// Returns an array of five `PathBuf` elements: `[sim_config_path, scene_config_path, 
-/// object_snapshot_path, particle_snapshot_path, video_path]`.
-pub fn filepaths() -> [PathBuf; 5] {
+
+/// Encapsulates all major file paths required for running and saving a simulation.
+pub struct SimulationPaths {
+    pub output: PathBuf,
+    pub sim_config: PathBuf,
+    pub scene_config: PathBuf,
+    pub object: PathBuf,
+    pub particle: PathBuf,
+    pub video: PathBuf,
+}
+
+/// Validates that a target directory exists and contains a specified list of required files.
+///
+/// # Arguments
+/// * `dir_path` - A reference to the `Path` representing the directory to check.
+/// * `required_files` - A slice of file name strings expected to be inside the directory.
+///
+/// # Errors
+/// Returns an `io::Error` with `ErrorKind::NotFound` if the directory itself does not exist 
+/// or if any of the required files are missing.
+fn validate_simulation_inputs(dir_path: &Path, required_files: &[&str]) -> io::Result<()> {
+    // 1. Check if the directory exists
+    if !dir_path.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("Required directory does not exist: {}", dir_path.display()),
+        ));
+    }
+
+    // 2. Check each required file inside the folder
+    for file_name in required_files {
+        let file_path = dir_path.join(file_name);
+        if !file_path.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                format!("Required file missing: {}", file_path.display()),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+/// Parses command-line arguments, constructs input/output simulation filepaths, 
+/// and validates that necessary configuration and initial snapshot files exist on disk.
+///
+/// Expects two command-line arguments:
+/// 1. The simulation target name (e.g., `silo`)
+/// 2. The specific run argument/identifier (e.g., `silo_123`)
+///
+/// Returns a `SimulationPaths` struct containing the organized `PathBuf` entries.
+pub fn filepaths() -> SimulationPaths {
     // Grab command line arguments directly at the top of the function
     let args: Vec<String> = std::env::args().collect();
     
-    // Expect the argument to be present; panic with an informative message if missing
-    let run_dir = args.get(1).expect(
-        "Error: No run directory provided. \n\
+    // Expect the target name and simulation argument to be present
+    let target_name = args.get(1).expect(
+        "Error: No target name provided. \n\
          Usage: Please run via your shell script (e.g., `./run silo_123`) \n\
-         or pass the output directory argument explicitly."
+         or pass the target name and sim argument explicitly."
+    );
+    let sim_arg = args.get(2).expect(
+        "Error: No simulation argument provided."
     );
 
     const INPUT_PATH: &'static str = "input";
-    let run_path = Path::new(run_dir);
+    
+    // Construct paths cleanly from the explicit components
+    let config_path = Path::new(INPUT_PATH).join(target_name);
+    let output_path = Path::new("output").join(target_name).join(sim_arg);
 
-    // Extract the simulation target name (e.g., "silo") from the parent directory
-    let simulation_name = run_path
-        .parent()
-        .and_then(|p| p.file_name())
-        .and_then(|s| s.to_str())
-        .expect("Error: Invalid run directory path structure. Expected something like 'output/target/target_id'.");
+    // Run your validation checks
+    let required_files = vec!["sim_settings.json", "scene_settings.json"];
+    let _ = validate_simulation_inputs(&config_path, &required_files);
+    let sim_config = config_path.join("sim_settings.json"); 
+    let scene_config = config_path.join("scene_settings.json");
 
-    // Extract the specific simulation argument (e.g., "silo_123") from the final component
-    let sim_arg = run_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .expect("Error: Could not extract simulation run name from path.");
+    let particle = output_path.join("particles");
+    let _ = validate_simulation_inputs(&particle, &["particles_0000000000.parquet"]);
 
-    let sim_config_path = Path::new(INPUT_PATH).join(format!("{}.json", simulation_name));
-    let scene_config_path = Path::new(INPUT_PATH).join("scene_settings.json");
-
-    let particle_snapshot_path = run_path.join("particles");
-    if let Err(_e) = fs::create_dir_all(&particle_snapshot_path) {
+    let object = output_path.join("objects");
+    if let Err(_e) = fs::create_dir_all(&object) {
         eprintln!("Error creating directory");
     };
 
-    let object_snapshot_path = run_path.join("objects");
-    if let Err(_e) = fs::create_dir_all(&object_snapshot_path) {
-        eprintln!("Error creating directory");
-    };
-
-    let video_dir = run_path.join("video");
+    let video_dir = output_path.join("video");
     if let Err(_e) = fs::create_dir_all(&video_dir) {
         eprintln!("Error creating directory");
     };
-    let video_path = video_dir.join(format!("{}.mp4", sim_arg));
+    let video = video_dir.join(format!("{}.mp4", sim_arg));
 
-    [
-        sim_config_path,
-        scene_config_path,
-        object_snapshot_path,
-        particle_snapshot_path,
-        video_path,
-    ]
+    SimulationPaths {
+        output: output_path,
+        sim_config,
+        scene_config,
+        object,
+        particle,
+        video,
+    }
 }
-
 
 //-------------------------------------------------------------
 // Config of simulation
 //-------------------------------------------------------------
+
+/// Loads a JSON config file into a [`SimulationSettings`] struct and updates its start index.
+/// 
+/// # Arguments
+/// * `sim_paths` - [`SimulationPaths`] struct containing all key filepaths.
+/// * `index` - The simulation step index to update within the loaded settings. This is used so that if simulation is re-run the start index is indicated in the filename and SimulationSettings automatically
+pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<SimulationSettings, Box<dyn std::error::Error>>
+{   
+    let file = fs::File::open(&sim_paths.sim_config)?;
+    let reader = BufReader::new(file);
+    
+    let mut sim_settings: SimulationSettings = serde_json::from_reader(reader).expect("Does your config file match an enum variant in simulation.rs?");
+    sim_settings.start = index;
+
+    // Save a copy of config to output with simulation index as suffix.
+    save_sim_settings(&sim_settings, &sim_paths.output)?;
+    
+    Ok(sim_settings)
+}
 
 /// Saves a JSON representation of the current [`SimulationSettings`]. 
 /// 
@@ -101,50 +160,43 @@ pub fn filepaths() -> [PathBuf; 5] {
 /// # Errors
 /// This function will return an [`Error`] if the directory is not writable 
 /// or if an I/O issue occurs during writing.
-pub fn save_simsettings(sim_settings: &SimulationSettings, snapshot_path: &Path) -> Result<(), Error> 
+pub fn save_sim_settings(sim_settings: &SimulationSettings, snapshot_path: &Path) -> Result<(), Error> 
 {
-    let filename = format!("sim_config_{:010}.json", sim_settings.start);
-    let full_filename = Path::new(&snapshot_path).join(filename);
+    let sim_filename = format!("sim_config_{:010}.json", sim_settings.start);
+    let full_filename = Path::new(&snapshot_path).join(sim_filename);
     let json = serde_json::to_string_pretty(sim_settings)
         .expect("Error serializing metadata");
     fs::write(full_filename, json)?;
     Ok(())
 }
 
-/// Loads a JSON config file into a [`SimulationSettings`] struct and updates its start index.
+//--------------------------------------------------------
+// Graphics config
+//--------------------------------------------------------
+
+
+
+/// Loads a JSON config file into a [`SceneSettings`] struct and updates its start index.
 /// 
 /// # Arguments
-/// * `input_filepath` - Path to the source JSON configuration file.
-/// * `output_path` - Directory where a copy of the loaded config should be archived.
-/// * `index` - The simulation step index to update within the loaded settings.
-pub fn load_simsettings(input_filepath: &Path, output_path: &Path, index: usize) -> Result<SimulationSettings, Box<dyn std::error::Error>>
-{   
-    let file = fs::File::open(input_filepath)?;
-    let reader = BufReader::new(file);
-    
-    let mut sim_settings: SimulationSettings = serde_json::from_reader(reader).expect("Does your config file match an enum variant in simulation.rs?");
-    sim_settings.start = index;
+/// * `sim_paths` - [`SimulationPaths`] struct containing all key filepaths.
+pub fn load_scene_settings(sim_paths: &SimulationPaths) -> Result<SceneSettings, Box<dyn std::error::Error>> {
+        let file = fs::File::open(&sim_paths.scene_config)?;
+        let reader = BufReader::new(file);
 
-    // Save a copy of config to output with simulation index as suffix.
-    save_simsettings(&sim_settings, output_path)?;
-    
-    Ok(sim_settings)
+        let scene_settings: SceneSettings = serde_json::from_reader(reader).expect("Does your config file match an enum variant in simulation.rs?");
+        
+        let _ = save_scene_settings(&scene_settings, &sim_paths.output);
+        Ok(scene_settings)
 }
 
-//---------------------------------------------------------
-// Load and save objects - eg simbox
-//---------------------------------------------------------
-pub fn load_objects(file_path: &Path)-> Result<(), Box<dyn std::error::Error>>{
-    let _file = std::fs::File::open(file_path)?;
-    Ok(()) 
-}
-
-pub fn save_objects(_dir_path: &Path,
-    _step: usize,
-    _objects: &[ObjectSpec],
-    _time: f64,
-) -> Result<(), Box<dyn std::error::Error>> {
-    Ok(())   
+pub fn save_scene_settings(scene_settings: &SceneSettings, snapshot_path: &Path) -> Result<(), Error> 
+{
+    let output_filename = Path::new(&snapshot_path).join("scene_config.json");
+    let json = serde_json::to_string_pretty(scene_settings)
+        .expect("Error serializing metadata");
+    fs::write(output_filename, json)?;
+    Ok(())
 }
 
 
@@ -308,9 +360,9 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
 /// # Returns
 /// * `(ParticleVec, usize, f64)` - Vector of particles, step number, and simulation timestamp.
 pub fn load_latest_particles(
-    dir_path: &Path,
+    dir_path: &SimulationPaths,
 ) -> Result<(ParticleVec, usize, f64), Box<dyn std::error::Error>> {
-    let mut entries: Vec<(std::path::PathBuf, usize)> = fs::read_dir(dir_path)?
+    let mut entries: Vec<(std::path::PathBuf, usize)> = fs::read_dir(&dir_path.particle)?
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().into_string().ok()?;
@@ -350,6 +402,9 @@ pub fn load_latest_particles(
     Err("All available snapshot files were corrupted or could not be read".into())
 }
 
+
+
+
 /// Saves a [`ParticleVec`] snapshot to a Parquet file.
 /// 
 /// Flattens the particle structure fields into individual columns and writes 
@@ -361,12 +416,12 @@ pub fn load_latest_particles(
 /// * `particles` - Reference to the [`ParticleVec`] collection.
 /// * `time` - Current simulation time timestamp.
 pub fn save_particles(
-    dir_path: &Path,
+    sim_paths: &SimulationPaths,
     step: usize,
     particles: &ParticleVec,
     time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    fs::create_dir_all(dir_path)?;
+    fs::create_dir_all(&sim_paths.particle)?;
 
     let t: Vec<f64> = vec![time; particles.len()];
     let id: Vec<u64> = particles.id.iter().map(|&id| id as u64).collect();
@@ -405,7 +460,7 @@ pub fn save_particles(
     )?;
 
     let filename = format!("particles_{:010}.parquet", step);
-    let final_path = dir_path.join(&filename);
+    let final_path = &sim_paths.particle.join(&filename);
     
     let file = std::fs::File::create(&final_path)?;
     ParquetWriter::new(file).finish(&mut df)?;
@@ -413,16 +468,259 @@ pub fn save_particles(
     Ok(())
 }
 
-//--------------------------------------------------------
-// Graphics config
-//--------------------------------------------------------
+//---------------------------------------------------------
+// Load and save objects - eg simbox
+//---------------------------------------------------------
 
-/// Loads the JSON configuration file into a [`SceneSettings`] struct controlling visual properties.
-pub fn load_scene_settings<P: AsRef<Path>>(path: P) -> Result<SceneSettings, Box<dyn std::error::Error>> {
-    let file = fs::File::open(path)?;
-    let reader = BufReader::new(file);
-    let settings = serde_json::from_reader(reader)?;
-    Ok(settings)
+pub fn load_objects(
+    sim_paths: &SimulationPaths,
+    step: usize,
+) -> Result<Vec<ObjectSpec>, Box<dyn std::error::Error>> {
+    let filename = format!("objects_{:010}.parquet", step);
+    let final_path = sim_paths.object.join(&filename);
+
+    // Ensure the file exists before trying to read
+    if !final_path.exists() {
+        return Err(format!("Object snapshot file not found: {}", final_path.display()).into());
+    }
+
+    let file = std::fs::File::open(&final_path)?;
+    let df = ParquetReader::new(file).finish()?;
+
+    let mut objects = Vec::new();
+
+    // Extract series for iteration
+    let ids = df.column("id")?.u64()?;
+    let x1 = df.column("x1")?.f64()?;
+    let y1 = df.column("y1")?.f64()?;
+    let z1 = df.column("z1")?.f64()?;
+    let x2 = df.column("x2")?.f64()?;
+    let y2 = df.column("y2")?.f64()?;
+    let z2 = df.column("z2")?.f64()?;
+    let x3 = df.column("x3")?.f64()?;
+    let y3 = df.column("y3")?.f64()?;
+    let z3 = df.column("z3")?.f64()?;
+    let x4 = df.column("x4")?.f64()?;
+    let y4 = df.column("y4")?.f64()?;
+    let z4 = df.column("z4")?.f64()?;
+
+    let vx = df.column("vx")?.f64()?;
+    let vy = df.column("vy")?.f64()?;
+    let vz = df.column("vz")?.f64()?;
+    let wx = df.column("wx")?.f64()?;
+    let wy = df.column("wy")?.f64()?;
+    let wz = df.column("wz")?.f64()?;
+
+    let r = df.column("r")?.f64()?;
+    let g = df.column("g")?.f64()?;
+    let b = df.column("b")?.f64()?;
+    let a = df.column("a")?.f64()?;
+
+    let height = df.height();
+
+    for i in 0..height {
+        let id = ids.get(i).unwrap_or(0) as usize;
+        
+        let velocity = DVec3::new(
+            vx.get(i).unwrap_or(0.0),
+            vy.get(i).unwrap_or(0.0),
+            vz.get(i).unwrap_or(0.0),
+        );
+        
+        let omega = DVec3::new(
+            wx.get(i).unwrap_or(0.0),
+            wy.get(i).unwrap_or(0.0),
+            wz.get(i).unwrap_or(0.0),
+        );
+
+        // Reconstruct Srgba color (assuming u8 values mapped from f64)
+        let colour = Srgba {
+            r: r.get(i).unwrap_or(0.0) as u8,
+            g: g.get(i).unwrap_or(0.0) as u8,
+            b: b.get(i).unwrap_or(0.0) as u8,
+            a: a.get(i).unwrap_or(255.0) as u8,
+        };
+
+        let v1 = DVec3::new(x1.get(i).unwrap_or(0.0), y1.get(i).unwrap_or(0.0), z1.get(i).unwrap_or(0.0));
+        let v2 = DVec3::new(x2.get(i).unwrap_or(0.0), y2.get(i).unwrap_or(0.0), z2.get(i).unwrap_or(0.0));
+        let v3 = DVec3::new(x3.get(i).unwrap_or(0.0), y3.get(i).unwrap_or(0.0), z3.get(i).unwrap_or(0.0));
+        
+        let current_x4 = x4.get(i).unwrap_or(f64::NAN);
+
+        if current_x4.is_nan() {
+            // It's a triangle (3 vertices)
+            // Note: You will need a TriSpec constructor matching your struct definition
+            let mut tri_spec = TriSpec::new([v1, v2, v3], colour, visible);
+            tri_spec.velocity = velocity;
+            tri_spec.omega = omega;
+             
+            objects.push(ObjectSpec::Triangle(tri_spec));
+        } else {
+            // It's a rectangle (4 vertices)
+            let v4 = DVec3::new(
+                current_x4,
+                y4.get(i).unwrap_or(0.0),
+                z4.get(i).unwrap_or(0.0),
+            );
+            
+            let rect_spec = RectSpec::new([v1, v2, v3, v4],colour,visible);
+            rect_spec.velocity = velocity;
+            rect_spec.omega = omega;
+
+            objects.push(ObjectSpec::Rectangle(rect_spec));
+        }
+    }
+
+    Ok(objects)
+}
+
+/// Finds and loads the latest valid object snapshot file from the specified simulation path directory.
+/// 
+/// Scans the directory for files matching `objects_*.parquet`, sorts them descending 
+/// by step index, and loads the newest uncorrupted snapshot.
+/// 
+/// # Arguments
+/// * `sim_paths` - Reference to the `SimulationPaths` struct containing directories.
+/// 
+/// # Returns
+/// * `(Vec<ObjectSpec>, usize, f64)` - Vector of objects, step number, and simulation timestamp.
+pub fn load_latest_objects(
+    sim_paths: &SimulationPaths,
+) -> Result<(Vec<ObjectSpec>, usize, f64), Box<dyn std::error::Error>> {
+    // Ensure the object directory exists before scanning
+    if !sim_paths.object.exists() {
+        return Err(format!("Object directory does not exist: {}", sim_paths.object.display()).into());
+    }
+
+    let mut entries: Vec<(std::path::PathBuf, usize)> = fs::read_dir(&sim_paths.object)?
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().into_string().ok()?;
+            let step = name.strip_prefix("objects_")?
+                           .strip_suffix(".parquet")?
+                           .parse::<usize>().ok()?;
+            Some((entry.path(), step))
+        })
+        .collect();
+
+    if entries.is_empty() {
+        return Err("No object snapshot files found".into());
+    }
+
+    // Sort descending so the highest step index (latest snapshot) comes first
+    entries.sort_by(|a, b| b.1.cmp(&a.1));
+
+    for (path, step) in entries {
+        match load_objects(&SimulationPaths) {
+            Ok((objects, time)) => {
+                return Ok((objects, step, time));
+            }
+            Err(e) => {
+                let err_msg = e.to_string();
+                if err_msg.contains("PAR1") || err_msg.contains("parquet") {
+                    eprintln!("Warning: Corrupted object snapshot found at {:?}. Removing and trying previous...", path);
+                    if let Err(del_err) = fs::remove_file(&path) {
+                        eprintln!("Failed to delete corrupted file: {}", del_err);
+                    }
+                    continue;
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    Err("All available object snapshot files were corrupted or could not be read".into())
+}
+
+pub fn save_objects(
+    sim_paths: &SimulationPaths,
+    step: usize,
+    objects: Option<&[ObjectSpec]>,
+    time: f64,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(all_objects) = objects{ 
+    fs::create_dir_all(&sim_paths.object)?;
+
+    let count = all_objects.len();
+    let t: Vec<f64> = vec![time; count];
+    let sentinel = f64::NAN;
+
+    // Temporary vectors to accumulate properties across different object types
+    let mut ids = Vec::with_capacity(count);
+    let mut velocities = Vec::with_capacity(count);
+    let mut omegas = Vec::with_capacity(count);
+    let mut colours = Vec::with_capacity(count);
+    
+    // Vertex coordinate vectors (x1..x4, y1..y4, z1..z4)
+    let mut x1 = Vec::with_capacity(count); let mut y1 = Vec::with_capacity(count); let mut z1 = Vec::with_capacity(count);
+    let mut x2 = Vec::with_capacity(count); let mut y2 = Vec::with_capacity(count); let mut z2 = Vec::with_capacity(count);
+    let mut x3 = Vec::with_capacity(count); let mut y3 = Vec::with_capacity(count); let mut z3 = Vec::with_capacity(count);
+    let mut x4 = Vec::with_capacity(count); let mut y4 = Vec::with_capacity(count); let mut z4 = Vec::with_capacity(count);
+
+    for obj in all_objects {
+        match obj {
+            ObjectSpec::Rectangle(rect) => {
+                ids.push(rect.id as u64);
+                velocities.push(rect.velocity);
+                omegas.push(rect.omega);
+                colours.push(rect.colour);
+
+                // Rectangles have 4 vertices
+                x1.push(rect.vertices[0].x); y1.push(rect.vertices[0].y); z1.push(rect.vertices[0].z);
+                x2.push(rect.vertices[1].x); y2.push(rect.vertices[1].y); z2.push(rect.vertices[1].z);
+                x3.push(rect.vertices[2].x); y3.push(rect.vertices[2].y); z3.push(rect.vertices[2].z);
+                x4.push(rect.vertices[3].x); y4.push(rect.vertices[3].y); z4.push(rect.vertices[3].z);
+            }
+            ObjectSpec::Triangle(tri) => {
+                ids.push(tri.id as u64);
+                velocities.push(tri.velocity);
+                omegas.push(tri.omega);
+                colours.push(tri.colour);
+
+                // Triangles have 3 vertices; pad the 4th vertex with NaN sentinel
+                x1.push(tri.vertices[0].x); y1.push(tri.vertices[0].y); z1.push(tri.vertices[0].z);
+                x2.push(tri.vertices[1].x); y2.push(tri.vertices[1].y); z2.push(tri.vertices[1].z);
+                x3.push(tri.vertices[2].x); y3.push(tri.vertices[2].y); z3.push(tri.vertices[2].z);
+                x4.push(sentinel);         y4.push(sentinel);         z4.push(sentinel);
+            }
+            ObjectSpec::WireBox(boxspec) => {
+                // If wire boxes are handled as objects, you can unpack their vertices similarly, 
+                // or handle them via an alternative representation if they use bounding boxes instead.
+                // For now, we can log or handle them if needed.
+                let _ = boxspec; 
+            }
+        }
+    }
+
+    let mut df = df!(
+        "t" => &t,
+        "id" => &ids,
+        "x1" => &x1, "y1" => &y1, "z1" => &z1,
+        "x2" => &x2, "y2" => &y2, "z2" => &z2,
+        "x3" => &x3, "y3" => &y3, "z3" => &z3,
+        "x4" => &x4, "y4" => &y4, "z4" => &z4,
+        "vx" => &velocities.iter().map(|v| v.x).collect::<Vec<_>>(),
+        "vy" => &velocities.iter().map(|v| v.y).collect::<Vec<_>>(),
+        "vz" => &velocities.iter().map(|v| v.z).collect::<Vec<_>>(),
+        "wx" => &omegas.iter().map(|w| w.x).collect::<Vec<_>>(),
+        "wy" => &omegas.iter().map(|w| w.y).collect::<Vec<_>>(),
+        "wz" => &omegas.iter().map(|w| w.z).collect::<Vec<_>>(),
+        "r"  => &colours.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
+        "g"  => &colours.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
+        "b"  => &colours.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
+        "a"  => &colours.iter().map(|c| c.a as f64).collect::<Vec<_>>(),
+    )?;
+
+    let filename = format!("objects_{:010}.parquet", step);
+    let final_path = sim_paths.object.join(&filename);
+    
+    let file = std::fs::File::create(&final_path)?;
+    ParquetWriter::new(file).finish(&mut df)?;
+    }else{
+        println!("Skipping saving objects as Option(objects) = None");
+    }
+    Ok(())
 }
 
 //-----------------------------------------------------

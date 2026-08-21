@@ -84,11 +84,9 @@ impl Motion for SimUpdate{
 pub fn main() {    
 
     // Construct filepaths
-    let [sim_config_path, scene_config_path, _object_path, particle_path, _video_path] = filepaths();
+    let sim_filepaths: SimulationPaths = filepaths();
     
-    // load settings
-    let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
-
+    
     //------------------------------------------------------------
     // Initialise simulation with bunch of particles from a snapshot file and define simulation parameters with a config file. Takes latest snapshot in output
     // copies the config file in input folder to the output folder appending sim index.
@@ -96,7 +94,9 @@ pub fn main() {
     
     let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return latest snapshot");
     
-    
+    // load settings
+    let sim_settings: SimulationSettings = SimulationSettings::new(&sim_filepaths, start_step).expect("sim settings not loaded correctly"); 
+
     let size = sim_settings.sim_box_size;
    
     let x=size.x;
