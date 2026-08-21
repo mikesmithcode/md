@@ -1,13 +1,13 @@
 {
   "dt": 1e-6,
   "sim_box_size": [0.05, 0.01, 0.05],
-  "periodic": [true,true,true],
+  "periodic": [true,true,false],
   "cutoff": 0.025,
-  "skin": 0.002,
+  "skin": 0.0025,
   "start": 0,
-  "num_steps": 500000,
+  "num_steps": 5000000,
   "dump": 1000,
-  "interaction_ptypes": [[0,1],[2,3]],
+  "interaction_ptypes": [[0,0],[1,1]],
   "model": {
     "type": "SolidFriction",
     "stiffness": 66500.0,

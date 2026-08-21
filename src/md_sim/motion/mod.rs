@@ -4,7 +4,7 @@ use glam::DVec3;
 mod change;
 mod integration;
 
-pub use change::{enforce_boundary, change_rad, move_sinwave, change_colour};
+pub use change::{enforce_boundary, change_rad, move_sinwave, change_particle_colour};
 pub use integration::{integrate_singleparticle_update,integrate_singleparticle_correct, integrate_rigid_bodies, integrate_rigid_bodies_correct, update_abps};
 
 pub use crate::md_sim::{SimulationSettings, ParticleVec, ObjectSpec};
@@ -13,28 +13,32 @@ pub use super::particle::MoleculeData;
 #[cfg(test)]
 mod tests;
 
-/// Defines the integration scheme and kinematic updates for the simulation.
+/// Defines the integration scheme, kinematic updates, and boundary conditions for the simulation.
 ///
-/// The `Motion` trait is responsible for advancing the simulation in time. It 
-/// handles the numerical integration of Newton's laws of motion, as well as 
-/// the application of boundary conditions (e.g., periodic wrapping or wall reflections).
+/// The `Motion` trait is responsible for advancing physical states in time. It 
+/// handles the numerical integration of Newton's laws of motion (via Velocity Verlet) 
+/// for both standard point particles and complex rigid-body molecules, while also 
+/// managing prescribed motion for environmental objects.
 pub trait Motion {
-    /// Advances particle states at the start of a simulation step (Prediction).
+    /// Advances particle and molecular states at the start of a simulation step (Prediction).
     ///
-    /// This method is typically called before force accumulation. In a standard 
-    /// Velocity Verlet scheme, this is used to update positions based on current 
-    /// velocities and to perform a "half-step" update to velocities using 
-    /// **previous** force data.
+    /// This method is called before force accumulation. In a Velocity Verlet scheme, 
+    /// it updates positions based on current velocities and performs a "half-step" 
+    /// velocity update using forces from the **previous** timestep.
     ///
     /// # Arguments
     ///
-    /// * `forces` - The force buffer calculated during the **previous** timestep.
-    /// * `particles` - The mutable particle data to be updated.
-    /// * `settings` - Global simulation parameters, including the timestep ($\Delta t$).
+    /// * `forces` - Slice of force vectors calculated during the previous timestep. One per particle.
+    /// * `torques` - Slice of torque vectors calculated during the previous timestep. One per particle.
+    /// * `particles` - Mutable reference to the particle buffers containing positions, velocities, orientations, etc.
+    /// * `settings` - Global simulation parameters, including the timestep ($\Delta t$) and box dimensions.
+    /// * `molecule_map` - Mapping of molecule IDs to their constituent particle IDs and inertial properties.
+    /// * `time` - Current simulation time.
     ///
-    /// # Implementation Note
-    /// Standalone integration functions (like `verlet_predict`) 
-    /// should be called within this method to maintain a modular design.
+    /// # Notes
+    /// 
+    /// Implementations should delegate to standalone integration functions (such as 
+    /// `integrate_singleparticle_update` or `integrate_rigid_bodies`) to maintain a clean, modular design.
     fn update_motion(
         &self, 
         _forces: &[DVec3], 
@@ -45,20 +49,26 @@ pub trait Motion {
         _time: f64
     );
 
-    /// Finalises particle states at the end of a simulation step (Correction).
+    /// Finalizes particle and molecular states at the end of a simulation step (Correction).
     ///
-    /// This is an optional hook called after the **current** forces have been 
-    /// accumulated. It is primarily used in multi-step integrators to correct 
-    /// velocities using the newly calculated force data.
-    ///
-    /// # Default Implementation
-    /// The default implementation is empty, making this step optional.
+    /// This hook is called after the **current** forces and torques have been accumulated. 
+    /// It completes the Velocity Verlet cycle by correcting velocities using the newly 
+    /// evaluated force data.
     ///
     /// # Arguments
     ///
-    /// * `forces` - The force buffer calculated during the **current** timestep.
-    /// * `particles` - The mutable particle data to be corrected.
-    /// * `settings` - Global simulation parameters.
+    /// * `forces` - Slice of force vectors calculated at the **new** positions. One per particle.
+    /// * `torques` - Slice of torque vectors calculated at the **new** positions. One per particle.
+    /// * `particles` - Mutable reference to the particle buffers to be corrected.
+    /// * `settings` - Global simulation parameters, including the timestep ($\Delta t$).
+    /// * `molecule_map` - Mapping of molecule IDs to their constituent particle IDs and inertial properties.
+    ///
+    /// # Notes
+    ///
+    /// * **Default Behavior:** The default implementation is empty, making this step optional for 
+    ///   simple integrators.
+    /// * **Delegation:** Implementations should call correction functions like `integrate_singleparticle_correct` 
+    ///   or `integrate_rigid_bodies_correct`.
     fn correct_motion(
         &self, 
         _forces: &[DVec3], 
@@ -70,11 +80,20 @@ pub trait Motion {
         // Optional: No correction by default
     }
 
-
-    /// Can be used to update any property of the ObjectSpec. 
-    /// If Option<Vec<ObjectSpec>> = None this is bypassed otherwise Vec<ObjectSpec> extracted
-    /// and modified in place.
-    fn update_objects(&self, _object: &mut ObjectSpec, _settings: &SimulationSettings, _time: f64){
+    /// Updates the kinematic properties or prescribed motion of environmental boundary objects.
+    ///
+    /// # Arguments
+    ///
+    /// * `object` - Mutable reference to a single `ObjectSpec` (e.g., a rectangle or triangle boundary).
+    /// * `settings` - Global simulation parameters.
+    /// * `time` - Current simulation time.
+    ///
+    /// # Notes
+    ///
+    /// * **Default Behavior:** By default, objects are assumed to be passive or static (no movement).
+    /// * **Prescribed Motion:** Override this method to apply time-dependent trajectories (e.g., oscillating walls 
+    ///   via sine waves) by matching on the object variants and calling `.transform(...)`.
+    fn update_objects(&self, _object: &mut ObjectSpec, _settings: &SimulationSettings, _time: f64) {
         //Optional no movement by default. It is assumed all objects are passive moving according to prescribed rules
         //match object {
         //    ObjectSpec::Rect(rect) => {

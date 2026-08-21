@@ -4,6 +4,25 @@ use glam::DVec3;
 use crate::md_sim::particle::SimulationModel;
 use crate::md_sim::{RectSpec, ObjectSpec, ParticleVec, SimulationSettings};
 
+
+/// Computes contact forces and torques arising from collisions between a particle and simulation objects.
+///
+/// This acts as a dispatcher function that inspects the object specification variant 
+/// (e.g., rectangles, triangles) and delegates to the appropriate geometry collision solver.
+/// Currently only implements Rectangles.
+///
+/// # Arguments
+///
+/// * `i` - Index of the particle being tested for collisions.
+/// * `particles` - Reference to the particle state buffers (positions, velocities, radii, etc.).
+/// * `object_spec` - Specification of the geometric objects present in the simulation.
+/// * `force` - Accumulated incoming force vector for the particle.
+/// * `torque` - Accumulated incoming torque vector for the particle.
+/// * `settings` - Global simulation parameters containing material models (stiffness, damping, friction).
+///
+/// # Returns
+///
+/// * `(DVec3, DVec3)` - The updated force and torque vectors including object interaction contributions.
 pub fn add_particle_object_collision(
     i: usize,
     particles: &ParticleVec,
@@ -14,8 +33,8 @@ pub fn add_particle_object_collision(
 ) -> (DVec3, DVec3) {
     
 
-    // 2. Extract rectangle properties
-    let rect_spec = match object_spec {
+    // Extract rectangle properties
+    match object_spec {
         ObjectSpec::Rectangle(r) => {
             let (f, t) = particle_rectangle_collision(i, particles, r, force, torque, settings);
             force = f;
@@ -27,6 +46,21 @@ pub fn add_particle_object_collision(
     (force, torque)
 }
 
+// Calculates contact mechanics (normal forces and optional Coulomb/viscous friction) 
+// between a spherical particle and a rotating/translating 3D rectangular object.
+//
+// # Arguments
+//
+// * `i` - Index of the colliding particle.
+// * `particles` - Reference to the particle state buffers.
+// * `rect_spec` - Geometry, position, orientation, and kinematic properties of the rectangle.
+// * `force` - Accumulated incoming force vector.
+// * `torque` - Accumulated incoming torque vector.
+// * `settings` - Global simulation parameters defining the contact model (`Solid` or `SolidFriction`).
+//
+// # Returns
+//
+// * `(DVec3, DVec3)` - The force and torque contributions from the rectangle-particle collision.
 fn particle_rectangle_collision(i: usize,
     particles: &ParticleVec,
     rect_spec: &RectSpec,
@@ -34,7 +68,7 @@ fn particle_rectangle_collision(i: usize,
     mut torque: DVec3,
     settings: &SimulationSettings)->(DVec3,DVec3){
 
-    // 1. Extract simulation parameters
+    // Extract simulation parameters
     let (stiffness, damping, mu_opt) = match &settings.model {
         SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
         SimulationModel::SolidFriction(p) => (p.stiffness, p.damping, Some(p.mu)),
@@ -44,7 +78,7 @@ fn particle_rectangle_collision(i: usize,
     let particle_pos = particles.position[i];
     let radius = particles.radius[i];
 
-    // 3. Transform particle position into the rectangle's local coordinate system
+    // Transform particle position into the rectangle's local coordinate system
     let rect_center = rect_spec.center;
     let half_size = rect_spec.half_size;
     let orientation_quat = glam::DQuat::from(rect_spec.orientation);
@@ -53,7 +87,7 @@ fn particle_rectangle_collision(i: usize,
     let to_particle = particle_pos - rect_center;
     let local_pos = orientation_inv * to_particle;
 
-    // 4. Find the closest point on the local box surface
+    // Find the closest point on the local box surface
     let clamped_local = DVec3::new(
     local_pos.x.clamp(-half_size.x, half_size.x),
     local_pos.y.clamp(-half_size.y, half_size.y),
@@ -63,7 +97,7 @@ fn particle_rectangle_collision(i: usize,
     let local_delta = local_pos - clamped_local;
     let dist_sq = local_delta.length_squared();
 
-    // 5. Check for collision overlap
+    // Check for collision overlap
     if dist_sq < radius * radius && dist_sq > 1e-18 {
         let dist = dist_sq.sqrt();
         
@@ -72,7 +106,7 @@ fn particle_rectangle_collision(i: usize,
         let normal = orientation_quat * local_normal;
         let overlap = radius - dist;
 
-        // --- Calculate Rectangle's Surface Velocity at the Contact Point ---
+        // Calculate Rectangle's Surface Velocity at the Contact Point
         let r_rect = orientation_quat * clamped_local;
         let rect_surface_vel = rect_spec.velocity + rect_spec.omega.cross(r_rect);
 

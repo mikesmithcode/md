@@ -3,11 +3,9 @@
 /// -------------------------------------------------------------------------------------------
 
 use glam::DVec3;
-use rand_distr::{Normal, Distribution};
 use std::f64::consts::PI;
 
-use crate::md_sim::particle::{ParticleVec, SimulationModel};
-use crate::md_sim::SimulationSettings;
+use crate::md_sim::particle::ParticleVec;
 
 
 /// Calculates and adds the gravitational weight to a specific particle.
@@ -75,35 +73,6 @@ pub fn add_viscous_drag(i: usize, particles: &ParticleVec, mut force: DVec3, vis
     force
 }
 
-/// An active force for use with ABPs
-/// 
-/// For each particle i we generate some random numbers. We then calculate the noise scale.
-/// The variance of the random displacement in time dt is 2*Dt*dt but we will multiply this by 
-/// dt when we calculate the displacement in motion part. Friction F is gamma * v. The noise must be (2*gamma**2 * Dt/dt)**0.5
-pub fn add_active_force(i: usize, mut force: DVec3, particles: &ParticleVec, settings: &SimulationSettings){
-    let mut rng = rand::thread_rng();
-    let normal = Normal::new(0.0, 1.0).unwrap();
 
-    if let SimulationModel::Active(params) = &settings.model {
-        // initial direction       
-        let dir_vector = particles.orientation[i] * particles.rel_pos[i];
 
-        // F_active = gamma * v0 * dir_vector in direction of particle orientation
-        let f_active = dir_vector*(params.gamma * params.v0);
-
-        // Translational Noise "Force"
-        // This represents the random kicks from the surrounding fluid
-        let noise_scale = 0.0;//params.gamma * (2.0 * params.Dt / settings.dt).sqrt();
-        
-        let f_noise = glam::DVec3::new(
-            normal.sample(&mut rng) * noise_scale,
-            0.0, 
-            normal.sample(&mut rng) * noise_scale,
-        );
-
-        // Add force
-        force += f_active + f_noise;
-    }
-    
-}
 

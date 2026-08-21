@@ -119,9 +119,23 @@ pub fn add_particle_particle_collision(i: usize, j: usize, particles: &ParticleV
     (force, torque)
 }
 
-/// This implements the Weeks Chandler Andersen model between particles i and j. 
-/// 
-/// WCA is a truncated lennards-Jones potential that stops at the minimum of the potential.
+/// Computes the Weeks-Chandler-Andersen (WCA) pairwise force between two particles.
+///
+/// The WCA model is a purely repulsive shifted Lennard-Jones potential where the interaction 
+/// is truncated at its potential minimum ($r_c = 2^{1/6}\sigma$), eliminating attractive forces 
+/// to model purely hard-sphere-like steric interactions.
+///
+/// # Arguments
+///
+/// * `i` - Index of the first particle.
+/// * `j` - Index of the second particle.
+/// * `particles` - Reference to the particle state buffers (positions, radii, etc.).
+/// * `force` - Accumulated incoming force vector for particle `i`.
+/// * `settings` - Global simulation parameters containing model types, box dimensions, and boundary rules.
+///
+/// # Returns
+///
+/// * `DVec3` - The updated force vector including the WCA contribution.
 pub fn add_weeks_chandler_andersen(i: usize,j: usize, particles: &ParticleVec, mut force: DVec3,settings: &SimulationSettings)->DVec3{
 
     let mut delta = particles.position[i] - particles.position[j];
@@ -160,10 +174,28 @@ pub fn add_weeks_chandler_andersen(i: usize,j: usize, particles: &ParticleVec, m
     force
 }
 
-/// Coulomb interaction
-/// 
-/// Applies the Coulomb force $$(1/4{\pi}{\epsilon_{0}})q_{1}q_{2}/d^{2}$$. This applies the force only to particle i. The reverse
-/// is handled if the interaction [j,i] is specified in the interaction_ptypes.
+/// Computes the electrostatic Coulomb force between two charged particles.
+///
+/// Applies the electrostatic interaction according to Coulomb's Law:
+/// $$F = \frac{1}{4\pi\varepsilon_0} \frac{q_i q_j}{r^2} \hat{r}$$
+///
+/// # Notes
+///
+/// * **Asymmetric Application:** This function computes and applies the force acting on particle `i`. 
+///   The reciprocal force on particle `j` is naturally handled when the pair $(j, i)$ is processed 
+///   if explicitly included in the simulation's `interaction_ptypes` configuration.
+///
+/// # Arguments
+///
+/// * `i` - Index of the primary particle receiving the force.
+/// * `j` - Index of the interacting neighbor particle.
+/// * `particles` - Reference to particle state buffers containing positions and charges.
+/// * `force` - Accumulated incoming force vector for particle `i`.
+/// * `_settings` - Global simulation parameters (unused in pure Coulomb calculations, preserved for interface uniformity).
+///
+/// # Returns
+///
+/// * `DVec3` - The updated force vector including the electrostatic contribution.
 pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3,_settings: &SimulationSettings)-> DVec3{
     const EPS0: f64 = 8.85418782e-12;
 

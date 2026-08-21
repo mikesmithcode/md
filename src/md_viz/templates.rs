@@ -9,7 +9,6 @@ use glam::{DVec3, Mat4 as GMat4, Vec3 as GVec3};
 use three_d::{Context, CpuMesh,Mesh, Gm, InstancedMesh, Instances, Srgba, PhysicalMaterial,
     Blend, BlendEquationType, BlendMultiplierType, Cull, DepthTest,
     RenderStates, WriteMask};
-use three_d::InnerSpace;
 
 use crate::md_sim::{ParticleVec, BoxSpec, RectSpec, TriSpec, ObjectSpec};
 
@@ -46,17 +45,23 @@ impl SphereTemplate {
         let cpu_mesh = CpuMesh::sphere(16);
 
         let colour = Srgba::new(
-            particles.color[0].r,
-            particles.color[0].g,
-            particles.color[0].b,
-            particles.color[0].a
+            particles.colour[0].r,
+            particles.colour[0].g,
+            particles.colour[0].b,
+            particles.colour[0].a
         );
 
         let mat = if colour.a < 255 { 
-            create_transparent_material(Some(colour))
+            create_transparent_material(Some(Srgba::WHITE))
         } else {
-            create_opaque_material(Some(colour))
+            create_opaque_material(Some(Srgba::WHITE))
         };
+
+        // Build the initial color buffer once
+        let mut initial_colours = Vec::with_capacity(particles.len());
+        for i in 0..particles.len() {
+            initial_colours.push(particles.colour[i]);
+        }
 
         let mesh = Gm::new(
             InstancedMesh::new(context, &Instances::default(), &cpu_mesh),
@@ -81,7 +86,7 @@ impl SphereTemplate {
     }
 
     pub fn push_colour_and_visibility(&self, i: usize, particles: &ParticleVec, colours: &mut Vec<Srgba>) {
-        colours.push(particles.color[i]);
+        colours.push(particles.colour[i]);
     }
 }
 
@@ -191,7 +196,7 @@ impl SphereTemplate {
         self.mesh.set_transformation(glam_to_three_d(glam_mat));
     }
 
-    // Called during update_templates() when colors or properties change
+    // Called during update_templates() when colours or properties change
     pub fn update_colour(&mut self, spec: &ObjectSpec) {
         let boxspec = spec.get_box_spec().expect("Not valid boxspec");
         
@@ -199,7 +204,7 @@ impl SphereTemplate {
             return;
         }
 
-        self.mesh.material.albedo = boxspec.color;
+        self.mesh.material.albedo = boxspec.colour;
         self.boxspec = boxspec;
     }
 }
@@ -217,7 +222,7 @@ pub struct RectTemplate {
 impl RectTemplate {
     pub fn new(context: &Context, rectspec: RectSpec) -> Self {
         let mut mat = create_opaque_material(None);
-        mat.albedo = rectspec.color;
+        mat.albedo = rectspec.colour;
 
         let mesh = Gm::new(
             Mesh::new(context, &CpuMesh::square()),
@@ -264,7 +269,7 @@ impl RectTemplate {
         self.mesh.set_transformation(transform);
     }
 
-    // Called during update_templates() when colors or properties change
+    // Called during update_templates() when colours or properties change
     pub fn update_colour(&mut self, spec: &ObjectSpec) {
         let rectspec = match spec.get_rect_spec() {
             Some(s) => s,
@@ -275,7 +280,7 @@ impl RectTemplate {
             return;
         }
 
-        self.mesh.material.albedo = rectspec.color;
+        self.mesh.material.albedo = rectspec.colour;
         
         self.mesh.material.render_states = three_d::RenderStates {
             write_mask: three_d::WriteMask::COLOR_AND_DEPTH,
@@ -298,7 +303,7 @@ pub struct TriTemplate {
 
 impl TriTemplate {
     pub fn new(context: &Context, trispec: TriSpec) -> Self {
-        let [v0, v1, v2] = trispec.local_triangles;
+        let [v0, v1, v2] = trispec.local_vertices;
 
         let positions = vec![
             three_d::Vec3::new(v0.x as f32, v0.y as f32, v0.z as f32),
@@ -315,13 +320,12 @@ impl TriTemplate {
         };
         cpu_mesh.compute_normals();
 
-        let mat = if trispec.color.a < 255 { 
-            create_transparent_material(Some(trispec.color))
+        let mat = if trispec.colour.a < 255 { 
+            create_transparent_material(Some(trispec.colour))
         } else {
-            create_opaque_material(Some(trispec.color))
+            create_opaque_material(Some(trispec.colour))
         };
 
-        // Create the mesh with default instances
         let mesh = Gm::new(
             InstancedMesh::new(
                 context,
@@ -331,10 +335,9 @@ impl TriTemplate {
             mat,
         );
 
-        // Initialize with default/empty spec data so the helper methods have a valid baseline
         let mut template = Self { 
             mesh, 
-            trispec // or a default/zeroed spec if you prefer
+            trispec 
         };
         
         template.update_transform(&ObjectSpec::Triangle(trispec));
@@ -343,35 +346,51 @@ impl TriTemplate {
         template
     }
 
-
+    // Called every frame during render/display (fast path for positions/orientations)
     pub fn update_transform(&mut self, spec: &ObjectSpec) {
         let trispec = match spec {
             ObjectSpec::Triangle(t) => t,
             _ => return,
         };
 
-        // Always update the transform matrix so moving objects stay smooth
-        let mat_transform = Self::compute_transformation(trispec);
+        let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
+            trispec.center.x as f32,
+            trispec.center.y as f32,
+            trispec.center.z as f32,
+        ));
+
+        // Get the 3x3 rotation matrix from the orientation quaternion
+        let m = glam::DMat3::from_quat(trispec.orientation);
+
+        // Construct three-d / cgmath compatible column vectors matching RectTemplate style
+        let rotation = three_d::Mat4::from_cols(
+            three_d::Vec4::new(m.x_axis.x as f32, m.x_axis.y as f32, m.x_axis.z as f32, 0.0),
+            three_d::Vec4::new(m.y_axis.x as f32, m.y_axis.y as f32, m.y_axis.z as f32, 0.0),
+            three_d::Vec4::new(m.z_axis.x as f32, m.z_axis.y as f32, m.z_axis.z as f32, 0.0),
+            three_d::Vec4::new(0.0, 0.0, 0.0, 1.0),
+        );
+
+        let transform = translation * rotation;
+
         self.mesh.geometry.set_instances(&Instances {
-            transformations: vec![mat_transform],
+            transformations: vec![transform],
             ..Default::default()
         });
     }
 
+    // Called during update_templates() when colours or properties change
     pub fn update_colour(&mut self, spec: &ObjectSpec) {
         let trispec = match spec {
             ObjectSpec::Triangle(t) => t,
             _ => return,
         };
 
-        // If the spec hasn't changed, skip expensive material/render-state updates
         if &self.trispec == trispec {
             return;
         }
 
-        self.mesh.material.albedo = trispec.color;
+        self.mesh.material.albedo = trispec.colour;
 
-        // Disable back-face culling to ensure it renders from any angle
         self.mesh.material.render_states = three_d::RenderStates {
             write_mask: three_d::WriteMask::COLOR_AND_DEPTH,
             cull: three_d::Cull::None,
@@ -380,42 +399,7 @@ impl TriTemplate {
 
         self.trispec = *trispec;
     }
-
-    fn compute_transformation(trispec: &TriSpec) -> three_d::Mat4 {
-        let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
-            trispec.center.x as f32,
-            trispec.center.y as f32,
-            trispec.center.z as f32,
-        ));
-
-        let normal = three_d::Vec3::new(
-            trispec.normal.x as f32,
-            trispec.normal.y as f32,
-            trispec.normal.z as f32,
-        ).normalize();
-
-        let tangent = three_d::Vec3::new(
-            trispec.tangent.x as f32,
-            trispec.tangent.y as f32,
-            trispec.tangent.z as f32,
-        ).normalize();
-
-        let bitangent = normal.cross(tangent).normalize();
-
-        // Construct the rotation matrix from the orientation frame matching RectTemplate
-        let rotation = three_d::Mat4::from_cols(
-            tangent.extend(0.0),
-            bitangent.extend(0.0),
-            normal.extend(0.0),
-            three_d::Vec4::unit_w(),
-        );
-
-        // Since the local triangle vertices are already stored at true scale relative to center,
-        // no additional scaling matrix is required here (identity scale).
-        translation * rotation
-    }
 }
-
 
 //---------------------------------------------------------------------------------------
 // Material

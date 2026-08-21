@@ -7,32 +7,73 @@ use crate::md_sim::utils::{check_delta,InteractionContext};
 use crate::md_sim::Forces;
 
 
-/// Optimising finding neighbours for calculation of forces
+/// A spatial hashing cell grid and Verlet list manager for accelerated pair-force calculations.
+///
+/// # Overview
 /// 
-/// Divides particles in simulation up into small cells of size SimulationSettings.cutoff + SimulationSettings.skin
-/// based on position coordinates.
-/// Then for each particle looks at same cell and neighbouring cells and constructs
-/// a verlet list of those particles that are within SimulationSettings.cutoff of the particle
-/// and then the pair interaction forces are calculated using this list. In subsequent timesteps
-/// the displacement of particles relative to the last time is calculated. When any particle has 
-/// travelled > SimulationSettings.skin/2 the cell grid is rebuilt and the verlet lists reconstructed.
-/// Particles.ptype that are not listed under SimulationSettings.interaction_ptypes are not added to the
-/// verlet lists. The structure is asymmetric. ie if interaction_ptypes = [[0,0],[0,1]] ptype 1 will be added to ptype 0's verlet list but not vice a versa. This would need a [1,0].Any particles that are part of the same molecule are also not included since these will be dealt with by the internal forces section.
+/// `CellGrid` optimizes pairwise interaction lookups by dividing the simulation domain into a 
+/// 3D grid of cells whose dimensions are governed by the interaction cutoff and skin distance. 
+/// It utilizes a [**Compressed Sparse Row (CSR)** data structure](https://github.com/MikeSmithLabTeam/MD/blob/main/docs/csr.md) 
+/// to store variable-length neighbor lists 
+/// compactly in memory, maximizing cache locality and enabling lock-free parallelization during force loops.
+///
+/// ## Understanding CSR in Verlet Lists
 /// 
-/// # Arguments
+/// In molecular simulations, different particles have varying numbers of neighbours, making standard fixed-size 
+/// arrays impractical. Instead of using a vector of vectors (`Vec<Vec<usize>>`) we use a CSR. :
 /// 
-/// * `num_cells` - number cells in each dimension (calculated)
-/// * `cell_size` - set by SimulationSettings.cutoff
-/// * `inv_cell_size` - calculated to enable multiply rather than divide which is faster.
-/// * `sim_box_size`  - dimensions of the simulation box in each dimension derived from SimulationSettings
-/// * strides - used to convert 3d to 1d particle coords.
-/// * neighbour_table - relative indices of adjacent cells
-/// * cell_offsets - The indices in cell_particle_ids at which a particular cell starts
-/// * cell_particle_ids - list of particle ids arranged by which cell they are in.
-/// * skin - this is just local copy of SimulationSettings.skin. When any particle has travelled skin/2 this triggers a rebuild.
-/// * verlet_offsets - lists of particle ids within cutoff + skin for each particle
-/// * verlet_particle_ids - list of ids which are neighbours to a particle. So the array starts with particle_id=0's neighbours then particle_id=1's neighbours. The start and finish of each particles neighbour ids is stored sequentially in verlet_offsets.
-/// * last_particle_count - number of particles. If this changes we need to rebuild.
+/// * **`verlet_particle_ids`**: A single giant array holding all neighbor IDs concatenated back-to-back.
+/// * **`verlet_offsets`**: An index array of size $\text{num\_particles} + 1$ that defines slice boundaries.
+/// 
+/// For any particle `i`, its neighbor slice is accessed via `verlet_offsets[i]..verlet_offsets[i + 1]`. 
+/// This layout provides three major advantages:
+/// 1. **Cache Efficiency:** Contiguous memory allows CPU prefetchers to stream neighbor data rapidly.
+/// 2. **Parallel Safety:** Because particle `i` accesses a strictly bounded, non-overlapping slice of 
+///    `verlet_particle_ids` and writes to its own independent force buffer index, `.par_iter_mut()` 
+///    executes safely with **zero data races or locks**.
+/// 3. **Allocation Control:** Rebuilding uses a strict 3-pass pattern (Count $\rightarrow$ Prefix Sum $\rightarrow$ Fill) 
+///    allowing `verlet_particle_ids` to resize with a **single exact allocation**, avoiding reallocation overhead.
+///
+/// # Algorithmic Workflow
+///
+/// 1. **Cell Binning:** Particles are assigned to grid cells based on their spatial coordinates. 
+///    Periodic boundaries wrap coordinates when configured.
+/// 2. **Verlet List Construction:** For each particle, the algorithm inspects its home cell and 
+///    all 26 adjacent neighbor cells. A pair $(i, j)$ is added to the Verlet list if:
+///    * They do not belong to the same molecule (`molecule_id[i] != molecule_id[j]`).
+///    * Their particle types match an allowed entry in `interaction_ptypes`.
+///    * Their separation distance is within the search radius ($\text{cutoff} + \text{skin}$).
+/// 3. **Incremental Rebuilding (`check_and_rebuild_neighbours`):** To avoid rebuilding the grid 
+///    every timestep, particles track a reference position (`ref_pos`). A full rebuild is only 
+///    triggered if the number of particles changes or if any single particle has displaced 
+///    greater than $\text{skin} / 2$ since the last rebuild.
+///
+/// # Important Assumptions & Behavior Notes
+///
+/// * **Asymmetric Interaction Matrix:** Interaction types are directional based on `interaction_ptypes`. 
+///   For example, if configured as `[[0, 1]]`, particle type `1` is added to type `0`'s neighbor list, 
+///   but type `0` is not necessarily added to type `1` unless `[[1, 0]]` is also explicitly specified.
+/// * **Exclusion of Intramolecular Pairs:** Particles sharing the same `molecule_id` are automatically 
+///   excluded from the neighbor list, as internal forces are handled separately.
+/// * **Skin Buffer:** The search radius uses an expanded boundary ($\text{cutoff} + \text{skin}$) to 
+///   guarantee that particles cannot drift out of range between periodic grid rebuilds.
+///
+/// # Fields
+///
+/// * `num_cells` - Number of cells along the $[x, y, z]$ dimensions.
+/// * `cell_size` - Edge length of each cubic cell, set to $\text{cutoff} + \text{skin}$.
+/// * `inv_cell_size` - Reciprocal of `cell_size` used for branchless multiplication during coordinate hashing.
+/// * `sim_box_size` - Physical dimensions of the simulation domain.
+/// * `strides` - Multipliers used to flatten 3D cell coordinates into a 1D memory index.
+/// * `periodic` - Boolean flags indicating periodic boundary conditions per axis.
+/// * `neighbour_table` - Precomputed table storing 1D indices of up to 26 adjacent cells for every grid cell.
+/// * `cell_offsets` - Start indices in `cell_particle_ids` for each cell (CSR format, length $\text{total\_cells} + 1$).
+/// * `cell_particle_ids` - Particle identifiers sorted contiguously by their current cell ownership.
+/// * `skin` - Distance buffer threshold triggering a grid and Verlet list rebuild.
+/// * `verlet_offsets` - Start indices in `verlet_particle_ids` for each particle (CSR format, length $\text{num\_particles} + 1$).
+/// * `verlet_particle_ids` - Flattened contiguous storage of all valid neighbor pair IDs.
+/// * `counts` - Temporary per-particle neighbor counts used during Verlet list allocation passes.
+/// * `last_particle_count` - Tracks particle count changes to force buffer re-allocations.
 #[derive(Debug, Clone)]
 pub struct CellGrid {
     // Defining the grid
@@ -42,7 +83,7 @@ pub struct CellGrid {
     pub sim_box_size: DVec3,
     pub strides: [usize;3], 
     pub periodic: [bool;3],
-    pub neighbour_table: Vec<[usize; 26]>,
+    pub neighbour_table: Vec<Vec<usize>>,
     // For cell grid
     pub cell_offsets: Vec<usize>,       // length num_cells + 1
     pub cell_particle_ids: Vec<usize>, // length num_particles   
@@ -59,6 +100,16 @@ pub struct CellGrid {
         // Public API of CellGrid
         //---------------------------------------------------------------------- 
         
+        /// Creates and initializes a new cell grid spatial partitioning structure.
+        ///
+        /// Calculates the grid dimensions based on the simulation box size and cell size 
+        /// (derived from the cutoff and skin distance), preallocating memory buffers for 
+        /// cell indexing and Verlet neighbor lists.
+        ///
+        /// # Arguments
+        ///
+        /// * `particle_count` - The initial number of particles in the simulation.
+        /// * `settings` - Global simulation parameters containing box dimensions, cutoff, and skin values.
         pub fn new(particle_count: usize, settings: &SimulationSettings) -> Self {
             let cell_size = settings.cutoff + settings.skin;
             let inv_cell_size = 1.0/cell_size;
@@ -85,7 +136,7 @@ pub struct CellGrid {
                 sim_box_size,
                 strides: [1,nx,nx*ny],
                 periodic,
-                neighbour_table: vec![[usize::MAX; 26]; nx * ny * nz],
+                neighbour_table: vec![Vec::new(); total_cells],
                 cell_offsets,
                 cell_particle_ids,
                 verlet_offsets,      
@@ -100,17 +151,35 @@ pub struct CellGrid {
             grid
         }
 
-        /// Called when Simulation is initialised
+        /// Initializes the cell grid and builds initial Verlet lists upon simulation startup.
+        ///
+        /// # Arguments
+        ///
+        /// * `particles` - Mutable reference to the particle data structures.
+        /// * `settings` - Global simulation parameters.
         pub fn init(&mut self, particles: &mut ParticleVec, settings: &SimulationSettings){
             self.bin(particles);
             particles.ref_pos.copy_from_slice(&particles.position);
             self.rebuild_verlet_table(particles, &settings.interaction_ptypes);
         }
 
-        /// check and rebuild neighbours
-        /// 
-        /// This checks whether any particle has moved more than the skin/2. If so then the cell grid and verlet lists
-        /// are rebuilt. If the number of particles has changed we also rebuild everything.
+        /// Checks particle displacement and updates neighbour lists if necessary.
+        ///
+        /// This evaluates whether any particle has drifted more than half the skin distance ($\text{skin} / 2$) 
+        /// from its recorded reference position, or if the total particle count has changed. If either condition 
+        /// is met, the cell grid and Verlet tables are fully rebuilt.
+        ///
+        /// # Arguments
+        ///
+        /// * `particles` - Mutable reference to the particle buffers containing current positions, reference positions, and counts.
+        /// * `settings` - Global simulation parameters containing skin thickness, cutoffs, and allowed interaction types.
+        ///
+        /// # Notes
+        ///
+        /// * **Skin Distance Threshold:** The squared displacement threshold is evaluated as $(\text{skin} \times 0.5)^2$ 
+        ///   to ensure particles cannot cross into new interaction zones between periodic rebuilds.
+        /// * **State Sync:** Upon rebuilding, reference positions (`ref_pos`) are re-synced with current positions, 
+        ///   and particle count trackers are updated.
         pub fn check_and_rebuild_neighbours(&mut self,particles: &mut ParticleVec,settings: &SimulationSettings) {
             let threshold_sq = (settings.skin * 0.5).powi(2);
 
@@ -142,10 +211,18 @@ pub struct CellGrid {
             }
         }
 
-       /// This is where all pairwise interactions are applied. This is called via the simulation loop. For each 
-       /// particle i we look up its neighbours in the verlet lists and apply the forces specified in the user_impl's 
-       /// trait implementations (This is the struct definitions implemented at the top of a simulation script).
-       /// This is done in parallel to speed things up as this is the most memory hungry bit of the simulation.
+        /// Computes all pairwise interactions in parallel using the Verlet neighbor lists.
+        ///
+        /// Iterates over each particle's neighbor slice via CSR offset lookups and invokes 
+        /// the user-defined force evaluation model.
+        ///
+        /// # Arguments
+        ///
+        /// * `f_buf` - Mutable slice for accumulating force vectors per particle.
+        /// * `t_buf` - Mutable slice for accumulating torque vectors per particle.
+        /// * `particles` - Read-only reference to particle data.
+        /// * `user_impl` - The user-provided type implementing the `Forces` trait.
+        /// * `settings` - Global simulation parameters.
        pub fn apply_pair_forces<F: Forces + Sync>(
             &self,
             f_buf: &mut [DVec3],
@@ -184,36 +261,30 @@ pub struct CellGrid {
         // Putting particles into a Cell based grid
         //-----------------------------------------------------------------------------------
 
-        ///Create adjacency table. Takes into account whether periodic in a particular dimension
         // Populate the neighbour_table. Makes it easy in a 1d array to find the 
-        // valid neighbours.
-        pub(super) fn build_neighbour_table(&mut self){
-            // All 26 possible neighbour directions in a 3D grid
+        // valid neighbours, handling boundary wrapping rules automatically.
+        pub(super) fn build_neighbour_table(&mut self) {
             const OFFSETS: [[i32;3]; 26] = [
-                [1, 0, 0], [-1,0, 0], [0, 1, 0], [0,-1, 0], [0, 0, 1], [0, 0, -1], // Faces
-                [1, 1, 0], [1,-1, 0], [-1, 1,0], [-1,-1,0],                     // Edges XY
-                [1, 0, 1], [1, 0,-1], [-1, 0,1], [-1,0,-1],                     // Edges XZ
-                [0, 1, 1], [0, 1,-1], [0, -1,1], [0,-1,-1],                     // Edges YZ
-                [1, 1, 1], [1, 1,-1], [1, -1,1], [1,-1,-1],                     // Corners
-                [-1, 1,1], [-1,1,-1], [-1,-1,1], [-1,-1,-1]                  // Corners
+                [1, 0, 0], [-1,0, 0], [0, 1, 0], [0,-1, 0], [0, 0, 1], [0, 0, -1],
+                [1, 1, 0], [1,-1, 0], [-1, 1,0], [-1,-1,0],                     
+                [1, 0, 1], [1, 0,-1], [-1, 0,1], [-1,0,-1],                     
+                [0, 1, 1], [0, 1,-1], [0, -1,1], [0,-1,-1],                     
+                [1, 1, 1], [1, 1,-1], [1, -1,1], [1,-1,-1],                     
+                [-1, 1,1], [-1,1,-1], [-1,-1,1], [-1,-1,-1]                  
             ];
 
-            let (nx,ny,nz) = (self.num_cells[0], self.num_cells[1], self.num_cells[2]);
-            
-            let mut count: usize;
+            let (nx, ny, nz) = (self.num_cells[0], self.num_cells[1], self.num_cells[2]);
+            self.neighbour_table = vec![Vec::new(); nx * ny * nz];
+
             for iz in 0..nz {
                 for iy in 0..ny {
                     for ix in 0..nx {
                         let current_1d = self.get_1d_idx(ix, iy, iz);
                         
-                        count = 0;
                         for offset in OFFSETS {
-                            //in non-periodic grid some offsets are outside grid. These return None. The array is initialised with usize::MAX indicating these neighbours
-                            // don't exist.
                             let n_idx = self.get_neighbour_1d_idx(ix, iy, iz, offset);
                             if n_idx != usize::MAX {
-                                self.neighbour_table[current_1d][count]=n_idx;
-                                count +=1;
+                                self.neighbour_table[current_1d].push(n_idx);
                             }
                         }
                     }
@@ -257,6 +328,7 @@ pub struct CellGrid {
             }
         }
 
+        // Computes the 1D linear cell array index corresponding to a given 3D position vector.
         #[inline(always)]
         pub(super) fn get_cell_idx_from_pos(&self, pos: &DVec3) -> usize {
             let x = (pos.x * self.inv_cell_size) as usize;
@@ -276,8 +348,9 @@ pub struct CellGrid {
             ix + iy * self.strides[1] + iz * self.strides[2]
         }
 
-        // This returns None if particle outside simulation box and Some(ix,iy,iz) if valid. If periodic is true in a particular dimension
-        // then the value will wrap.
+        // Computes the 1D linear index for a neighboring cell given base coordinates and an offset.
+        // Returns usize::MAX if the neighbor falls outside the simulation box in a non-periodic dimension, 
+        // or wraps correctly using Euclidean modulo if periodic is enabled.
         #[inline(always)]
         pub(super) fn get_neighbour_1d_idx(&self, ix: usize, iy: usize, iz: usize, offsets: [i32;3]) -> usize {
             let mut coords = [ix as i32, iy as i32, iz as i32];
@@ -311,7 +384,7 @@ pub struct CellGrid {
         // particles that will have pairwise interactions
         //------------------------------------------------------------------------------------
         
-        // builds the verlet table list.
+        // Builds the Verlet lookup table using a 3-pass counter, prefix-sum, and population scheme.
         pub(super) fn rebuild_verlet_table(&mut self, particles: &ParticleVec, interaction_ptypes: &[[u8; 2]]) {
             let int_context = InteractionContext {
                 sim_box_size: self.sim_box_size,

@@ -120,10 +120,10 @@ if [ "$BUILD_ONLY" = true ]; then
 else
     echo "--- Launching Simulation ---"
     
-    # Run binary and pass the full relative path directory (e.g., output/silo/silo_123) as the argument
+    # Pass target name and sim arg separately to the Rust binary
     if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$OUTPUT_DIR"
+        GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$TARGET_NAME" "$SIM_ARG"
     else
-        "$BINARY" "$OUTPUT_DIR"
+        "$BINARY" "$TARGET_NAME" "$SIM_ARG"
     fi
 fi

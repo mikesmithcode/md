@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import os
 import polars as pl
 
-from utility import get_config, plot_circles_orientation, quaternion, display
+from python_scripts.utils.file_io import get_config, plot_circles_orientation, quaternion, display
 
 input_path = Path(__file__).parent.parent.joinpath("input")
 config_path = input_path.joinpath("abp.json")

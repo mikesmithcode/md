@@ -17,6 +17,9 @@ use std::f64::consts::PI;
 // -----------------------------------------------------------------
 
 
+/// **What:** Verifies that gravitational body forces are correctly calculated and applied.  
+/// **How:** Applies weight to the first particle using `add_weight` and inspects the resulting force vector.  
+/// **Why:** Ensures that gravitational acceleration maps cleanly to the vertical force buffer for single-body dynamics.
 #[test]
 fn test_add_weight() {
     let particles = create_particle_vec();
@@ -31,6 +34,9 @@ fn test_add_weight() {
 
 }
 
+/// **What:** Validates velocity-dependent Stokes' law viscous drag calculations.  
+/// **How:** Computes drag force on a particle with known velocity and radius against a specified fluid viscosity.  
+/// **Why:** Ensures that drag damping forces scale correctly relative to particle dimensions and surrounding medium parameters.
 #[test]
 fn test_add_drag() {
     use std::f64::consts::PI;
@@ -51,15 +57,14 @@ fn test_add_drag() {
 
 }
 
-//fn test_add_active_force(){
-//    assert!(false, "Need test for add_active_force");
-//}
-
 
 // -----------------------------------------------------------------
 // Test pair particle forces
 // -----------------------------------------------------------------
 
+/// **What:** Tests viscoelastic contact mechanics and energy dissipation during particle collisions.  
+/// **How:** Evaluates interaction forces under relative compression (moving together) versus restitution (moving apart).  
+/// **Why:** Confirms that damping increases total force magnitude strictly during compression to correctly model collision energy loss.  
 #[test]
 fn test_particle_particle_collision() {
     let particles = create_particle_vec();
@@ -112,6 +117,9 @@ fn test_particle_particle_collision() {
     assert!(force_with_damping > force_no_damping, "Damping must increase total force magnitude during compression");
 }
 
+/// **What:** Validates the truncated repulsive Weeks-Chandler-Andersen (WCA) potential.  
+/// **How:** Computes pairwise force between two particles and compares it directly against an analytical calculation.  
+/// **Why:** Ensures short-range steric interactions calculate correctly without drift or mathematical formulation errors.
 #[test]
 fn test_weeks_chandler_andersen() {
     let particles = create_molecule_vec();
@@ -153,6 +161,9 @@ fn test_weeks_chandler_andersen() {
     assert!((f_expected[0] - calc_force[0]).abs() < 0.0000001 , "WCA not giving expected value"); 
 }
 
+/// **What:** Checks long-range electrostatic interaction forces between charged particles.  
+/// **How:** Assigns opposing unit charges and compares computed forces against analytical Coulomb's Law expectations.  
+/// **Why:** Confirms that electric field constants and distance-squared scaling factors are implemented accurately.
 #[test]
 fn test_coulomb() {
     let mut particles = create_molecule_vec();
@@ -193,179 +204,197 @@ fn test_coulomb() {
 
 }
 
-//--------------------------------------------------------------------------------------------------
-// bonds tests
-// -----------------------------------------------------------------------------------------------
-
-
-
-
 
 
 //--------------------------------------------------------------------------------------------------
 // neighbours tests
 // -----------------------------------------------------------------------------------------------
-    // check neighbours in 3x3x3 grid with and without periodic boundary conditions give correct values.
-    #[test]
-    fn test_build_neighbour_table(){
-        
-        let (mut grid, _settings) = create_grid_and_settings();
-        
-        //periodic
-        grid.periodic = [true;3];
-        grid.build_neighbour_table();
 
-        assert!(grid.neighbour_table.len() == 27, "Should be 27 boxes in grid");
-        assert_eq!(grid.neighbour_table[0], [1, 2, 3, 6, 9, 18, 4, 7, 5, 8, 10, 19, 11, 20, 12, 21, 15, 24, 13, 22, 16, 25, 14, 23, 17, 26], "Neighbours incorrect under periodic boundary conditions");
-
-        // non-periodic. 
-        grid.periodic = [false;3];
-        grid.neighbour_table = vec![[usize::MAX; 26]; 27];
-        grid.build_neighbour_table();
-
+/// **What:** Validates spatial cell indexing configurations across boundary constraints.  
+/// **How:** Builds neighbor matrices under both periodic wrapping and restricted non-periodic conditions.  
+/// **Why:** Ensures neighboring box maps are correctly sized and assign sentinel values (`usize::MAX`) appropriately out-of-bounds.
+#[test]
+fn test_build_neighbour_table(){
     
-        assert!(grid.neighbour_table.len() == 27, "Should be 27 boxes in grid");
-        let correct_neighbours: Vec<usize> = vec![1, 3, 9, 4, 10, 12, 13];
-        assert!(grid.neighbour_table[0].iter().copied().filter(|&x| x!=usize::MAX).collect::<Vec<usize>>() == correct_neighbours, "Should be 7 boxes in non-periodic grid for (0,0,0)");
-
-    }
-
-
-   #[test]
-    fn test_get_1d_idx(){
-        let (grid, _settings)=create_grid_and_settings();
-        let ix: usize=2;
-        let iy: usize=2;
-        let iz: usize=2;
-
-        let idx = grid.get_1d_idx(ix,iy,iz);
-        assert_eq!(idx, 26, "(2,2,2) should be 26");
-    }
+    let (mut grid, _settings) = create_grid_and_settings();
     
-   #[test]
-    fn test_get_neighbour_1d_idx(){
-        let (mut grid, _settings)=create_grid_and_settings();
+    //periodic
+    grid.periodic = [true;3];
+    grid.build_neighbour_table();
 
-        let ix: usize=0;
-        let iy: usize=0;
-        let iz: usize=0;
+    assert!(grid.neighbour_table.len() == 27, "Should be 27 boxes in grid");
+    assert_eq!(grid.neighbour_table[0], [1, 2, 3, 6, 9, 18, 4, 7, 5, 8, 10, 19, 11, 20, 12, 21, 15, 24, 13, 22, 16, 25, 14, 23, 17, 26], "Neighbours incorrect under periodic boundary conditions");
 
-        //test value outside grid in non-periodic results in None
-        grid.periodic = [false;3];
-        let new_coords = grid.get_neighbour_1d_idx(ix,iy,iz, [-1,0,0]);
-        assert_eq!(new_coords, usize::MAX, "coords should have returned None because outside box");
-
-        //test values in periodic box.
-        grid.periodic = [true;3];
-        grid.neighbour_table = vec![[usize::MAX; 26]; 27];
-
-        let new_coords = grid.get_neighbour_1d_idx(ix,iy,iz, [-1,0,0]);
-        assert_eq!(new_coords, 2 , "x coord should have wrapped");
-
-    }
+    // non-periodic. 
+    grid.periodic = [false;3];
+    grid.neighbour_table = vec![[usize::MAX; 26]; 27];
+    grid.build_neighbour_table();
 
 
-    #[test]
-    fn test_bin() {
-        let (mut grid, _settings) = create_grid_and_settings();
-        let particles = create_particle_vec();
-        grid.bin(&particles);
+    assert!(grid.neighbour_table.len() == 27, "Should be 27 boxes in grid");
+    let correct_neighbours: Vec<usize> = vec![1, 3, 9, 4, 10, 12, 13];
+    assert!(grid.neighbour_table[0].iter().copied().filter(|&x| x!=usize::MAX).collect::<Vec<usize>>() == correct_neighbours, "Should be 7 boxes in non-periodic grid for (0,0,0)");
 
-        assert_eq!(grid.cell_offsets[grid.cell_offsets.len() - 1], particles.position.len());
-        assert!(grid.cell_particle_ids.len() == particles.position.len());   
-        
-    }
+}
+
+/// **What:** Tests mapping from 3D cell coordinates to a flat array index.  
+/// **How:** Converts grid coordinate indices `(2, 2, 2)` into a scalar value using `get_1d_idx`.  
+/// **Why:** Prevents spatial indexing mismatches by verifying flat buffer layout calculations.
+#[test]
+fn test_get_1d_idx(){
+    let (grid, _settings)=create_grid_and_settings();
+    let ix: usize=2;
+    let iy: usize=2;
+    let iz: usize=2;
+
+    let idx = grid.get_1d_idx(ix,iy,iz);
+    assert_eq!(idx, 26, "(2,2,2) should be 26");
+}
 
 
-    //Verlet tests
-    #[test]
-    fn test_first_frame_rebuild() {
-        let (mut grid, settings) = create_grid_and_settings();
-        let mut particles = create_particle_vec();
-        
-        particles.position[0] = DVec3::new(1.0,1.0,1.0);
-        particles.ref_pos[0] = DVec3::new(5.0,5.0,5.0);
+/// **What:** Checks neighbor offset translation behavior near boundaries.  
+/// **How:** Evaluates grid index queries outside bounds in non-periodic mode and across wrapped edges in periodic mode.  
+/// **Why:** Guarantees that spatial queries respect domain constraints cleanly without indexing faults.
+#[test]
+fn test_get_neighbour_1d_idx(){
+    let (mut grid, _settings)=create_grid_and_settings();
+
+    let ix: usize=0;
+    let iy: usize=0;
+    let iz: usize=0;
+
+    //test value outside grid in non-periodic results in None
+    grid.periodic = [false;3];
+    let new_coords = grid.get_neighbour_1d_idx(ix,iy,iz, [-1,0,0]);
+    assert_eq!(new_coords, usize::MAX, "coords should have returned None because outside box");
+
+    //test values in periodic box.
+    grid.periodic = [true;3];
+    grid.neighbour_table = vec![[usize::MAX; 26]; 27];
+
+    let new_coords = grid.get_neighbour_1d_idx(ix,iy,iz, [-1,0,0]);
+    assert_eq!(new_coords, 2 , "x coord should have wrapped");
+
+}
+
+/// **What:** Tests spatial binning and sorting of particles into cells.  
+/// **How:** Passes a particle collection into `bin` and assesses resulting cell offset markers.  
+/// **Why:** Ensures particles are properly bucketed and indexed before running neighbor-dependent force passes.
+#[test]
+fn test_bin() {
+    let (mut grid, _settings) = create_grid_and_settings();
+    let particles = create_particle_vec();
+    grid.bin(&particles);
+
+    assert_eq!(grid.cell_offsets[grid.cell_offsets.len() - 1], particles.position.len());
+    assert!(grid.cell_particle_ids.len() == particles.position.len());   
     
-        grid.init(&mut particles, &settings);
+}
 
-        assert_eq!(particles.ref_pos[0], particles.position[0]);
-        // Verify index 0 and 2 are neighbours (based on create_molecule_vec layout)
-        assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1));
-        assert!(!grid.verlet_particle_ids[grid.verlet_offsets[1]..grid.verlet_offsets[2]].contains(&0));
-    }
 
-    #[test]
-    fn test_skin_displacement_trigger() {
-        let (mut grid, settings) = create_grid_and_settings();
-        let mut particles = create_molecule_vec();
-        
-        //pos and ref_pos should be the same
-        grid.init(&mut particles, &settings);
+/// **What:** Validates initial state configuration during the first step of a simulation.  
+/// **How:** Initialises grid state with offset reference coordinates and verifies Verlet list population.  
+/// **Why:** Ensures everything synchronised correctly prior to regular displacement checks.
+#[test]
+fn test_first_frame_rebuild() {
+    let (mut grid, settings) = create_grid_and_settings();
+    let mut particles = create_particle_vec();
+    
+    particles.position[0] = DVec3::new(1.0,1.0,1.0);
+    particles.ref_pos[0] = DVec3::new(5.0,5.0,5.0);
 
-        // Move 0.09 (less than skin/2 = 0.1), shouldn't rebuild
-        particles.position[0] += DVec3::new(0.09, 0.0, 0.0);
-        grid.check_and_rebuild_neighbours(&mut particles, &settings);
-        assert_ne!(particles.ref_pos[0], particles.position[0], "Should not have rebuilt");
+    grid.init(&mut particles, &settings);
 
-        // Move another 0.02 (total 0.11 > skin/2 = 0.2/2)
-        particles.position[0] += DVec3::new(0.2, 0.0, 0.0);
-        grid.check_and_rebuild_neighbours(&mut particles, &settings);
-        
-        assert_eq!(particles.ref_pos[0], particles.position[0], "Should have triggered rebuild");
-    }
+    assert_eq!(particles.ref_pos[0], particles.position[0]);
+    // Verify index 0 and 2 are neighbours (based on create_molecule_vec layout)
+    assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1));
+    assert!(!grid.verlet_particle_ids[grid.verlet_offsets[1]..grid.verlet_offsets[2]].contains(&0));
+}
 
-    #[test]
-    fn test_molecular_exclusion() {
-        let (grid, settings) = create_grid_and_settings();
-        let particles = create_molecule_vec();
-        
-        // Particles 0 and 1 belong to molecule 0 so shouldn't be in each other's verlet table
-        let i = 0;
-        let j = 1;
-        
-        let ctx = InteractionContext{
-            sim_box_size: settings.sim_box_size,
-            periodic: settings.periodic,
-            interaction_ptypes: &settings.interaction_ptypes,
-            search_radius_sq: (settings.cutoff + settings.skin).powi(2),
-        };
+/// **What:** Tests particle displacement triggers for Verlet list updates.  
+/// **How:** Moves particles incrementally below and past the threshold value ($\text{skin} / 2$).  
+/// **Why:** Optimises performance by bypassing expensive re-binning cycles when particle movement is negligible.
+#[test]
+fn test_skin_displacement_trigger() {
+    let (mut grid, settings) = create_grid_and_settings();
+    let mut particles = create_molecule_vec();
+    
+    //pos and ref_pos should be the same
+    grid.init(&mut particles, &settings);
 
-        let pids_b4 = grid.verlet_particle_ids.clone();
-        //println!("b4 {:?}", grid.verlet_particle_ids);
-        // Attempt to add a pair that is physically close but within the same molecule
-        CellGrid::add_to_verlet(i, j, &particles, &ctx);
-        
-        //println!("aft {:?}", grid.verlet_particle_ids);
-        assert_eq!(pids_b4, grid.verlet_particle_ids, "Particle_ids should have stayed the same because particles in same molecule must be excluded");
-    }
+    // Move 0.09 (less than skin/2 = 0.1), shouldn't rebuild
+    particles.position[0] += DVec3::new(0.09, 0.0, 0.0);
+    grid.check_and_rebuild_neighbours(&mut particles, &settings);
+    assert_ne!(particles.ref_pos[0], particles.position[0], "Should not have rebuilt");
 
-    #[test]
-    fn test_periodic_neighbours() {
-        let (mut grid, settings) = create_grid_and_settings();
-        let mut particles = create_particle_vec();
-        
-        // Place particles across periodic boundary
-        particles.position[0] = DVec3::new(0.1, 5.0, 5.0);
-        particles.position[1] = DVec3::new(8.9, 5.0, 5.0); // 1.2 distance, within cutoff 3.0
-        
+    // Move another 0.02 (total 0.11 > skin/2 = 0.2/2)
+    particles.position[0] += DVec3::new(0.2, 0.0, 0.0);
+    grid.check_and_rebuild_neighbours(&mut particles, &settings);
+    
+    assert_eq!(particles.ref_pos[0], particles.position[0], "Should have triggered rebuild");
+}
 
-        grid.check_and_rebuild_neighbours(&mut particles, &settings);
-        
-        assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1), "Should detect periodic neighbour");
-    }
+/// **What:** Confirms that intra-molecular particles are excluded from pairwise neighbor tables.  
+/// **How:** Manually attempts to insert a bonded internal pair into the Verlet list structure.  
+/// **Why:** Prevents duplicate force calculations and physical conflicts between atoms belonging to the same rigid structure.
+#[test]
+fn test_molecular_exclusion() {
+    let (grid, settings) = create_grid_and_settings();
+    let particles = create_molecule_vec();
+    
+    // Particles 0 and 1 belong to molecule 0 so shouldn't be in each other's verlet table
+    let i = 0;
+    let j = 1;
+    
+    let ctx = InteractionContext{
+        sim_box_size: settings.sim_box_size,
+        periodic: settings.periodic,
+        interaction_ptypes: &settings.interaction_ptypes,
+        search_radius_sq: (settings.cutoff + settings.skin).powi(2),
+    };
 
-    #[test]
-    fn test_ptype_interactions() {
-        let (mut grid, settings) = create_grid_and_settings();
-        let mut particles = create_particle_vec();
-        grid.init(&mut particles, &settings);
+    let pids_b4 = grid.verlet_particle_ids.clone();
+    //println!("b4 {:?}", grid.verlet_particle_ids);
+    // Attempt to add a pair that is physically close but within the same molecule
+    CellGrid::add_to_verlet(i, j, &particles, &ctx);
+    
+    //println!("aft {:?}", grid.verlet_particle_ids);
+    assert_eq!(pids_b4, grid.verlet_particle_ids, "Particle_ids should have stayed the same because particles in same molecule must be excluded");
+}
 
-        // Ball (id=0) should have ball (id=1) in its list because interaction_ptype = vec![[0,1]]
-        assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1), "0 should see 1");
-        
-        // Ball (id=1) should NOT have Ball (id=0) in its list because interaction_ptype not specified.
-        assert!(!grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&0), "1 should not see 0");
-    }
+/// **What:** Checks neighbour tracking across periodic domain boundaries.  
+/// **How:** Places two interacting entities near opposite box edges and checks they are logged as neighbours.
+/// **Why:** Ensures boundary-spanning particle interactions are properly captured in Verlet neighborhoods.
+#[test]
+fn test_periodic_neighbours() {
+    let (mut grid, settings) = create_grid_and_settings();
+    let mut particles = create_particle_vec();
+    
+    // Place particles across periodic boundary
+    particles.position[0] = DVec3::new(0.1, 5.0, 5.0);
+    particles.position[1] = DVec3::new(8.9, 5.0, 5.0); // 1.2 distance, within cutoff 3.0
+    
+
+    grid.check_and_rebuild_neighbours(&mut particles, &settings);
+    
+    assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1), "Should detect periodic neighbour");
+}
+
+/// **What:** Validates ptype-filtered interactions.  
+/// **How:** Sets restricted type rules (`interaction_ptype = vec![[0, 1]]`) and checks directional inclusion in the list buffers.  
+/// **Why:** Ensures that interactions only occur between the types of particles and in the direction specified.
+#[test]
+fn test_ptype_interactions() {
+    let (mut grid, settings) = create_grid_and_settings();
+    let mut particles = create_particle_vec();
+    grid.init(&mut particles, &settings);
+
+    // Ball (id=0) should have ball (id=1) in its list because interaction_ptype = vec![[0,1]]
+    assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1), "0 should see 1");
+    
+    // Ball (id=1) should NOT have Ball (id=0) in its list because interaction_ptype not specified.
+    assert!(!grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&0), "1 should not see 0");
+}
 
 
 

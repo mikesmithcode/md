@@ -46,7 +46,7 @@ pub struct Particle {
     pub radius: f64, 
     pub mass: f64,  
     pub charge: f64,
-    pub color: Srgba, 
+    pub colour: Srgba, 
     pub visible: bool,
     // Verlet lists tracker fields
     pub ref_pos: DVec3,    
@@ -71,7 +71,7 @@ impl Particle {
     /// * `radius` - The physical radius of the spherical particle.
     /// * `density` - The mass per unit volume.
     /// * `charge` - charge
-    /// * `color` - The Colour enum used for rendering. Determines whether hidden, transparent or Opaque and holds the Srgba colour.
+    /// * `colour` - The Colour enum used for rendering. Determines whether hidden, transparent or Opaque and holds the Srgba colour.
     ///
     pub fn new(
         id: usize,
@@ -85,7 +85,7 @@ impl Particle {
         radius: f64, 
         density: f64, 
         charge: f64,
-        color: Srgba,
+        colour: Srgba,
         visible: bool
     ) -> Self {
         // Calculate mass: m = volume * density
@@ -106,7 +106,7 @@ impl Particle {
             radius, 
             mass, 
             charge,
-            color,
+            colour,
             visible,
             ref_pos
         }

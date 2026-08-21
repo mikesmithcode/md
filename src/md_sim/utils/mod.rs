@@ -1,14 +1,13 @@
-mod file_io;
-mod test_utils;
+
+pub mod file_io;
+pub mod test_utils;
 
 use glam::DVec3;
 
-pub use file_io::{filepaths, save_simsettings, load_simsettings, save_particles, load_latest_particles, load_particles, load_scene_settings, load_objects, save_objects};
+pub use file_io::{filepaths, save_sim_settings, load_sim_settings, save_particles, load_latest_particles, load_particles, load_scene_settings, load_latest_objects, save_objects, SimulationPaths};
 pub use test_utils::{create_molecule_vec, create_single_molecule, create_particle_vec, setup_single_molecule_data, create_grid_and_settings};
 
 
-#[cfg(test)]
-pub mod tests;
 
 
 // -------------------------------------------------------------------------------------------------
@@ -73,6 +72,14 @@ pub fn check_delta(delta: &mut DVec3, sim_box_size: DVec3,periodic:[bool;3]) {
     }
 }
 
+
+/// Context and parameters required for neighbor searches and pairwise particle interactions.
+///
+/// # Fields
+/// * `sim_box_size` - The physical dimensions of the periodic simulation boundary box $(L_x, L_y, L_z)$.
+/// * `periodic` - Boolean flags specifying periodicity along each of the three Cartesian axes `[x, y, z]`.
+/// * `search_radius_sq` - Pre-squared neighbor cutoff search radius to avoid expensive square root operations during distance checks.
+/// * `interaction_ptypes` - Slice of allowed particle type pairs `[type_a, type_b]` that evaluate interaction forces.
 pub struct InteractionContext<'a> {
     pub sim_box_size: DVec3,
     pub periodic: [bool; 3],

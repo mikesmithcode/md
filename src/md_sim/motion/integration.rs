@@ -11,14 +11,35 @@ use crate::md_sim::utils::check_delta;
 use crate::md_sim::{SimulationSettings, ParticleVec};
 use crate::md_sim::particle::{SimulationModel, calculate_molecule_com, MoleculeData};
 
-/// Performs the first half of the Velocity Verlet integration (Prediction).
+
+//-------------------------------------------------------------------------------------------------------
+// No torques or rotations etc
+//-------------------------------------------------------------------------------------------------------
+
+
+
+/// Performs the first half of the Velocity Verlet integration for standard point particles (Prediction). 
+/// Must be used together with `integrate_singleparticle_correct`.
 ///
-/// This function should be called inside `update_motion`. It uses the forces 
-/// from the **previous** timestep to:
-/// 1. Update velocities by a half-step: $v(t + \frac{\Delta t}{2}) = v(t) + \frac{a(t)\Delta t}{2}$
-/// 2. Update positions by a full step: $x(t + \Delta t) = x(t) + v(t + \frac{\Delta t}{2})\Delta t$
+/// # Arguments
+/// 
+/// * `forces` - Slice of force vectors acting on each particle from the previous timestep. One `DVec3` per particle.
+/// * `particles` - Mutable reference to the particle buffers containing positions, velocities, masses, etc.
+/// * `settings` - Simulation settings providing timestep (`dt`), box dimensions, and boundary conditions.
+/// 
+/// # Notes
+/// 
+/// N.B. This function is strictly for point particles not subject to internal torques, orientations, or rotational degrees of freedom.
+/// 
+/// This function should be called inside `update_motion`. It uses the forces from the **previous** timestep to:
+/// 
+/// 1. Update velocities by a half-step: 
+///    $v(t + \frac{\Delta t}{2}) = v(t) + \frac{a(t)\Delta t}{2}$
+/// 2. Update positions by a full step: 
+///    $x(t + \Delta t) = x(t) + v(t + \frac{\Delta t}{2})\Delta t$
+/// 3. Enforce boundary conditions on the newly updated positions and velocities.
 ///
-/// After this call, positions are finalised for the current step, allowing 
+/// After this call, positions are finalized for the current step, allowing 
 /// for new force calculations (e.g., collisions) at $x(t + \Delta t)$.
 pub fn integrate_singleparticle_update(
     forces: &[DVec3], 
@@ -50,10 +71,21 @@ pub fn integrate_singleparticle_update(
     }
 }
 
-/// Performs the second half of the Velocity Verlet integration (Correction).
+/// Performs the second half of the Velocity Verlet integration for standard point particles (Correction).
+/// 
+/// # Arguments
+/// 
+/// * `forces` - Slice of force vectors acting on each particle, calculated at the **new** positions ($t + \Delta t$). One `DVec3` per particle.
+/// * `particles` - Mutable reference to the particle buffers containing positions, velocities, masses, etc.
+/// * `settings` - Simulation settings providing timestep (`dt`) and other configuration parameters.
+/// 
+/// # Notes
+/// 
+/// N.B. This function is strictly for standard particles not subject to internal torques, orientations, or rotational degrees of freedom.
+/// Must be used in tandem with `integrate_singleparticle_update`.
 ///
-/// This function should be called inside `correct_motion`. It uses the forces 
-/// calculated at the **new** positions to finalise the velocities:
+/// This function should be called inside `correct_motion`. It completes the Velocity Verlet cycle for point particles by 
+/// using the forces calculated at the **new** positions to finalize their velocities:
 /// $v(t + \Delta t) = v(t + \frac{\Delta t}{2}) + \frac{a(t + \Delta t)\Delta t}{2}$
 pub fn integrate_singleparticle_correct(
     forces: &[DVec3], 
@@ -74,20 +106,38 @@ pub fn integrate_singleparticle_correct(
 }
 
 
+//------------------------------------------------------------------------------------------------------
+// Rotations included
+//------------------------------------------------------------------------------------------------------
 
-/// Performs the first half of the Velocity Verlet integration for multiparticle rigid bodies (Prediction).
-///
-/// This function should be called inside `update_motion`. It uses the forces 
-/// from the **previous** timestep to:
-/// 1. Update velocities by a half-step: $v(t + \frac{\Delta t}{2}) = v(t) + \frac{a(t)\Delta t}{2}$
-/// 2. Update positions by a full step: $x(t + \Delta t) = x(t) + v(t + \frac{\Delta t}{2})\Delta t$
-///
-/// After this call, positions are finalised for the current step, allowing 
-/// for new force calculations (e.g., collisions) at $x(t + \Delta t)$.
+/// Performs the prediction step of the Velocity Verlet integration for multiparticle rigid bodies, 
+/// incorporating both translational and rotational dynamics.
 /// 
-/// N.B If boundary conditions are non-periodic this will only reflect velocities so no losses and no changes
-/// in angular velocity etc. If you require a box with properties you'll need to explicitly update with custom function
-/// in the Motion trait.
+/// # Arguments
+/// 
+/// * `forces` - Slice of force vectors acting on each particle, calculated in the previous timestep.
+/// * `torques` - Slice of torque vectors acting on each particle, calculated in the previous timestep.
+/// * `particles` - Mutable reference to the particle buffers containing positions, velocities, orientations, etc.
+/// * `molecule_map` - Reference mapping molecule IDs to their constituent particle IDs and internal rigid-body properties.
+/// * `settings` - Simulation settings providing timestep (`dt`), box dimensions, and boundary conditions.
+///
+/// # Notes
+/// 
+/// This function should be called inside `update_motion`. For each rigid molecule, it treats the 
+/// collection of particles as a single rigid body by aggregating forces and torques at the Center of Mass (COM):
+/// 
+/// 1. **Translational & Rotational Kinetics:** Sums forces to update the COM linear velocity and aggregates 
+///    torques (including internal offset torques) to update angular velocity via Euler's rotation equations 
+///    with gyroscopic terms.
+/// 2. **Orientation & Position Integration:** Advances the molecule's COM position and integrates its 
+///    orientation quaternion using the updated angular velocity and a scaled axis delta rotation.
+/// 3. **Collective Particle Update:** Rather than integrating each particle independently, all particles within 
+///    a single molecule are updated **cohesively**. Their individual positions, velocities, orientations, and 
+///    angular velocities are re-derived simultaneously from the molecule's new COM state and rotated relative positions 
+///    ($r_{\text{global}} = R \cdot r_{\text{local}}$), ensuring internal rigid-body constraints remain perfectly locked.
+/// 
+/// N.B. If boundary conditions are non-periodic, boundary enforcement on individual particles will reflect 
+/// velocities but will not alter global molecule-level angular momentum or center of mass trajectory automatically.
 pub fn integrate_rigid_bodies(
     forces: &[DVec3], 
     torques: &[DVec3],
@@ -105,7 +155,7 @@ pub fn integrate_rigid_bodies(
         
         // Calculate current COM etc
         let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, &particles);
-
+    
         // Calculate aggregate forces and torques
         let mut total_force = DVec3::ZERO;
         let mut total_torque = DVec3::ZERO;
@@ -154,11 +204,30 @@ pub fn integrate_rigid_bodies(
     }
 }
 
-/// Performs the second half of the Velocity Verlet integration for rigid bodies (Correction).
+/// Performs the second half of the Velocity Verlet integration for multiparticle rigid bodies (Correction),
+/// finalizing velocities and angular velocities using forces calculated at the new positions.
+/// 
+/// # Arguments
+/// 
+/// * `forces` - Slice of force vectors acting on each particle, calculated at the **new** positions ($t + \Delta t$).
+/// * `torques` - Slice of torque vectors acting on each particle, calculated at the **new** positions ($t + \Delta t$).
+/// * `particles` - Mutable reference to particle buffers containing updated positions, intermediate velocities, etc.
+/// * `molecule_map` - Reference mapping molecule IDs to their constituent particle IDs and internal rigid-body properties.
+/// * `settings` - Simulation settings providing timestep (`dt`), box dimensions, and boundary conditions.
 ///
-/// This function should be called inside `correct_motion`. It uses the forces 
-/// calculated at the **new** positions to finalise the velocities:
-/// $v(t + \Delta t) = v(t + \frac{\Delta t}{2}) + \frac{a(t + \Delta t)\Delta t}{2}$
+/// # Notes
+/// 
+/// This function should be called inside `correct_motion`. It completes the Velocity Verlet cycle for each rigid molecule:
+/// 
+/// 1. **Force & Torque Re-evaluation:** Aggregates the newly evaluated forces and torques across all constituent 
+///    particles relative to the molecule's Center of Mass (COM).
+/// 2. **Velocity & Angular Velocity Finalization:** 
+///    * Updates linear COM velocity by adding the new acceleration scaled by a half-step: 
+///      $v(t + \Delta t) = v(t + \frac{\Delta t}{2}) + \frac{a(t + \Delta t)\Delta t}{2}$
+///    * Updates angular velocity using Euler's rotational equations with updated global inertia tensors and gyroscopic terms.
+/// 3. **Cohesive Particle State Sync:** Re-distributes the finalized COM linear velocity and angular velocity 
+///    across all particles in the molecule simultaneously. Individual particle velocities are updated via 
+///    $v_i = v_{\text{com}} + (\omega \times r_{\text{global}})$, ensuring consistency across the rigid structure.
 pub fn integrate_rigid_bodies_correct(
     forces: &[DVec3], 
     torques: &[DVec3],
@@ -209,7 +278,7 @@ pub fn integrate_rigid_bodies_correct(
 
 //Not yet tested
 pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
-    println!("{:?}", forces);
+
     if let SimulationModel::Active(params) = &settings.model {
         let inv_gamma = 1.0 / params.gamma;
         let mut _rng = rand::thread_rng();

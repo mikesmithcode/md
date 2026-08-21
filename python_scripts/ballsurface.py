@@ -5,7 +5,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import os
 import sys
-from utility import display, get_config
+from python_scripts.utils.file_io import display, get_config
 
 
 

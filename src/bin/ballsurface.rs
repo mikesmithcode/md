@@ -5,7 +5,7 @@
 
 
 use winit::event_loop::EventLoop;
-use glam::{DVec2,DVec3};
+use glam::DVec3;
 use std::collections::HashMap;
 use three_d::Srgba;
 
@@ -14,7 +14,7 @@ use md::md_viz::scene::Scene;
 
 // Imports from simulation library
 use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, TriSpec, Simulation, SimulationSettings};
-use md::md_sim::force::{add_weight, add_particle_particle_collision, add_particle_object_collision};
+use md::md_sim::force::{add_weight, add_particle_object_collision};
 use md::md_sim::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
 use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
 use md::md_sim::particle::MoleculeData;
@@ -51,18 +51,18 @@ impl Forces for SimUpdate{
     }
 
     // forces that operate between pairs of particles
-    fn update_pair_forces(&self,i: usize,j: usize,mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
-        (force, torque)
+    fn update_pair_forces(&self,_i: usize,_j: usize,_force: DVec3, _torque: DVec3, _particles: &ParticleVec,_settings: &SimulationSettings)->(DVec3, DVec3){
+        (_force, _torque)
     }
 
 }
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
-        integrate_singleparticle_update(forces, particles, settings);
+    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
+        integrate_rigid_bodies(forces,torques, particles, molecule_map, settings);
     }
-    fn correct_motion(&self, forces: &[glam::DVec3], _torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, _molecule_map: &HashMap<usize, MoleculeData>) {
-        integrate_singleparticle_correct(forces, particles, settings);
+    fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
+        integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
     }
 
     fn update_objects(&self, object: &mut ObjectSpec, settings: &SimulationSettings, time: f64){
@@ -84,11 +84,9 @@ impl Motion for SimUpdate{
 pub fn main() {    
 
     // Construct filepaths
-    let [sim_config_path, scene_config_path, _object_path, particle_path, _video_path] = filepaths();
+    let sim_filepaths: SimulationPaths = filepaths();
     
-    // load settings
-    let sim_settings: SimulationSettings = SimulationSettings::new(&sim_config_path).expect("sim settings not loaded correctly"); 
-
+    
     //------------------------------------------------------------
     // Initialise simulation with bunch of particles from a snapshot file and define simulation parameters with a config file. Takes latest snapshot in output
     // copies the config file in input folder to the output folder appending sim index.
@@ -96,7 +94,9 @@ pub fn main() {
     
     let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return latest snapshot");
     
-    
+    // load settings
+    let sim_settings: SimulationSettings = SimulationSettings::new(&sim_filepaths, start_step).expect("sim settings not loaded correctly"); 
+
     let size = sim_settings.sim_box_size;
    
     let x=size.x;

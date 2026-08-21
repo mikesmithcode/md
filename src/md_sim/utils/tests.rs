@@ -13,10 +13,13 @@ const NULL_ID: usize = usize::MAX;
 // Test utility functions
 // -----------------------------------------------------------------
 
+/// **What:** Validates the minimum image convention delta check for periodic boundary conditions.
+/// **How:** Instantiates displacement vectors exceeding half the box size along Cartesian axes and applies `check_delta`.
+/// **Why:** Ensures correct wrapping of particle coordinate differences to the shortest periodic image path.
 #[test]
 fn test_check_delta() {
     let sim_box_size = DVec3::new(10.0, 10.0, 10.0);
-    let periodic = [true;3];
+    let periodic = [true; 3];
     // Case 1: X is far apart (0.9L), should wrap to a small negative distance (-0.1L)
     // Example: Particle A at 0.5, Particle B at 9.5. Delta = 9.0
     let mut delta_x = DVec3::new(9.0, 0.0, 0.0);
@@ -39,15 +42,21 @@ fn test_check_delta() {
 // Test file_io functions
 // -----------------------------------------------------------------
 
+/// **What:** Verifies that configuration file paths are resolved relative to the expected input directory structure.
+/// **How:** Calls `filepaths` with a test filename and checks that the returned simulation config matches the `input` subdirectory path.
+/// **Why:** Ensures configuration and asset loading mechanisms locate input files correctly across workspace runs.
 #[test]
-fn test_filepath()-> Result<(), Box<dyn std::error::Error>>{
-    let [sim_config_path, _scene_config_path, _object_path, _particle_path,_video_path] = filepaths("test.rs");
+fn test_filepath() -> Result<(), Box<dyn std::error::Error>> {
+    let [sim_config_path, _scene_config_path, _object_path, _particle_path, _video_path] = filepaths("test.rs");
 
     assert_eq!(sim_config_path, Path::new("input").join("test.json"));
 
     Ok(())
 }
 
+/// **What:** Validates serialization and deserialization round-trips for particle state snapshots using Apache Parquet files.
+/// **How:** Writes a dummy particle vector to a temporary directory via `save_particles`, reloads it via `load_particles`, and checks structural and positional parity.
+/// **Why:** Guarantees that simulation states can be persisted to disk and accurately recovered without data corruption or loss.
 #[test]
 fn test_save_and_load_particles() -> Result<(), Box<dyn std::error::Error>> {
     // Setup temporary workspace
@@ -69,7 +78,8 @@ fn test_save_and_load_particles() -> Result<(), Box<dyn std::error::Error>> {
             radius: 0.5,
             mass: 1.0,
             charge: 0.0,
-            color: Srgba::new(255, 0, 0, 255),
+            colour: Srgba::new(255, 0, 0, 255),
+            visible: true,
             ref_pos: DVec3::ZERO,
         });
     let step = 42;
@@ -92,6 +102,9 @@ fn test_save_and_load_particles() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// **What:** Tests the retrieval logic for identifying and loading the most recent simulation checkpoint from a directory of multiple snapshot files.
+/// **How:** Saves two separate particle snapshots with increasing step indices and timestamps, then invokes `load_latest_particles`.
+/// **Why:** Ensures simulation restarts and post-processing pipelines automatically target the latest available progress record.
 #[test]
 fn test_load_latest_particles() -> Result<(), Box<dyn std::error::Error>> {
     let dir = tempdir()?;
@@ -113,17 +126,17 @@ fn test_load_latest_particles() -> Result<(), Box<dyn std::error::Error>> {
             radius: 0.5,
             mass: 1.0,
             charge: 0.0,
-            color: Srgba::new(255, 0, 0, 255),
+            colour: Srgba::new(255, 0, 0, 255),
+            visible: true,
             ref_pos: DVec3::ZERO,
         });
 
-    
     save_particles(dir_path, 1, &particles, 0.1)?;
     save_particles(dir_path, 10, &particles, 1.0)?; 
 
     let (_, latest_step, latest_time) = load_latest_particles(dir_path)?;
 
-    //Check loads latest
+    // Check loads latest
     assert_eq!(latest_step, 10);
     assert_eq!(latest_time, 1.0);
     
