@@ -26,7 +26,7 @@ pub struct SimUpdate;
 impl Forces for SimUpdate{
     // Default implementation is true, set to false if not using
     fn has_pair_forces(&self)-> bool {
-        false
+        true
     }
     // Default implementation is true set to false if not using
     fn has_single_forces(&self)-> bool {
@@ -58,6 +58,7 @@ impl Forces for SimUpdate{
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize,mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
         // guaranteed that i and j will be same ptype due to verlet list specs
+        
         if particles.ptype[i]==0{
             //main particles have granular collisions. 
             (force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);

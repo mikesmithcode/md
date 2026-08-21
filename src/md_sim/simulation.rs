@@ -150,6 +150,7 @@ impl<S> Simulation<S>
             }
         }
 
+
         // Grid checks nearby particles and calculates all pair forces between particles i and j.
         if self.sim_update.has_pair_forces() {
             // Check if grid and verlet lists need recalculating
