@@ -70,8 +70,8 @@ impl Motion for SimUpdate{
         
         match object {
             ObjectSpec::Rectangle(rect) => {
-                let ang_freq = 1000.0;
-                let velocity = DVec3::new(0.0,0.0,0.05)*f64::sin(ang_freq*time);
+                let ang_freq = 990.0;
+                let velocity = DVec3::new(0.0,0.0,0.05)*f64::sin(ang_freq*time) + DVec3::new(0.1,0.0,0.0)*f64::sin(0.01*ang_freq*time);
                 rect.step(velocity, DVec3::ZERO, settings.dt);
             },
             _ => {}   
