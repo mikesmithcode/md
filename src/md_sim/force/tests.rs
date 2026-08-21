@@ -117,49 +117,6 @@ fn test_particle_particle_collision() {
     assert!(force_with_damping > force_no_damping, "Damping must increase total force magnitude during compression");
 }
 
-/// **What:** Validates the truncated repulsive Weeks-Chandler-Andersen (WCA) potential.  
-/// **How:** Computes pairwise force between two particles and compares it directly against an analytical calculation.  
-/// **Why:** Ensures short-range steric interactions calculate correctly without drift or mathematical formulation errors.
-#[test]
-fn test_weeks_chandler_andersen() {
-    let particles = create_molecule_vec();
-    //particles are both 0.5 radius
-    
-    // Bundle params into the specific Enum variant
-    let model = SimulationModel::Active(ActiveParams {
-    stiffness: 100.0,
-    damping: 1.0,
-    Dt: 0.1,
-    v0: 1.0,
-    gamma: 1.0});
-
-    // Initialise the full SimulationSettings struct
-    let settings = SimulationSettings {
-        dt: 0.001,             
-        sim_box_size: DVec3::new(10.0, 10.0, 10.0),
-        cutoff: 2.0,           // Ensure this is large enough for the overlap
-        periodic: [true;3],
-        skin:0.2,
-        start: 0,
-        num_steps: 100,
-        dump: 10,
-        interaction_ptypes:vec![[0 as u8,0 as u8]],
-        model,                 
-    };
-
-    let mut force = DVec3::ZERO;
-
-    force = add_weeks_chandler_andersen(0, 1, &particles, force, &settings);
-    let calc_force = force;
-
-    let epsilon: f64 = 100.0;
-    let sigma: f64 = 1.0;
-    let r: DVec3=particles.position[0]-particles.position[1];
-    let r2:f64 = r.length_squared();
-    let f_expected = r*(48.0 * epsilon / r2) *  (sigma.powi(12)/(r2.powi(6)) - 0.5 * (sigma.powi(6)/r2.powi(3))) / r2.sqrt() ;
-    
-    assert!((f_expected[0] - calc_force[0]).abs() < 0.0000001 , "WCA not giving expected value"); 
-}
 
 /// **What:** Checks long-range electrostatic interaction forces between charged particles.  
 /// **How:** Assigns opposing unit charges and compares computed forces against analytical Coulomb's Law expectations.  

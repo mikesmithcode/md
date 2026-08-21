@@ -2,7 +2,7 @@ import numpy as np
 import polars as pl
 
 
-def generate_molecules(positions, charges, vel=(0.0,0.0,0.0),w=(0.0,0.0,0.0), rad=0.005, d_r=0.0, density=1200,
+def generate_molecules(positions, w, charges, vel=(0.0,0.0,0.0), rad=0.005, d_r=0.0, density=1200,
                           particle_colour=(255.0, 0.0, 0.0, 245.0),
                           charge_colour=(0.0, 0.0, 255.0, 255.0)):
     """
@@ -15,7 +15,7 @@ def generate_molecules(positions, charges, vel=(0.0,0.0,0.0),w=(0.0,0.0,0.0), ra
     particle_id = 0
     
     vx, vy, vz = vel
-    wx, wy, wz = w
+  
 
     n_molecules = len(positions)
     
@@ -23,6 +23,7 @@ def generate_molecules(positions, charges, vel=(0.0,0.0,0.0),w=(0.0,0.0,0.0), ra
 
     for i,pos_data in enumerate(positions):
         x, y, z = pos_data
+        wx,wy,wz = w[i]
         mass = (4.0 / 3.0) * np.pi * (rad ** 3) * density
 
         particle = {
@@ -82,7 +83,8 @@ def create_rectangle(
     time=0.0,
     velocity=(0.0, 0.0, 0.0), 
     omega=(0.0, 0.0, 0.0), 
-    colour=(255, 255, 255, 255)
+    colour=(255, 255, 255, 255),
+    visible=True
 ):
     verts = np.array(vertices, dtype=float)
     if verts.shape != (4, 3):
@@ -98,6 +100,7 @@ def create_rectangle(
         "vx": [float(velocity[0])], "vy": [float(velocity[1])], "vz": [float(velocity[2])],
         "wx": [float(omega[0])], "wy": [float(omega[1])], "wz": [float(omega[2])],
         "r": [float(colour[0])], "g": [float(colour[1])], "b": [float(colour[2])], "a": [float(colour[3])],
+        "visible": [bool(visible)],
     })
 
 def create_triangle(
@@ -106,7 +109,8 @@ def create_triangle(
     time=0.0,
     velocity=(0.0, 0.0, 0.0), 
     omega=(0.0, 0.0, 0.0), 
-    colour=(255, 255, 255, 255)
+    colour=(255, 255, 255, 255),
+    visible=True
 ):
     verts = np.array(vertices, dtype=float)
     if verts.shape != (3, 3):
@@ -122,4 +126,5 @@ def create_triangle(
         "vx": [float(velocity[0])], "vy": [float(velocity[1])], "vz": [float(velocity[2])],
         "wx": [float(omega[0])], "wy": [float(omega[1])], "wz": [float(omega[2])],
         "r": [float(colour[0])], "g": [float(colour[1])], "b": [float(colour[2])], "a": [float(colour[3])],
+        "visible": [bool(visible)],
     })

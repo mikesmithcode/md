@@ -51,7 +51,7 @@ pub fn integrate_singleparticle_update(
     let sim_box_size = settings.sim_box_size;
     let periodic = settings.periodic;
 
-    let _is_rotating = matches!(settings.model, SimulationModel::SolidFriction(_));
+    let _is_rotating = matches!(settings.model, SimulationModel::Frictional(_));
 
     for (pos, vel, &mass, &force) in izip!(
         &mut particles.position,
@@ -276,42 +276,4 @@ pub fn integrate_rigid_bodies_correct(
 }
 
 
-//Not yet tested
-pub fn update_abps(forces: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings) {
 
-    if let SimulationModel::Active(params) = &settings.model {
-        let inv_gamma = 1.0 / params.gamma;
-        let mut _rng = rand::thread_rng();
-        let _normal = rand_distr::Normal::new(0.0, 1.0).unwrap();
-
-        
-
-        for i in 0..particles.position.len() {
-            // Update Linear Velocity and Position (Overdamped)
-            particles.velocity[i] = forces[i] * inv_gamma;
-            particles.position[i] += particles.velocity[i] * settings.dt;
-
-            // Calculate the scale for rotational noise
-            #[allow(non_snake_case)]
-            let Dr = 3.0 * params.Dt / (4.0 * particles.radius[i].powi(2));
-            let _theta_noise_scale = (2.0 * Dr * settings.dt).sqrt();
-            let d_theta = 0.0;//normal.sample(&mut rng) * theta_noise_scale;
-
-            // Apply Rotational Noise safely to the 3D Heading Vector
-            // We create a clean rotation quaternion around the Y-axis (up-axis for X-Z plane)
-            let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, d_theta);
-            
-            // Rotate the entire orientation vector safely
-            particles.orientation[i] = rotation * particles.orientation[i];
-            particles.orientation[i] = particles.orientation[i].normalize();
-
-            // Debug Checks
-            if particles.position[i].x.is_nan() || particles.position[i].x.abs() > 1e6 {
-               println!("Particle exploded! Force: {:?}, Position: {:?}", forces[i], particles.position[i]);
-            }
-            
-            // Apply boundary conditions
-            enforce_boundary(&mut particles.position[i], &mut particles.velocity[i], settings.sim_box_size, settings.periodic);
-        }
-    }
-}

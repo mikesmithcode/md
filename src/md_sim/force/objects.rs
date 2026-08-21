@@ -61,89 +61,93 @@ pub fn add_particle_object_collision(
 // # Returns
 //
 // * `(DVec3, DVec3)` - The force and torque contributions from the rectangle-particle collision.
-fn particle_rectangle_collision(i: usize,
+fn particle_rectangle_collision(
+    i: usize,
     particles: &ParticleVec,
     rect_spec: &RectSpec,
     mut force: DVec3,
     mut torque: DVec3,
-    settings: &SimulationSettings)->(DVec3,DVec3){
-
+    settings: &SimulationSettings,
+) -> (DVec3, DVec3) {
     // Extract simulation parameters
-    let (stiffness, damping, mu_opt) = match &settings.model {
-        SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
-        SimulationModel::SolidFriction(p) => (p.stiffness, p.damping, Some(p.mu)),
+    let (pl_stiffness, pl_damping, pl_mu) = match &settings.model {
+        SimulationModel::Frictional(p) => (p.plane_stiffness, p.plane_damping, p.plane_mu),
         _ => panic!("Unsupported model for granular collision"),
     };
     
     let particle_pos = particles.position[i];
+    let particle_vel = particles.velocity[i];
+    let particle_omega = particles.omega[i];
     let radius = particles.radius[i];
 
-    // Transform particle position into the rectangle's local coordinate system
+    // Rectangle kinematics & pose
     let rect_center = rect_spec.center;
-    let half_size = rect_spec.half_size;
-    let orientation_quat = glam::DQuat::from(rect_spec.orientation);
-    let orientation_inv = orientation_quat.inverse();
+    let orientation_inv = rect_spec.orientation.inverse();
 
+    // Transform to rectangle's local coords. Centre of rectangle in local coords is (0,0,0) and normal along +z.
     let to_particle = particle_pos - rect_center;
     let local_pos = orientation_inv * to_particle;
 
-    // Find the closest point on the local box surface
+    // 2. Find the closest point on the rectangle surface 
+    // half_size is a DVec2 (x = half_width, y = half_height), and Z is flat on the plane (0.0)
     let clamped_local = DVec3::new(
-    local_pos.x.clamp(-half_size.x, half_size.x),
-    local_pos.y.clamp(-half_size.y, half_size.y),
-    local_pos.z.clamp(0.0, 0.0)
+        local_pos.x.clamp(-rect_spec.half_size.x, rect_spec.half_size.x),
+        local_pos.y.clamp(-rect_spec.half_size.y, rect_spec.half_size.y),
+        0.0 // The plane surface lies at local z = 0
     );
 
+    // Find distance between closest point and particle centre
     let local_delta = local_pos - clamped_local;
     let dist_sq = local_delta.length_squared();
 
-    // Check for collision overlap
-    if dist_sq < radius * radius && dist_sq > 1e-18 {
+    // Check for collision overlap (&& dist_sq > 1e-18)
+    if dist_sq < radius * radius  {
         let dist = dist_sq.sqrt();
-        
-        // Normal pointing from rectangle surface to the particle (in world space)
-        let local_normal = local_delta / dist;
-        let normal = orientation_quat * local_normal;
         let overlap = radius - dist;
 
-        // Calculate Rectangle's Surface Velocity at the Contact Point
-        let r_rect = orientation_quat * clamped_local;
-        let rect_surface_vel = rect_spec.velocity + rect_spec.omega.cross(r_rect);
+        // Surface normal pointing from the rectangle surface to the particle (in world space)
+        let local_normal = local_delta / dist;
+        let normal = rect_spec.orientation * local_normal;
+        
 
-        // Relative velocity: Particle velocity minus moving rectangle surface velocity
-        let rel_vel = particles.velocity[i] - rect_surface_vel;
+        // 3. Compute Rectangle's Surface Velocity at the exact contact point in world space
+        // r_rect is the vector from the rectangle center to the contact point in world coordinates
+        let clamped_global_offset = rect_spec.orientation * clamped_local;
+        let rect_surface_vel = rect_spec.velocity + rect_spec.omega.cross(clamped_global_offset);
+
+        // 4. Contact point vector relative to the sphere's center
+        let r_particle = -normal * radius;
+
+        // Total velocity of the particle's contact point (translation + spin)
+        let particle_contact_vel = particle_vel + particle_omega.cross(r_particle);
+
+        // Relative velocity between particle contact point and rectangle surface velocity
+        let rel_vel = particle_contact_vel - rect_surface_vel;
         let normal_vel = rel_vel.dot(normal);
 
-        let f_normal_mag = (stiffness * overlap - damping * normal_vel).max(0.0);
+        // Normal force (spring-dashpot model, resisting closure)
+        let f_normal_mag = (pl_stiffness * overlap - pl_damping * normal_vel).max(0.0);
         let f_normal_vec = normal * f_normal_mag;
 
-        // Friction if applicable
-        if let Some(mu) = mu_opt {
-            let r_particle = normal * -radius; // Vector from particle center to contact point
-            
-            // Total tangential relative velocity (including particle rotation)
-            let v_tang = rel_vel - (rel_vel.dot(normal) * normal)
-                         + particles.omega[i].cross(r_particle);
+        // 5. Tangential (Frictional) relative velocity
+        let v_tang = rel_vel - normal_vel * normal;
 
-            if v_tang.length_squared() > 1e-18 {
-                let f_t_ideal = v_tang * -damping;
-                let limit = mu * f_normal_mag;
+        let mut f_friction_vec = DVec3::ZERO;
+        if v_tang.length_squared() > 1e-18 {
+            let f_t_ideal = -v_tang * pl_damping;
+            let limit = pl_mu * f_normal_mag;
 
-                let f_t_mag_sq = f_t_ideal.length_squared();
-                let f_t_vec = if f_t_mag_sq > limit * limit {
-                    f_t_ideal * (limit / f_t_mag_sq.sqrt())
-                } else {
-                    f_t_ideal
-                };
-
-                // Apply friction forces and torques to the particle
-                force += f_t_vec;
-                torque += r_particle.cross(f_t_vec);
-            }
+            let f_t_mag_sq = f_t_ideal.length_squared();
+            f_friction_vec = if f_t_mag_sq > limit * limit {
+                f_t_ideal * (limit / f_t_mag_sq.sqrt())
+            } else {
+                f_t_ideal
+            };
         }
 
-        // Apply Normal Force to the particle
-        force += f_normal_vec;
+        // Accumulate forces and torques acting on the sphere
+        force += f_normal_vec + f_friction_vec;
+        torque += r_particle.cross(f_friction_vec);
     }
 
     (force, torque)

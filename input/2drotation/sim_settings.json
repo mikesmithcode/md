@@ -9,9 +9,12 @@
   "dump": 1000,
   "interaction_ptypes": [[0,0],[1,1]],
   "model": {
-    "type": "SolidFriction",
+    "type": "Frictional",
     "stiffness": 66500.0,
     "damping": 0.3,
-    "mu": 0.4
+    "mu": 0.4,
+    "plane_stiffness": 50000.0,
+    "plane_damping" : 0.3,
+    "plane_mu" : 0.4
   }
 }

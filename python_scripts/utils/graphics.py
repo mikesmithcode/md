@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.collections import PatchCollection
-from utils.quaternions import theta_from_quaternion_xz
+from .quaternions import theta_from_quaternion_xz
 import numpy as np
 
 def plot_circles_orientation(df, ax, offset=(0, 10), colours=None):

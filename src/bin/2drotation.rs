@@ -7,14 +7,13 @@
 use winit::event_loop::EventLoop;
 use glam::DVec3;
 use std::collections::HashMap;
-use three_d::Srgba;
 
 // Import everything from your md_viz library
 use md::md_viz::scene::Scene;
 use md::md_viz::scene_settings::SceneSettings;
 
 // Imports from simulation library
-use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, Simulation, SimulationSettings};
+use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, Simulation, SimulationSettings};
 use md::md_sim::force::{add_coulomb, add_particle_object_collision, add_particle_particle_collision, add_weight};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::utils::{filepaths, save_particles, save_objects, load_latest_particles, load_latest_objects, SimulationPaths};
@@ -116,12 +115,11 @@ pub fn main() {
 
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_filepaths, start_step).expect("sim settings not loaded correctly"); 
-    let size = sim_settings.sim_box_size;
     
     //--------------------------------------------------------------
     //Load surface
     //--------------------------------------------------------------
-    let (objects, start_step, time) = load_latest_objects(&sim_filepaths).expect("Failed to return latest object snapshot");
+    let objects = load_latest_objects(&sim_filepaths).expect("Failed to return latest object snapshot");
 
     //-------------------------------------------------------------
     // Create simulation
@@ -130,6 +128,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // Simulation::new() creates the simulation
     // sim.update() to advance the simulation by one step
+    // If you have no objects supply None.
     // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
     //--------------------------------------------------------------  
     let mut sim= Simulation::new(particles, objects, SimUpdate, sim_settings.clone(), time);
@@ -177,7 +176,7 @@ pub fn main() {
 
             //save a snapshot of particle positions etc
             save_particles(&sim_filepaths, step, sim.get_particles(), sim.time).expect("Error saving particles snapshot");
-            save_objects(&sim_filepaths, step, sim.get_objects(), sim.time).expect("Error saving objects snapshot");
+            //save_objects(&sim_filepaths, step, sim.get_objects(), sim.time).expect("Error saving objects snapshot");
 
         }
         

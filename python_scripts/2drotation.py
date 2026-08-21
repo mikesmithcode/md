@@ -16,9 +16,10 @@ box = config["sim_box_size"]
 print(box)
 
 positions = [(0.02,0.0,0.02), (0.04,0.0,0.04)]
+omegas = [(0.0, 10.0, 0.0),(0.0, -10.0, 0.0)]
 charges = [5E-9, -5E-9]
 
-df = pl.concat(list(generate_molecules(positions, charges)))
+df = pl.concat(list(generate_molecules(positions, omegas, charges)))
 df.write_parquet(particles_filepath)
 
 w=box[0]

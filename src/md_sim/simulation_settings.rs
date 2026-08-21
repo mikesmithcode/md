@@ -26,7 +26,7 @@
 use glam::DVec3;
 use serde::{Serialize, Deserialize};
 
-use crate::md_sim::particle::{SimulationModel, CollisionParams};
+use crate::md_sim::particle::{SimulationModel, FrictionParams};
 use crate::md_sim::utils::SimulationPaths;
 use crate::md_sim::utils::file_io::load_sim_settings;
 
@@ -77,10 +77,7 @@ impl Default for SimulationSettings {
             num_steps: 15,
             dump: 1000,
             interaction_ptypes: vec![[0, 0]],
-            model: SimulationModel::Solid(CollisionParams {
-                stiffness: 1000.0, 
-                damping: 50.0,
-            }),
+            model: SimulationModel::Frictional(FrictionParams::default()),
         }
     }
 }

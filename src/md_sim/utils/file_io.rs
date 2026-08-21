@@ -362,6 +362,10 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
 pub fn load_latest_particles(
     dir_path: &SimulationPaths,
 ) -> Result<(ParticleVec, usize, f64), Box<dyn std::error::Error>> {
+    if !dir_path.particle.exists() {
+        return Err(format!("Particle directory does not exist: {}", dir_path.particle.display()).into());
+    }
+
     let mut entries: Vec<(std::path::PathBuf, usize)> = fs::read_dir(&dir_path.particle)?
         .flatten()
         .filter_map(|entry| {
@@ -380,28 +384,30 @@ pub fn load_latest_particles(
     entries.sort_by(|a, b| b.1.cmp(&a.1));
 
     for (path, step) in entries {
-        match load_particles(&path) {
-            Ok((particles, time)) => {
-                return Ok((particles, step, time));
-            }
-            Err(e) => {
-                let err_msg = e.to_string();
-                if err_msg.contains("PAR1") || err_msg.contains("parquet") {
-                    eprintln!("Warning: Corrupted snapshot found at {:?}. Removing and trying previous...", path);
-                    if let Err(del_err) = fs::remove_file(&path) {
-                        eprintln!("Failed to delete corrupted file: {}", del_err);
+        if let Ok((particles, time)) = load_particles(&path) {
+            return Ok((particles, step, time));
+        } else {
+            // If it failed, inspect the error to see if it's corruption
+            match load_particles(&path) {
+                Err(e) => {
+                    let err_msg = e.to_string();
+                    if err_msg.contains("PAR1") || err_msg.contains("parquet") {
+                        eprintln!("Warning: Corrupted snapshot found at {:?}. Removing and trying previous...", path);
+                        if let Err(del_err) = fs::remove_file(&path) {
+                            eprintln!("Failed to delete corrupted file: {}", del_err);
+                        }
+                        continue;
+                    } else {
+                        return Err(e);
                     }
-                    continue;
-                } else {
-                    return Err(e);
                 }
+                _ => unreachable!(),
             }
         }
     }
 
     Err("All available snapshot files were corrupted or could not be read".into())
 }
-
 
 
 
@@ -490,7 +496,6 @@ pub fn load_objects(
     let mut objects = Vec::new();
 
     // Extract series for iteration
-    let ids = df.column("id")?.u64()?;
     let x1 = df.column("x1")?.f64()?;
     let y1 = df.column("y1")?.f64()?;
     let z1 = df.column("z1")?.f64()?;
@@ -516,11 +521,11 @@ pub fn load_objects(
     let b = df.column("b")?.f64()?;
     let a = df.column("a")?.f64()?;
 
+    let vis = df.column("visible")?.bool()?;
+
     let height = df.height();
 
-    for i in 0..height {
-        let id = ids.get(i).unwrap_or(0) as usize;
-        
+    for i in 0..height {        
         let velocity = DVec3::new(
             vx.get(i).unwrap_or(0.0),
             vy.get(i).unwrap_or(0.0),
@@ -544,6 +549,8 @@ pub fn load_objects(
         let v1 = DVec3::new(x1.get(i).unwrap_or(0.0), y1.get(i).unwrap_or(0.0), z1.get(i).unwrap_or(0.0));
         let v2 = DVec3::new(x2.get(i).unwrap_or(0.0), y2.get(i).unwrap_or(0.0), z2.get(i).unwrap_or(0.0));
         let v3 = DVec3::new(x3.get(i).unwrap_or(0.0), y3.get(i).unwrap_or(0.0), z3.get(i).unwrap_or(0.0));
+
+        let visible = vis.get(i).unwrap_or(true);
         
         let current_x4 = x4.get(i).unwrap_or(f64::NAN);
 
@@ -563,7 +570,7 @@ pub fn load_objects(
                 z4.get(i).unwrap_or(0.0),
             );
             
-            let rect_spec = RectSpec::new([v1, v2, v3, v4],colour,visible);
+            let mut rect_spec = RectSpec::new([v1, v2, v3, v4],colour,visible);
             rect_spec.velocity = velocity;
             rect_spec.omega = omega;
 
@@ -586,10 +593,10 @@ pub fn load_objects(
 /// * `(Vec<ObjectSpec>, usize, f64)` - Vector of objects, step number, and simulation timestamp.
 pub fn load_latest_objects(
     sim_paths: &SimulationPaths,
-) -> Result<(Vec<ObjectSpec>, usize, f64), Box<dyn std::error::Error>> {
-    // Ensure the object directory exists before scanning
+) -> Result<Option<Vec<ObjectSpec>>, Box<dyn std::error::Error>> {
+    // If the object directory doesn't exist yet, it's safe to return None
     if !sim_paths.object.exists() {
-        return Err(format!("Object directory does not exist: {}", sim_paths.object.display()).into());
+        return Ok(None);
     }
 
     let mut entries: Vec<(std::path::PathBuf, usize)> = fs::read_dir(&sim_paths.object)?
@@ -604,34 +611,23 @@ pub fn load_latest_objects(
         .collect();
 
     if entries.is_empty() {
-        return Err("No object snapshot files found".into());
+        return Ok(None);
     }
 
-    // Sort descending so the highest step index (latest snapshot) comes first
+    // Sort descending so the highest step index comes first
     entries.sort_by(|a, b| b.1.cmp(&a.1));
 
-    for (path, step) in entries {
-        match load_objects(&SimulationPaths) {
-            Ok((objects, time)) => {
-                return Ok((objects, step, time));
-            }
-            Err(e) => {
-                let err_msg = e.to_string();
-                if err_msg.contains("PAR1") || err_msg.contains("parquet") {
-                    eprintln!("Warning: Corrupted object snapshot found at {:?}. Removing and trying previous...", path);
-                    if let Err(del_err) = fs::remove_file(&path) {
-                        eprintln!("Failed to delete corrupted file: {}", del_err);
-                    }
-                    continue;
-                } else {
-                    return Err(e);
-                }
-            }
+    for (_path, step) in entries {
+        if let Ok(objects) = load_objects(sim_paths, step) {
+            return Ok(Some(objects));
         }
     }
 
-    Err("All available object snapshot files were corrupted or could not be read".into())
+    // If all files were corrupted or failed to load
+    Ok(None)
 }
+    
+
 
 pub fn save_objects(
     sim_paths: &SimulationPaths,

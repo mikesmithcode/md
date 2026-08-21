@@ -58,9 +58,8 @@ use crate::md_sim::utils::check_delta;
 #[inline(always)]
 pub fn add_particle_particle_collision(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3, mut torque: DVec3, settings: &SimulationSettings)->(DVec3, DVec3) {   
     // Extract params
-    let (stiffness, damping, mu_opt) = match &settings.model {
-            SimulationModel::Solid(p) => (p.stiffness, p.damping, None),
-            SimulationModel::SolidFriction(p) => (p.stiffness, p.damping, Some(p.mu)),
+    let (stiffness, damping, mu) = match &settings.model {
+            SimulationModel::Frictional(p) => (p.stiffness, p.damping, p.mu),
             _ => panic!("Unsupported model for granular collision"),
         };
 
@@ -85,33 +84,32 @@ pub fn add_particle_particle_collision(i: usize, j: usize, particles: &ParticleV
 
         // Friction if applicable (Model = SolidFriction)
         // Use viscous friction clamped to max of static normal_force * mu
-        if let Some(mu) = mu_opt {
-            let r_i = normal * -particles.radius[i];
-            let r_j = normal * particles.radius[j];
+    
+        let r_i = normal * -particles.radius[i];
+        let r_j = normal * particles.radius[j];
 
-            let v_surface_rel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
-                              - (particles.velocity[j] + particles.omega[j].cross(r_j));
-            let v_tang = v_surface_rel - (v_surface_rel.dot(normal) * normal);
+        let v_surface_rel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
+                            - (particles.velocity[j] + particles.omega[j].cross(r_j));
+        let v_tang = v_surface_rel - (v_surface_rel.dot(normal) * normal);
+        
+        if v_tang.length_squared() > 1e-18 {
+            let f_t_ideal = v_tang * -damping; 
+            let limit = mu * f_normal_mag;
             
-            if v_tang.length_squared() > 1e-18 {
-                let f_t_ideal = v_tang * -damping; 
-                let limit = mu * f_normal_mag;
-                
-                let f_t_mag_sq = f_t_ideal.length_squared();
-                let f_t_vec = if f_t_mag_sq > limit * limit {
-                        f_t_ideal * (limit / f_t_mag_sq.sqrt())
-                    } else {
-                        f_t_ideal
-                    };
+            let f_t_mag_sq = f_t_ideal.length_squared();
+            let f_t_vec = if f_t_mag_sq > limit * limit {
+                    f_t_ideal * (limit / f_t_mag_sq.sqrt())
+                } else {
+                    f_t_ideal
+                };
 
-                // Apply Tangential Forces and Torques
-                force += f_t_vec;
-                //forces[j] -= f_t_vec;
-                torque += r_i.cross(f_t_vec);
-                //torques[j] -= r_j.cross(f_t_vec);
-            }
+            // Apply Tangential Forces and Torques
+            force += f_t_vec;
+            //forces[j] -= f_t_vec;
+            torque += r_i.cross(f_t_vec);
+            //torques[j] -= r_j.cross(f_t_vec);
         }
-
+    
         // Apply Normal Force (Shared)
         force += f_normal_vec;
     }
@@ -119,60 +117,7 @@ pub fn add_particle_particle_collision(i: usize, j: usize, particles: &ParticleV
     (force, torque)
 }
 
-/// Computes the Weeks-Chandler-Andersen (WCA) pairwise force between two particles.
-///
-/// The WCA model is a purely repulsive shifted Lennard-Jones potential where the interaction 
-/// is truncated at its potential minimum ($r_c = 2^{1/6}\sigma$), eliminating attractive forces 
-/// to model purely hard-sphere-like steric interactions.
-///
-/// # Arguments
-///
-/// * `i` - Index of the first particle.
-/// * `j` - Index of the second particle.
-/// * `particles` - Reference to the particle state buffers (positions, radii, etc.).
-/// * `force` - Accumulated incoming force vector for particle `i`.
-/// * `settings` - Global simulation parameters containing model types, box dimensions, and boundary rules.
-///
-/// # Returns
-///
-/// * `DVec3` - The updated force vector including the WCA contribution.
-pub fn add_weeks_chandler_andersen(i: usize,j: usize, particles: &ParticleVec, mut force: DVec3,settings: &SimulationSettings)->DVec3{
 
-    let mut delta = particles.position[i] - particles.position[j];
-    check_delta(&mut delta, settings.sim_box_size, settings.periodic);
-
-    let r2 = delta.x * delta.x + delta.y * delta.y + delta.z * delta.z;
-    if r2 > 1e-12{
-        let r = r2.sqrt();
-
-        if let SimulationModel::Active(params) = &settings.model {
-            let epsilon = params.stiffness;
-            let sigma = particles.radius[i] + particles.radius[j];
-            
-            // The WCA potential is only active up to the minimum of the LJ curve. r_cut = 2^(1/6) * sigma. 
-            let r2_cut = 1.259921 * (sigma * sigma);
-
-            if r2 < r2_cut {
-                // Implement the cutoff
-                let s2_r2 = (sigma * sigma) / r2;
-                let s6_r6 = s2_r2 * s2_r2 * s2_r2;
-                
-                // The derivative of the WCA potential gives the force magnitude:
-                // F(r) = (48 * epsilon / r^2) * [ (sigma/r)^12 - 0.5 * (sigma/r)^6 ]
-                let f_mag = (48.0 * epsilon / r) * (s6_r6 * s6_r6 - 0.5 * s6_r6);
-
-                // Create the force vector
-                let force_vec = glam::DVec3::new(delta.x * f_mag / r, delta.y * f_mag / r, delta.z * f_mag / r);
-
-                // Add force (equal and opposite occurs because we enter this function with both particles as the i if appropriate.)
-                force += force_vec;
-
-            }
-        }
-
-    }
-    force
-}
 
 /// Computes the electrostatic Coulomb force between two charged particles.
 ///
