@@ -423,9 +423,9 @@ fn create_transparent_material(colour: Option<Srgba>) -> PhysicalMaterial {
             rgb_equation: BlendEquationType::Add,
             alpha_equation: BlendEquationType::Add,
         },
-        cull: Cull::Back,
-        write_mask: WriteMask::COLOR, 
-        depth_test: DepthTest::Always,
+        cull: Cull::None,//None, Back, Front
+        write_mask: WriteMask::COLOR, //None
+        depth_test: DepthTest::Less,
     };
     mat
 }
@@ -440,7 +440,9 @@ fn create_opaque_material(colour: Option<Srgba>) -> PhysicalMaterial {
     
     // Disable backface culling so surfaces render from both sides
     mat.render_states = three_d::RenderStates {
-        cull: three_d::Cull::None,
+        cull: Cull::None,//None, Back, Front
+        write_mask: WriteMask::COLOR, //None
+        depth_test: DepthTest::Less,
         ..Default::default()
     };
     mat

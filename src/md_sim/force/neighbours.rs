@@ -231,30 +231,38 @@ pub struct CellGrid {
             user_impl: &F,
             settings: &SimulationSettings,
         ) {
-            // We iterate over particle indices (i)
-            f_buf.par_iter_mut()
-                .zip(t_buf.par_iter_mut())
-                .enumerate()
-                .for_each(|(i, (f_out, t_out))| {
-                    let mut local_force = DVec3::ZERO;
-                    let mut local_torque = DVec3::ZERO;
+            // Define the core processing logic as a closure or a separate function
+            let process_particle = |(i, (f_out, t_out)): (usize, (&mut DVec3, &mut DVec3))| {
+                let mut local_force = DVec3::ZERO;
+                let mut local_torque = DVec3::ZERO;
 
-                    // CSR Access: Look up the range for particle i
-                    let start = self.verlet_offsets[i];
-                    let end = self.verlet_offsets[i + 1];
-                    
-                    // Iterate over the slice of neighbours directly
-                    for &j in &self.verlet_particle_ids[start..end] {
-                        let (f, t) = user_impl.update_pair_forces(
-                            i, j, DVec3::ZERO, DVec3::ZERO, particles, settings
-                        );
-                        local_force += f;
-                        local_torque += t;
-                    }
+                let start = self.verlet_offsets[i];
+                let end = self.verlet_offsets[i + 1];
+                
+                for &j in &self.verlet_particle_ids[start..end] {
+                    let (f, t) = user_impl.update_pair_forces(
+                        i, j, DVec3::ZERO, DVec3::ZERO, particles, settings
+                    );
+                    local_force += f;
+                    local_torque += t;
+                }
 
-                    *f_out += local_force;
-                    *t_out += local_torque;
-                });
+                *f_out += local_force;
+                *t_out += local_torque;
+            };
+
+            // Conditionally execute parallel or sequential loops
+            if settings.parallel {
+                f_buf.par_iter_mut()
+                    .zip(t_buf.par_iter_mut())
+                    .enumerate()
+                    .for_each(process_particle);
+            } else {
+                f_buf.iter_mut()
+                    .zip(t_buf.iter_mut())
+                    .enumerate()
+                    .for_each(process_particle);
+            }
         }
 
         //-----------------------------------------------------------------------------------

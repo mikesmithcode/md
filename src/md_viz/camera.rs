@@ -125,36 +125,46 @@ fn create_perspective_camera(viewport: Viewport, scene_settings: SceneSettings) 
 pub fn create_orthographic_camera(viewport: Viewport, scene_settings: SceneSettings) -> Camera {
     let sim_box_size = scene_settings.sim_box.box_size;
 
-    let dim_x = sim_box_size.x as f32;
-    let dim_y = sim_box_size.y as f32;
-    let dim_z = sim_box_size.z as f32;
+let dim_x = sim_box_size.x as f32;
+let dim_y = sim_box_size.y as f32;
+let dim_z = sim_box_size.z as f32;
 
-    let x_mid = dim_x * 0.5;
-    let y_mid = dim_y * 0.5;
-    let z_mid = dim_z * 0.5;
+let x_mid = dim_x * 0.5;
+let y_mid = dim_y * 0.5;
+let z_mid = dim_z * 0.5;
+
+let max_dim = dim_x.max(dim_y).max(dim_z);
     
-    let max_dim = dim_x.max(dim_y).max(dim_z);
-        
-    let rel_pos = scene_settings.camera.rel_pos;
-    let up = scene_settings.camera.up;
-    let centre = Vector3::new(x_mid, y_mid, z_mid);
-    let position = centre + rel_pos;
+let rel_pos = scene_settings.camera.rel_pos;
+let up = scene_settings.camera.up;
+let centre = Vector3::new(x_mid, y_mid, z_mid);
+let position = centre + rel_pos;
 
-    let z_near = position.y;
-    let z_far = -centre.y;  
-    let factor = 1.75 / (rel_pos.y);
+// 1. Get the camera's forward view direction vector (normalized)
+let view_dir = (centre - position).normalize();
 
-    let camera = Camera::new_orthographic(
-        viewport,
-        position,
-        centre,
-        up,
-        max_dim * factor,
-        z_near,
-        z_far
-    );
-    
-    camera
+// 2. Calculate the distance from the camera to the box center along the view axis
+// (Using dot product projects rel_pos onto the view vector)
+let dist_to_centre = rel_pos.dot(view_dir).abs();
+
+// 3. Scale factor based on actual distance magnitude
+let factor = 1.75 / dist_to_centre.max(0.001);
+
+// 4. Agnostic near/far planes based on the view vector and max box size
+let z_near = dist_to_centre - max_dim * 1.5;
+let z_far = dist_to_centre + max_dim * 1.5;
+
+let camera = Camera::new_orthographic(
+    viewport,
+    position,
+    centre,
+    up,
+    max_dim * factor,
+    z_near.max(0.01), // Prevent near plane from clipping at/behind zero
+    z_far
+);
+
+camera
 }
 
 /// Creates and returns an `OrbitControl` for camera manipulation.

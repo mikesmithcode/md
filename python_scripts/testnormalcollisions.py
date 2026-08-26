@@ -1,9 +1,8 @@
 """Setup script for coeff"""
 import polars as pl
-from pathlib import Path
 import matplotlib
 matplotlib.use('qtAgg')
-import matplotlib.pyplot as plt
+
 
 from utils.file_io import get_config
 from utils.graphics import display
@@ -15,17 +14,34 @@ print(objects_filepath)
 box = config["sim_box_size"]
 print(box)
 
-positions = [(0.02,0.025,0.02), (0.04,0.025,0.04)]
-omegas = [(0.0, 10.0, 0.0),(0.0, -10.0, 0.0)]
-d_r = [0.5,0.5]
-charges = [5E-9, -5E-9]
+#Two moving particles and one static
+positions = [(0.02,0.025,0.04), (0.04,0.025,0.04), (0.04, 0.025, 0.005)]
+velocities = [(0.0,0.0,-10.0),(0.0,0.0,-10.0), (0.0,0.0,0.0)]
 
-df = pl.concat(list(generate_molecules(positions, w=omegas, q=charges, d_r=d_r)))
+d_r = [0.5,0.5,0.5]
+
+molecules = list(generate_molecules(positions, v=velocities, d_r=d_r))
+
+df = molecules[2]
+
+# 2. Update the DataFrame using pl.when() / pl.then() / pl.otherwise()
+updated_df = df.with_columns(
+    pl.when(pl.col("id") == 4)
+    .then(2)  # Set ptype to 2 where id is 4
+    .otherwise(pl.col("ptype"))  # Keep existing ptype values elsewhere
+    .alias("ptype")
+)
+
+# 3. Put it back into the list (if needed)
+molecules[2] = updated_df
+
+df = pl.concat(molecules)
 df.write_parquet(particles_filepath)
 
-w=box[0]
+#Rectangle fills half the box.
+w=box[0]/2.0
 h=box[1]
-z=0.005
+z=0.01
 rect = [(0.0,0.0,z),(0.0,h,z),(w,h,z),(w,0.0,z)]
 # Create the rectangle DataFrame
 rect_df = create_rectangle(

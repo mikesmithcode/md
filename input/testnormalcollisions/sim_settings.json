@@ -1,5 +1,5 @@
 {
-  "dt": 1e-6,
+  "dt": 5e-8,
   "sim_box_size": [0.06, 0.01, 0.06],
   "periodic": [true,true,false],
   "parallel":false,
@@ -8,7 +8,7 @@
   "start": 0,
   "num_steps": 5000000,
   "dump": 1000,
-  "interaction_ptypes": [[0,0],[1,1]],
+  "interaction_ptypes": [[0,2]],
   "collision_ptypes":[0],
   "model": {
     "type": "Frictional",

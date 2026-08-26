@@ -82,6 +82,7 @@ fn test_particle_particle_collision() {
         dt: 0.001,             
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
         periodic: [true;3],
+        parallel: true,
         cutoff: 2.0,           // Ensure this is large enough for the overlap
         skin:0.2,
         start: 0,
@@ -142,6 +143,7 @@ fn test_coulomb() {
         dt: 0.001,             
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
         periodic: [true;3],
+        parallel: true,
         cutoff: 2.0,           // Ensure this is large enough for the overlap
         skin:0.2,
         start: 0,

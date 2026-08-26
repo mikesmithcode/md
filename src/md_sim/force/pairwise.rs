@@ -56,61 +56,93 @@ use crate::md_sim::utils::check_delta;
 /// search loops. For models without friction, the tangential and torque logic is 
 /// bypassed to maintain high execution speeds.
 #[inline(always)]
-pub fn add_particle_particle_collision(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3, mut torque: DVec3, settings: &SimulationSettings)->(DVec3, DVec3) {   
+pub fn add_particle_particle_collision(
+    i: usize, 
+    j: usize, 
+    particles: &ParticleVec, 
+    mut force: DVec3, 
+    mut torque: DVec3, 
+    settings: &SimulationSettings
+) -> (DVec3, DVec3) { 
+    
+    // Rule 1: If particle i is not a collision ptype then ignore this fn.
+    let is_i_coll = settings.collision_ptypes.contains(&(particles.ptype[i] as u8));
+    if !is_i_coll {
+        return (force, torque);
+    }
+
+  
+
     // Extract params
     let (stiffness, damping, mu) = match &settings.model {
-            SimulationModel::Frictional(p) => (p.stiffness, p.damping, p.mu),
-            _ => panic!("Unsupported model for granular collision"),
-        };
+        SimulationModel::Frictional(p) => (p.stiffness, p.damping, p.mu),
+        _ => panic!("Unsupported model for granular collision"),
+    };
 
-    // Calc overlap etc
+    // Calc separation etc
     let mut delta = particles.position[i] - particles.position[j];
     check_delta(&mut delta, settings.sim_box_size, settings.periodic);
 
     let combined_rad = particles.radius[i] + particles.radius[j];
     let dist_sq = delta.length_squared();
 
-    if dist_sq < combined_rad * combined_rad && dist_sq > 1e-18 {
+    // contact?
+    if dist_sq < combined_rad * combined_rad {
         let dist = dist_sq.sqrt();
-        let normal = delta / dist;
-        let overlap = combined_rad - dist;
+        let normal = delta / dist; 
+        let overlap = combined_rad - dist; 
+
+        // --- EFFECTIVE MASS CORRECTION ---
+        // Check if particle j is a collision ptype
+        let is_j_coll = settings.collision_ptypes.contains(&(particles.ptype[j] as u8));
+       // -----------------------------
+        let m_i = particles.mass[i];
+        
+        // Rule 2 & 3: If j is a collision ptype, use its real mass. 
+        // If j is NOT a collision ptype, treat it as infinite mass.
+        let m_eff = if !is_j_coll {
+            m_i
+        } else {
+            let m_j = particles.mass[j];
+            (m_i * m_j) / (m_i + m_j)
+        };
+
+        let mass_scale = m_eff / m_i;
+        let eff_stiffness = stiffness * mass_scale;
+        let eff_damping = damping * mass_scale;
+        // ---------------------------------
 
         // Normal Force
         let rel_vel = particles.velocity[i] - particles.velocity[j];
         let normal_vel = rel_vel.dot(normal);
 
-        let f_normal_mag = (stiffness * overlap - damping * normal_vel).max(0.0);
+        let f_normal_mag = (eff_stiffness * overlap - eff_damping * normal_vel).max(0.0);
         let f_normal_vec = normal * f_normal_mag;
 
-        // Friction if applicable (Model = SolidFriction)
-        // Use viscous friction clamped to max of static normal_force * mu
-    
-        let r_i = normal * -particles.radius[i];
-        let r_j = normal * particles.radius[j];
+        let r_i = normal * (-particles.radius[i] + overlap / 2.0);
+        let r_j = normal * (particles.radius[j] - overlap / 2.0);
 
         let v_surface_rel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
                             - (particles.velocity[j] + particles.omega[j].cross(r_j));
         let v_tang = v_surface_rel - (v_surface_rel.dot(normal) * normal);
         
         if v_tang.length_squared() > 1e-18 {
-            let f_t_ideal = v_tang * -damping; 
+            let f_t_ideal = v_tang * -eff_damping; 
             let limit = mu * f_normal_mag;
             
             let f_t_mag_sq = f_t_ideal.length_squared();
             let f_t_vec = if f_t_mag_sq > limit * limit {
-                    f_t_ideal * (limit / f_t_mag_sq.sqrt())
-                } else {
-                    f_t_ideal
-                };
+                f_t_ideal * (limit / f_t_mag_sq.sqrt())
+            } else {
+                f_t_ideal
+            };
 
             // Apply Tangential Forces and Torques
             force += f_t_vec;
-            //forces[j] -= f_t_vec;
             torque += r_i.cross(f_t_vec);
-            //torques[j] -= r_j.cross(f_t_vec);
         }
     
-        // Apply Normal Force (Shared)
+        // Apply Normal Force
         force += f_normal_vec;
     }
 

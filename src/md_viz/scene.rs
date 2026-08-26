@@ -237,7 +237,10 @@ impl Scene {
 
         // 4. Gather renderable objects dynamically
         let mut scene_objects: Vec<&dyn Object> = Vec::new();
-        scene_objects.push(&resources.sphere_template.mesh);
+        // Display simulation box outline
+        if resources.simbox_template.boxspec.visible {
+            scene_objects.push(&resources.simbox_template.mesh);
+        }
 
         for template in &resources.object_templates {
             match template {
@@ -247,14 +250,22 @@ impl Scene {
             }
         }
 
-        // Display simulation box outline
-        if resources.simbox_template.boxspec.visible {
-            scene_objects.push(&resources.simbox_template.mesh);
-        }
+        scene_objects.push(&resources.sphere_template.mesh);
+
+        
 
         // Setup lights and execute draw call
         let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
-        target.render(camera, scene_objects, &lights);
+
+        if !scene_objects.is_empty() {
+            target.render(camera, scene_objects, &lights);
+        }
+
+        // ==========================================
+        // PASS 2: Particles (Drawn LAST, Guaranteed)
+        // ==========================================
+        let particle_objects: Vec<&dyn Object> = vec![&resources.sphere_template.mesh];
+        target.render(camera, particle_objects, &lights);
         
         Ok(())
     }
@@ -338,7 +349,7 @@ impl Scene {
         });
 
         if self.camera_control.update {
-            let current_target = self.camera.target().clone();
+            let current_target = self.camera.target();
             self.camera_control.update_camera(&mut self.camera, current_target);
             self.camera_control.update = false;
         }

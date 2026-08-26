@@ -8,12 +8,14 @@
 //!   "dt": 1e-5,
 //!   "sim_box_size": [0.05, 0.01, 0.05],
 //!   "periodic": [true, true, true],
+//!   "parallel" : true,
 //!   "cutoff": 0.025,
 //!   "skin": 0.002,
 //!   "start": 0,
 //!   "num_steps": 50000,
 //!   "dump": 100,
-//!   "interaction_ptypes": [[0, 0]],
+//!   "interaction_ptypes": [[0, 0]], // [i,j] means i feels interactions due to j.
+//!   "collision_ptypes" : [0], // These are particles that respond to a collision
 //!   "model": {
 //!     "type": "SolidFriction",
 //!     "stiffness": 6650.0,
@@ -48,20 +50,21 @@ pub struct SimulationSettings {
     pub dt: f64,
     pub sim_box_size: DVec3, 
     pub periodic: [bool; 3],
+    pub parallel: bool,
     pub cutoff: f64,
     pub skin: f64,
     pub start: usize,
     pub num_steps: usize,
     pub dump: usize,
     pub interaction_ptypes: Vec<[u8; 2]>,
+    pub collision_ptypes: Vec<u8>,
     pub model: SimulationModel,  
 }
 
 impl SimulationSettings {
     /// Loads simulation configuration from a JSON file path, providing a formatted error message if unreadable.
     pub fn new(sim_paths: &SimulationPaths, start_step: usize) -> Result<SimulationSettings, Box<dyn std::error::Error>> {
-        let sim_settings = load_sim_settings(&sim_paths, start_step);
-        sim_settings
+        load_sim_settings(sim_paths, start_step)
     }
 }
 
@@ -71,12 +74,14 @@ impl Default for SimulationSettings {
             dt: 0.1,
             sim_box_size: DVec3::new(10.0, 0.1, 10.0),
             periodic: [true; 3],
+            parallel: true,
             cutoff: 1.0,
             skin: 0.2,
             start: 0,
             num_steps: 15,
             dump: 1000,
             interaction_ptypes: vec![[0, 0]],
+            collision_ptypes: vec![0],
             model: SimulationModel::Frictional(FrictionParams::default()),
         }
     }

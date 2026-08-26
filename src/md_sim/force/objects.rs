@@ -96,6 +96,11 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
     mut torque: DVec3,
     settings: &SimulationSettings,
 ) -> (DVec3, DVec3) {
+    //Ignore if not a collision ptype
+    if !settings.collision_ptypes.contains(&(particles.ptype[i] as u8)){
+        return (force, torque)
+    }
+
     let (pl_stiffness, pl_damping, pl_mu) = if let SimulationModel::Frictional(p) = &settings.model {
         (p.plane_stiffness, p.plane_damping, p.plane_mu)
     } else {
