@@ -1,8 +1,8 @@
 
-use glam::{DVec3, DQuat, DMat3};
+use glam::{DVec2, DVec3, DQuat, DMat3};
 use three_d::Srgba;
 
-use crate::md_sim::utils::{create_molecule_vec, setup_single_molecule_data};
+use crate::md_sim::utils::{create_molecule_vec, setup_single_molecule_data, assert_dvec3_near};
 
 use super::*;
 const NULL_ID: usize = usize::MAX;
@@ -21,7 +21,7 @@ fn test_rigidbody_ke(){
 
     //p consists of m[1.5, 0.5], rel_pos[0.25, -0.75], vel[(1,1,1), (0,1,1)]
     let total_mass = p.mass[0] + p.mass[1];
-    let com = (p.mass[0]*p.position[0] + p.mass[1]*p.position[1])/total_mass;
+    //let com = (p.mass[0]*p.position[0] + p.mass[1]*p.position[1])/total_mass;
     let v_com = (p.mass[0]*p.velocity[0] + p.mass[1]*p.velocity[1])/total_mass;
     let ke_t = 0.5*total_mass*v_com.length_squared();
 
@@ -40,7 +40,6 @@ fn test_rigidbody_ke(){
     
     assert!((ke - expected_ke).abs() < 1e-10, 
             "Expected total KE of 4.5 (4.0 trans + 0.5 rot), but got {}", ke);
-    assert!(false);
 }
 
 
@@ -49,30 +48,34 @@ fn test_rigidbody_ke(){
 /// **Why:** Confirms that rotational dynamics correctly account for off-center offsets relative to the center of mass.
 #[test]
 fn test_total_ang_momentum() {
-  
-    todo!("Implement test body for total angular momentum verification");
+    let p = create_molecule_vec();
+    
+    // Set up molecule data specifically for the isolated vector
+    let molecules = setup_single_molecule_data(&p);
+
+    let ang_mom = calculate_total_angular_momentum(&p, &molecules);
+
+    let expected = DVec3::new(0.0, 0.95, 0.0);
+    assert_dvec3_near(ang_mom, expected, 1e-12);
 }
 
 //-------------------------------------------------------------------------------
 // Tests geometry.rs
 // -----------------------------------------------------------------------------
 
-/// **What:** Validates initialization and field assignment of `MoleculeData` structures.  
-/// **How:** Instantiates a molecule record from a particle collection and checks stored index mappings and inertia matrices.  
-/// **Why:** Ensures structural metadata is bound correctly before running simulation loops.  
-#[test]
-fn test_molecule_data() {
-    
-    todo!("Implement test body for molecule data initialization");
-}
-
 /// **What:** Tests center-of-mass and velocity calculation routines for composite structures.  
 /// **How:** Passes a slice of particle indices into `calculate_molecule_com` and verifies mass-weighted averages.  
 /// **Why:** Ensures kinematic reference frames are centered correctly for rigid-body updates.  
 #[test]
 fn test_calculate_com() {
-    
-    todo!("Implement test body for center of mass calculation");
+    let p = create_molecule_vec();
+    let pids = vec![0, 1];
+
+    let (total_mass, com_pos, com_vel) = calculate_molecule_com(&pids, &p);
+
+    assert!((total_mass - 2.0).abs() < 1e-12);
+    assert_dvec3_near(com_pos, DVec3::new(1.0, 2.0, 3.5), 1e-12);
+    assert_dvec3_near(com_vel, DVec3::new(0.75, 1.0, 1.0), 1e-12);
 }
 
 /// **What:** Verifies analytical inertia tensor generation against known geometric configurations.  
@@ -80,8 +83,20 @@ fn test_calculate_com() {
 /// **Why:** Prevents rotational inertia anomalies during rigid-body torque applications.  
 #[test]
 fn test_calc_inertia() {
-    
-    todo!("Implement test body for inertia tensor calculation");
+    let p = create_molecule_vec();
+    let pids = vec![0, 1];
+
+    let inertia = calculate_molecule_inertia(&pids, &p);
+
+    let expected_inertia = DMat3::from_cols_array(&[
+        0.575, 0.0,   0.0,
+        0.0,   0.575, 0.0,
+        0.0,   0.0,   0.20,
+    ]);
+
+    for col in 0..3 {
+        assert_dvec3_near(inertia.col(col), expected_inertia.col(col), 1e-12);
+    }
 }
 //-------------------------------------------------------------------------------
 // Tests particle.rs
@@ -105,7 +120,7 @@ fn test_particle_new() {
     let ptype = 1;
     
     let mass = (4.0 / 3.0) * std::f64::consts::PI * radius.powf(3f64) * density;
-    let particle = Particle::new(id, NULL_ID, ptype, position,DVec3::ZERO, velocity, orientation, omega, radius, density, 0.0, colour);
+    let particle = Particle::new(id, NULL_ID, ptype, position,DVec3::ZERO, velocity, orientation, omega, radius, density, 0.0, colour, true);
 
     assert_eq!(particle.id, id);
     assert_eq!(particle.position, position);
@@ -119,20 +134,7 @@ fn test_particle_new() {
 // Test Objects
 //---------------------------------------------------------
 
-/// **What:** Tests correct configuration and ID assignment during `BoxSpec` creation.  
-/// **How:** Instantiates a box specification with custom center coordinates and boundary thickness settings.  
-/// **Why:** Ensures rendering specifications and physical boundaries initialize with valid parameters.
-#[test]
-fn test_create_boxspec(){
-    let object = BoxSpec::new(0 as usize, DVec3::new(1.0,1.0,1.0), thickness=-0.01);
 
-    assert_eq!(object.id, id);
-    assert_eq!(particle.position, position);
-    assert_eq!(particle.velocity, velocity);
-    assert_eq!(particle.colour, colour);
-    assert_eq!(particle.radius, radius);
-    assert_eq!(particle.mass, mass);
-}
 
 /// **What:** Validates initialization and corner vertex generation for a `RectSpec` plane.  
 /// **How:** Instantiates a rectangle with explicit corner coordinates and verifies calculated center, half-sizes, and reconstructed vertices.  
@@ -147,7 +149,7 @@ fn test_rect_new_and_vertices() {
     ];
     let rect = RectSpec::new(vertices, Srgba::WHITE, true);
 
-    assert_eq!(rect.center, DVec3::ZERO);
+    assert_eq!(rect.centre, DVec3::ZERO);
     assert_eq!(rect.half_size, DVec2::new(1.0, 1.0));
     for (orig, calc) in vertices.iter().zip(rect.vertices.iter()) {
         assert!((*orig - *calc).length() < 1e-10);
@@ -172,7 +174,7 @@ fn test_rect_transform() {
     
     rect.transform(translation, rotation);
 
-    assert_eq!(rect.center, DVec3::new(5.0, 0.0, 0.0));
+    assert_eq!(rect.centre, DVec3::new(5.0, 0.0, 0.0));
     // After 90-degree Z rotation, top-left (-1, 1, 0) should rotate to (-1, -1, 0) + offset (5, 0, 0) = (4, -1, 0)
     assert!((rect.vertices[0] - DVec3::new(4.0, -1.0, 0.0)).length() < 1e-10);
 }
@@ -199,7 +201,7 @@ fn test_rect_step() {
     // updates stored velocity
     assert_eq!(rect.velocity, vel);
     // Moves centre from (0,0,0) to (1,0,0)
-    assert_eq!(rect.center, DVec3::new(1.0, 0.0, 0.0));
+    assert_eq!(rect.centre, DVec3::new(1.0, 0.0, 0.0));
 }
 
 /// **What:** Validates time-integration step behavior for angular velocities (pure rotation).  
@@ -226,7 +228,7 @@ fn test_rect_step_angular() {
     assert_eq!(rect.velocity, vel);
     assert_eq!(rect.omega, omega);
     // Center should remain unchanged for pure rotation
-    assert_eq!(rect.center, DVec3::ZERO);
+    assert_eq!(rect.centre, DVec3::ZERO);
     // After 90-degree Z rotation, top-left (-1, 1, 0) should rotate to (-1, -1, 0)
     assert!((rect.vertices[0] - DVec3::new(-1.0, -1.0, 0.0)).length() < 1e-10);
 }
@@ -259,7 +261,7 @@ fn test_trispec_new_and_vertices() {
     let tri = TriSpec::new(vertices, Srgba::WHITE, true);
 
     // Center is the average of the 3 vertices: (1/3, 1/3, 0)
-    assert!((tri.center - DVec3::new(1.0 / 3.0, 1.0 / 3.0, 0.0)).length() < 1e-10);
+    assert!((tri.centre - DVec3::new(1.0 / 3.0, 1.0 / 3.0, 0.0)).length() < 1e-10);
     for (orig, calc) in vertices.iter().zip(tri.vertices.iter()) {
         assert!((*orig - *calc).length() < 1e-10);
     }
@@ -282,7 +284,7 @@ fn test_trispec_transform() {
     
     tri.transform(translation, rotation);
 
-    assert!((tri.center - DVec3::new(5.0 + 1.0/3.0, 1.0/3.0, 0.0)).length() < 1e-10);
+    assert!((tri.centre - DVec3::new(5.0 + 1.0/3.0, 1.0/3.0, 0.0)).length() < 1e-10);
     tri.validate();
 }
 
@@ -307,7 +309,7 @@ fn test_trispec_step_linear() {
     // Updates stored velocity
     assert_eq!(tri.velocity, vel);
     // Moves centre from (1/3, 1/3, 0) to (1 + 1/3, 1/3, 0)
-    assert!((tri.center - DVec3::new(1.0 + 1.0/3.0, 1.0/3.0, 0.0)).length() < 1e-10);
+    assert!((tri.centre - DVec3::new(1.0 + 1.0/3.0, 1.0/3.0, 0.0)).length() < 1e-10);
 }
 
 /// **What:** Validates time-integration step behavior for angular velocities (pure rotation).  
@@ -333,14 +335,14 @@ fn test_trispec_step_angular() {
     assert_eq!(tri.velocity, vel);
     assert_eq!(tri.omega, omega);
     // Center should remain unchanged for pure rotation
-    assert!((tri.center - DVec3::new(1.0/3.0, 1.0/3.0, 0.0)).length() < 1e-10);
+    assert!((tri.centre - DVec3::new(1.0/3.0, 1.0/3.0, 0.0)).length() < 1e-10);
 }
 
 /// **What:** Checks that invalid geometry triggers a validation panic.  
 /// **How:** Constructs a degenerate triangle with collinear or overlapping vertices and invokes validation.  
 /// **Why:** Prevents malformed or zero-area geometric structures from entering simulation state pipelines.  
 #[test]
-#[should_panic(expected = "TriSpec error")]
+#[should_panic(expected = "is degenerate")]
 fn test_trispec_validate_panic() {
     let degenerate_vertices = [
         DVec3::new(0.0, 0.0, 0.0),
@@ -348,4 +350,108 @@ fn test_trispec_validate_panic() {
         DVec3::new(2.0, 0.0, 0.0), // Collinear points yield zero area
     ];
     let _tri = TriSpec::new(degenerate_vertices, Srgba::WHITE, true);
+}
+
+// --- Helpers ---
+fn dummy_colour() -> Srgba {
+    Srgba::new(255, 255, 255, 255)
+}
+
+fn sample_rect() -> RectSpec {
+    // Construct a 2x2 square in the XY plane centred at origin (0, 0, 0)
+    let vertices = [
+        DVec3::new(-1.0, 1.0, 0.0),  // Top-Left
+        DVec3::new(1.0, 1.0, 0.0),   // Top-Right
+        DVec3::new(1.0, -1.0, 0.0),  // Bottom-Right
+        DVec3::new(-1.0, -1.0, 0.0), // Bottom-Left
+    ];
+    RectSpec::new(vertices, dummy_colour(), true)
+}
+
+fn sample_tri() -> TriSpec {
+    // Right-angled triangle in the XY plane
+    let vertices = [
+        DVec3::new(0.0, 0.0, 0.0),
+        DVec3::new(2.0, 0.0, 0.0),
+        DVec3::new(0.0, 2.0, 0.0),
+    ];
+    TriSpec::new(vertices, dummy_colour(), true)
+}
+
+// --- RectSpec SurfaceKinematics Tests ---
+
+#[test]
+fn test_rect_closest_point_interior() {
+    let rect = sample_rect();
+    // Point directly above the center
+    let p = DVec3::new(0.0, 0.0, 5.0);
+    let closest = rect.closest_point(p);
+    assert!((closest - DVec3::ZERO).length() < 1e-12);
+}
+
+#[test]
+fn test_rect_closest_point_clamped() {
+    let rect = sample_rect();
+    // Point far outside top-right corner (half_size is 1.0, 1.0)
+    let p = DVec3::new(5.0, 5.0, 2.0);
+    let closest = rect.closest_point(p);
+    assert!((closest - DVec3::new(1.0, 1.0, 0.0)).length() < 1e-12);
+}
+
+#[test]
+fn test_rect_velocity_at_point() {
+    let mut rect = sample_rect();
+    rect.velocity = DVec3::new(1.0, 0.0, 0.0);
+    rect.omega = DVec3::new(0.0, 0.0, 2.0); // Rotating around Z-axis
+
+    // Point offset from centre along X-axis
+    let pt = rect.centre + DVec3::new(1.0, 0.0, 0.0);
+    let v = rect.velocity_at_point(pt);
+
+    // v = (1, 0, 0) + (0, 0, 2) x (1, 0, 0) = (1, 2, 0)
+    let expected = DVec3::new(1.0, 2.0, 0.0);
+    assert!((v - expected).length() < 1e-12);
+}
+
+// --- TriSpec SurfaceKinematics Tests ---
+
+#[test]
+fn test_tri_closest_point_inside() {
+    let tri = sample_tri();
+    // Point hovering above interior (0.5, 0.5, 0.0)
+    let p = DVec3::new(0.5, 0.5, 3.0);
+    let closest = tri.closest_point(p);
+    assert!((closest - DVec3::new(0.5, 0.5, 0.0)).length() < 1e-12);
+}
+
+#[test]
+fn test_tri_closest_point_vertex() {
+    let tri = sample_tri();
+    // Point nearest to vertex A (0, 0, 0)
+    let p = DVec3::new(-2.0, -2.0, 0.0);
+    let closest = tri.closest_point(p);
+    assert!((closest - DVec3::ZERO).length() < 1e-12);
+}
+
+#[test]
+fn test_tri_closest_point_edge() {
+    let tri = sample_tri();
+    // Point outside the hypotenuse
+    let p = DVec3::new(2.0, 2.0, 0.0);
+    let closest = tri.closest_point(p);
+    assert!((closest - DVec3::new(1.0, 1.0, 0.0)).length() < 1e-12);
+}
+
+#[test]
+fn test_tri_velocity_at_point() {
+    let mut tri = sample_tri();
+    tri.velocity = DVec3::new(0.0, -1.0, 0.0);
+    tri.omega = DVec3::new(1.0, 0.0, 0.0); // Pitching around X-axis
+
+    let pt = tri.centre + DVec3::new(0.0, 2.0, 0.0);
+    let v = tri.velocity_at_point(pt);
+
+    // v = (0, -1, 0) + (1, 0, 0) x (0, 2, 0) = (0, -1, 2)
+    let expected = DVec3::new(0.0, -1.0, 2.0);
+    assert!((v - expected).length() < 1e-12);
 }

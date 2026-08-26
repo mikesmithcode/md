@@ -295,3 +295,12 @@ pub fn create_grid_and_settings() -> (CellGrid, SimulationSettings) {
     let grid = CellGrid::new(particle_count, &settings);
     (grid, settings)
 }
+
+pub fn assert_dvec3_near(actual: DVec3, expected: DVec3, eps: f64) {
+    let diff = (actual - expected).length();
+    assert!(
+        diff < eps,
+        "Expected {:?}, got {:?} (diff: {})",
+        expected, actual, diff
+    );
+}

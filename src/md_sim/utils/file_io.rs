@@ -25,7 +25,7 @@ use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec, RectS
 use crate::md_viz::SceneSettings;
 
 
-
+#[derive(Default)]
 /// Encapsulates all major file paths required for running and saving a simulation.
 pub struct SimulationPaths {
     pub output: PathBuf,
@@ -35,6 +35,7 @@ pub struct SimulationPaths {
     pub particle: PathBuf,
     pub video: PathBuf,
 }
+
 
 /// Validates that a target directory exists and contains a specified list of required files.
 ///

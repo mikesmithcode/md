@@ -33,7 +33,7 @@ impl SceneSettings {
 
         // Update the box_size from simulation
         scene_settings.sim_box.box_size = sim_settings.sim_box_size;
-        scene_settings.sim_box.center = sim_settings.sim_box_size * 0.5;
+        scene_settings.sim_box.centre = sim_settings.sim_box_size * 0.5;
 
         scene_settings
     }

@@ -122,15 +122,15 @@ impl SphereTemplate {
     }
 
     fn construct_template(boxspec: &BoxSpec) -> Vec<three_d::Mat4> {
-        let center = boxspec.center;
+        let centre = boxspec.centre;
         let half_size = boxspec.box_size * 0.5;
         let thickness = boxspec.thickness.abs();
 
         // Compute effective outer bounds including thickness
         let (e_min, e_max) = if boxspec.thickness > 0.0 {
-            (center - half_size - DVec3::splat(thickness), center + half_size + DVec3::splat(thickness))
+            (centre - half_size - DVec3::splat(thickness), centre + half_size + DVec3::splat(thickness))
         } else {
-            (center - half_size, center + half_size)
+            (centre - half_size, centre + half_size)
         };
 
         let strut_t = if boxspec.thickness == 0.0 { 0.0 } else { thickness };
@@ -147,22 +147,22 @@ impl SphereTemplate {
 
         let edges = [
             // --- X-axis aligned edges (4 bottom, 4 top) ---
-            (DVec3::new(center.x, y0, z0), DVec3::new(span.x, strut_t, strut_t) * 0.5),
-            (DVec3::new(center.x, y1, z0), DVec3::new(span.x, strut_t, strut_t) * 0.5),
-            (DVec3::new(center.x, y0, z1), DVec3::new(span.x, strut_t, strut_t) * 0.5),
-            (DVec3::new(center.x, y1, z1), DVec3::new(span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(centre.x, y0, z0), DVec3::new(span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(centre.x, y1, z0), DVec3::new(span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(centre.x, y0, z1), DVec3::new(span.x, strut_t, strut_t) * 0.5),
+            (DVec3::new(centre.x, y1, z1), DVec3::new(span.x, strut_t, strut_t) * 0.5),
 
             // --- Y-axis aligned edges (4 vertical bottom-to-top) ---
-            (DVec3::new(x0, center.y, z0), DVec3::new(strut_t, span.y, strut_t) * 0.5),
-            (DVec3::new(x1, center.y, z0), DVec3::new(strut_t, span.y, strut_t) * 0.5),
-            (DVec3::new(x0, center.y, z1), DVec3::new(strut_t, span.y, strut_t) * 0.5),
-            (DVec3::new(x1, center.y, z1), DVec3::new(strut_t, span.y, strut_t) * 0.5),
+            (DVec3::new(x0, centre.y, z0), DVec3::new(strut_t, span.y, strut_t) * 0.5),
+            (DVec3::new(x1, centre.y, z0), DVec3::new(strut_t, span.y, strut_t) * 0.5),
+            (DVec3::new(x0, centre.y, z1), DVec3::new(strut_t, span.y, strut_t) * 0.5),
+            (DVec3::new(x1, centre.y, z1), DVec3::new(strut_t, span.y, strut_t) * 0.5),
 
             // --- Z-axis aligned edges (4 front-to-back) ---
-            (DVec3::new(x0, y0, center.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
-            (DVec3::new(x1, y0, center.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
-            (DVec3::new(x0, y1, center.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
-            (DVec3::new(x1, y1, center.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
+            (DVec3::new(x0, y0, centre.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
+            (DVec3::new(x1, y0, centre.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
+            (DVec3::new(x0, y1, centre.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
+            (DVec3::new(x1, y1, centre.z), DVec3::new(strut_t, strut_t, span.z) * 0.5),
         ];
 
         edges
@@ -187,7 +187,7 @@ impl SphereTemplate {
     pub fn update_transform(&mut self, spec: &ObjectSpec) {
         let boxspec = spec.get_box_spec().expect("Not valid boxspec");
         
-        let pos = boxspec.center;
+        let pos = boxspec.centre;
         let glam_mat = GMat4::from_rotation_translation(
             glam::DQuat::from(boxspec.orientation).as_quat(),
             glam::Vec3::new(pos.x as f32, pos.y as f32, pos.z as f32),
@@ -243,9 +243,9 @@ impl RectTemplate {
         };
 
         let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
-            rectspec.center.x as f32, 
-            rectspec.center.y as f32, 
-            rectspec.center.z as f32,
+            rectspec.centre.x as f32, 
+            rectspec.centre.y as f32, 
+            rectspec.centre.z as f32,
         ));
 
         // Get the 3x3 rotation matrix from glam and extract its axes
@@ -354,9 +354,9 @@ impl TriTemplate {
         };
 
         let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
-            trispec.center.x as f32,
-            trispec.center.y as f32,
-            trispec.center.z as f32,
+            trispec.centre.x as f32,
+            trispec.centre.y as f32,
+            trispec.centre.z as f32,
         ));
 
         // Get the 3x3 rotation matrix from the orientation quaternion

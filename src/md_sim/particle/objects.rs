@@ -70,8 +70,8 @@ pub struct BoxSpec {
     pub id: usize,
     /// Collision or rendering boundary thickness (internal if negative, external if positive).
     pub thickness: f64, 
-    /// Center coordinates of the box in world space.
-    pub center: DVec3,          
+    /// centre coordinates of the box in world space.
+    pub centre: DVec3,          
     #[serde(skip)]
     /// Dimensions of the box along the x, y, and z axes.
     pub box_size: DVec3,
@@ -91,7 +91,7 @@ impl Default for BoxSpec {
         Self {
             id: 0,
             thickness: 0.1,
-            center: DVec3::ZERO,
+            centre: DVec3::ZERO,
             box_size: DVec3::new(10.0, 0.1, 10.0),
             orientation: DQuat::IDENTITY,
             colour: Srgba::WHITE,
@@ -105,7 +105,7 @@ impl BoxSpec {
     ///
     /// # Arguments
     ///
-    /// * `center` - Center position vector in world space.
+    /// * `centre` - centre position vector in world space.
     /// * `box_size` - Full dimensions along the x, y, and z axes.
     /// * `thickness` - Shell thickness value.
     /// * `colour` - RGBA visual colour.
@@ -114,13 +114,13 @@ impl BoxSpec {
     /// # Returns
     ///
     /// * `Self` - An validated instance of `BoxSpec`.
-    pub fn new(center: DVec3, box_size: DVec3, thickness: f64, colour: Srgba, visible: bool) -> Self {
+    pub fn new(centre: DVec3, box_size: DVec3, thickness: f64, colour: Srgba, visible: bool) -> Self {
         let id = next_id();
 
         let box_spec = Self {
             id,
             thickness,
-            center,
+            centre,
             box_size,
             orientation: DQuat::IDENTITY,
             colour,
@@ -134,10 +134,10 @@ impl BoxSpec {
     ///
     /// # Arguments
     ///
-    /// * `translation_delta` - Vector displacement added to the center.
+    /// * `translation_delta` - Vector displacement added to the centre.
     /// * `rotation` - Optional rotational quaternion to multiply against the current orientation.
     pub fn transform(&mut self, translation_delta: DVec3, rotation: Option<DQuat>) {
-        self.center += translation_delta;
+        self.centre += translation_delta;
         if let Some(rot) = rotation {
             self.orientation = rot * self.orientation;
         }
@@ -154,14 +154,19 @@ impl BoxSpec {
     }
 }
 
+pub trait SurfaceKinematics {
+    fn closest_point(&self, particle_pos: DVec3) -> DVec3;
+    fn velocity_at_point(&self, point: DVec3) -> DVec3;
+}
+
 
 /// 2D rectangular plane in 3d space
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RectSpec {
     /// Unique identifier for the rectangle instance.
     pub id: usize,
-    /// Center position vector in world space.
-    pub center: DVec3,
+    /// centre position vector in world space.
+    pub centre: DVec3,
     /// Linear velocity vector of the rectangle.
     pub velocity: DVec3,
     /// Rotation quaternion transforming local space to world space.
@@ -192,47 +197,47 @@ impl RectSpec {
     ///
     /// * `Self` - An initialized and validated `RectSpec` instance.
     pub fn new(vertices: [DVec3; 4], colour: Srgba, visible: bool) -> Self {
-        let id = next_id();
+    let id = next_id();
 
-        let [v0, v1, v2, v3] = vertices;
+    let [v0, v1, v2, v3] = vertices;
 
-        // 1. Calculate center as the average of all 4 corners
-        let center = (v0 + v1 + v2 + v3) / 4.0;
+    // 1. Calculate centre as average of corners
+    let centre = (v0 + v1 + v2 + v3) * 0.25;
 
-        // 2. Calculate edges to find tangent (width direction) and bitangent (height direction)
-        let edge_width = v1 - v0;   // Top edge vector
-        let edge_height = v3 - v0;  // Left edge vector (using v3 - v0 matches Top-Left to Bottom-Left)
+    // 2. Edge vectors (Top edge: v0 -> v1, Left edge pointing UP: v3 -> v0)
+    let edge_width = v1 - v0; 
+    let edge_height = v0 - v3; // Upward vector (+y direction)
 
-        // 3. Half sizes are half the lengths of the respective edges
-        let half_width = edge_width.length() * 0.5;
-        let half_height = edge_height.length() * 0.5;
-        let half_size = DVec2::new(half_width, half_height);
+    // 3. Half sizes
+    let half_width = edge_width.length() * 0.5;
+    let half_height = edge_height.length() * 0.5;
+    let half_size = DVec2::new(half_width, half_height);
 
-        // 4. Build local basis vectors
-        let tangent = edge_width.normalize();
-        let normal = edge_width.cross(edge_height).normalize();
-        let bitangent = normal.cross(tangent).normalize();
+    // 4. Build orthonormal basis vectors
+    let tangent = edge_width.normalize();
+    let bitangent = edge_height.normalize();
+    let normal = tangent.cross(bitangent).normalize();
 
-        // 5. Build orientation quaternion from the rotation matrix columns
-        let mat3 = glam::DMat3::from_cols(tangent, bitangent, normal);
-        let orientation = glam::DQuat::from_mat3(&mat3);
+    // 5. Build orientation quaternion
+    let mat3 = glam::DMat3::from_cols(tangent, bitangent, normal);
+    let orientation = glam::DQuat::from_mat3(&mat3);
 
-        let mut rect = Self {
-            id,
-            center,
-            orientation,
-            velocity: DVec3::ZERO,
-            omega: DVec3::ZERO,
-            half_size,
-            vertices: [DVec3::ZERO; 4],
-            colour,
-            visible,
-        };
+    let mut rect = Self {
+        id,
+        centre,
+        orientation,
+        velocity: DVec3::ZERO,
+        omega: DVec3::ZERO,
+        half_size,
+        vertices: [DVec3::ZERO; 4],
+        colour,
+        visible,
+    };
 
-        rect.validate();
-        rect.update_vertices(); // Populates world-space vertices correctly
-        rect
-    }
+    rect.validate();
+    rect.update_vertices();
+    rect
+}
 
     /// Helper to get the world-space normal on the fly
     pub fn normal(&self) -> DVec3 {
@@ -249,12 +254,12 @@ impl RectSpec {
         self.orientation * DVec3::Y
     }
 
-    /// Recalculates world-space vertices based on current center, orientation, and half_size.
+    /// Recalculates world-space vertices based on current centre, orientation, and half_size.
     pub fn update_vertices(&mut self) {
         let hx = self.half_size.x;
         let hy = self.half_size.y;
 
-        // Local corners relative to center: [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
+        // Local corners relative to centre: [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
         let local_verts = [
             DVec3::new(-hx,  hy, 0.0), // Top-Left
             DVec3::new( hx,  hy, 0.0), // Top-Right
@@ -262,12 +267,12 @@ impl RectSpec {
             DVec3::new(-hx, -hy, 0.0), // Bottom-Left
         ];
 
-        // Transform local corners to world space using orientation and center
+        // Transform local corners to world space using orientation and centre
         self.vertices = [
-            self.center + self.orientation * local_verts[0],
-            self.center + self.orientation * local_verts[1],
-            self.center + self.orientation * local_verts[2],
-            self.center + self.orientation * local_verts[3],
+            self.centre + self.orientation * local_verts[0],
+            self.centre + self.orientation * local_verts[1],
+            self.centre + self.orientation * local_verts[2],
+            self.centre + self.orientation * local_verts[3],
         ];
     }
 
@@ -278,7 +283,7 @@ impl RectSpec {
     /// * `translation_delta` - Positional displacement vector.
     /// * `rotation` - Optional rotation quaternion delta.
     pub fn transform(&mut self, translation_delta: DVec3, rotation: Option<DQuat>) {
-        self.center += translation_delta;
+        self.centre += translation_delta;
         if let Some(rot) = rotation {
             self.orientation = rot * self.orientation;
         }
@@ -331,6 +336,22 @@ impl RectSpec {
 
 
 
+impl SurfaceKinematics for RectSpec {
+    fn closest_point(&self, particle_pos: DVec3) -> DVec3 {
+        let local_pos = self.orientation.inverse() * (particle_pos - self.centre);
+        let clamped_local = DVec3::new(
+            local_pos.x.clamp(-self.half_size.x, self.half_size.x),
+            local_pos.y.clamp(-self.half_size.y, self.half_size.y),
+            0.0,
+        );
+        self.centre + self.orientation * clamped_local
+    }
+
+    fn velocity_at_point(&self, point: DVec3) -> DVec3 {
+        self.velocity + self.omega.cross(point - self.centre)
+    }
+}
+
 ///--------------------------------------------------------------------------------------------------------
 /// TriSpec
 /// -------------------------------------------------------------------------------------------------------
@@ -339,8 +360,8 @@ impl RectSpec {
 pub struct TriSpec {
     /// Unique identifier for the triangle instance.
     pub id: usize,
-    /// Center position vector in world space.
-    pub center: DVec3,
+    /// centre position vector in world space.
+    pub centre: DVec3,
     /// Linear velocity vector of the triangle.
     pub velocity: DVec3,
     /// Rotation quaternion transforming local space to world space.
@@ -349,7 +370,7 @@ pub struct TriSpec {
     pub omega: DVec3,
     /// Evaluated world-space coordinates of the three corners `[v0, v1, v2]`.
     pub vertices: [DVec3; 3],    
-    /// Pre-scaled raw vertices stored relative to the local center `(0,0,0)`.
+    /// Pre-scaled raw vertices stored relative to the local centre `(0,0,0)`.
     pub local_vertices: [DVec3; 3], 
     /// RGBA colour representation for rendering.
     pub colour: Srgba,
@@ -391,8 +412,8 @@ impl TriSpec {
             id, vertices
         );
 
-        // 2. Calculate center as the average of the 3 vertices
-        let center = (v0 + v1 + v2) / 3.0;
+        // 2. Calculate centre as the average of the 3 vertices
+        let centre = (v0 + v1 + v2) / 3.0;
 
         // 3. Build local basis vectors
         let tangent = edge1.normalize();
@@ -405,14 +426,14 @@ impl TriSpec {
 
         // 5. Convert absolute vertices into local-space coordinates relative to (0,0,0)
         let local_vertices = [
-            v0 - center,
-            v1 - center,
-            v2 - center,
+            v0 - centre,
+            v1 - centre,
+            v2 - centre,
         ];
 
         let mut tri = Self {
             id,
-            center,
+            centre,
             velocity: DVec3::ZERO,
             orientation,
             omega: DVec3::ZERO,
@@ -442,12 +463,12 @@ impl TriSpec {
         self.orientation * DVec3::Y
     }
 
-    /// Recalculates world-space vertices based on current center, orientation, and local geometry.
+    /// Recalculates world-space vertices based on current centre, orientation, and local geometry.
     pub fn update_vertices(&mut self) {
         self.vertices = [
-            self.center + self.orientation * self.local_vertices[0],
-            self.center + self.orientation * self.local_vertices[1],
-            self.center + self.orientation * self.local_vertices[2],
+            self.centre + self.orientation * self.local_vertices[0],
+            self.centre + self.orientation * self.local_vertices[1],
+            self.centre + self.orientation * self.local_vertices[2],
         ];
     }
 
@@ -458,7 +479,7 @@ impl TriSpec {
     /// * `translation_delta` - Positional displacement vector.
     /// * `rotation` - Optional rotation quaternion delta.
     pub fn transform(&mut self, translation_delta: DVec3, rotation: Option<DQuat>) {
-        self.center += translation_delta;
+        self.centre += translation_delta;
         if let Some(rot) = rotation {
             self.orientation = rot * self.orientation;
         }
@@ -490,8 +511,8 @@ impl TriSpec {
     }
 
     /// Directly set a new position and orientation.
-    pub fn set(&mut self, new_center: DVec3, new_orientation: DQuat) {
-        self.center = new_center;
+    pub fn set(&mut self, new_centre: DVec3, new_orientation: DQuat) {
+        self.centre = new_centre;
         self.orientation = new_orientation;
         self.update_vertices();
     }
@@ -518,3 +539,65 @@ impl TriSpec {
         );
     }
 }
+
+impl SurfaceKinematics for TriSpec {
+    fn closest_point(&self, particle_pos: DVec3) -> DVec3 {
+        let [a, b, c] = self.vertices;
+        closest_point_on_triangle(particle_pos, a, b, c)
+    }
+
+    fn velocity_at_point(&self, point: DVec3) -> DVec3 {
+        self.velocity + self.omega.cross(point - self.centre)
+    }
+}
+
+/// Helper function to compute closest point on a 3D triangle (vertices v0, v1, v2) to a point p.
+fn closest_point_on_triangle(p: DVec3, a: DVec3, b: DVec3, c: DVec3) -> DVec3 {
+    let ab = b - a;
+    let ac = c - a;
+    let ap = p - a;
+
+    let d1 = ab.dot(ap);
+    let d2 = ac.dot(ap);
+    if d1 <= 0.0 && d2 <= 0.0 {
+        return a;
+    }
+
+    let bp = p - b;
+    let d3 = ab.dot(bp);
+    let d4 = ac.dot(bp);
+    if d3 >= 0.0 && d4 <= d3 {
+        return b;
+    }
+
+    let vc = d1 * d4 - d3 * d2;
+    if vc <= 0.0 && d1 >= 0.0 && d3 <= 0.0 {
+        let v = d1 / (d1 - d3);
+        return a + v * ab;
+    }
+
+    let cp = p - c;
+    let d5 = ab.dot(cp);
+    let d6 = ac.dot(cp);
+    if d6 >= 0.0 && d5 <= d6 {
+        return c;
+    }
+
+    let vb = d5 * d2 - d1 * d6;
+    if vb <= 0.0 && d2 >= 0.0 && d6 <= 0.0 {
+        let w = d2 / (d2 - d6);
+        return a + w * ac;
+    }
+
+    let va = d3 * d6 - d5 * d4;
+    if va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0 {
+        let w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        return b + w * (c - b);
+    }
+
+    let denom = 1.0 / (va + vb + vc);
+    let v = vb * denom;
+    let w = vc * denom;
+    a + ab * v + ac * w
+}
+

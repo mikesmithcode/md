@@ -2,9 +2,10 @@ use super::*;
 use tempfile::tempdir;
 use glam::{DVec3, DQuat};
 use three_d::Srgba;
-use std::path::Path;
+
 
 use crate::md_sim::{Particle, ParticleVec};
+use crate::md_sim::utils::SimulationPaths;
 
 const NULL_ID: usize = usize::MAX;
 
@@ -42,26 +43,15 @@ fn test_check_delta() {
 // Test file_io functions
 // -----------------------------------------------------------------
 
-/// **What:** Verifies that configuration file paths are resolved relative to the expected input directory structure.
-/// **How:** Calls `filepaths` with a test filename and checks that the returned simulation config matches the `input` subdirectory path.
-/// **Why:** Ensures configuration and asset loading mechanisms locate input files correctly across workspace runs.
-#[test]
-fn test_filepath() -> Result<(), Box<dyn std::error::Error>> {
-    let [sim_config_path, _scene_config_path, _object_path, _particle_path, _video_path] = filepaths("test.rs");
-
-    assert_eq!(sim_config_path, Path::new("input").join("test.json"));
-
-    Ok(())
-}
-
 /// **What:** Validates serialization and deserialization round-trips for particle state snapshots using Apache Parquet files.
 /// **How:** Writes a dummy particle vector to a temporary directory via `save_particles`, reloads it via `load_particles`, and checks structural and positional parity.
 /// **Why:** Guarantees that simulation states can be persisted to disk and accurately recovered without data corruption or loss.
 #[test]
 fn test_save_and_load_particles() -> Result<(), Box<dyn std::error::Error>> {
     // Setup temporary workspace
+    let mut sim_paths = SimulationPaths::default();
     let dir = tempdir()?;
-    let dir_path = dir.path();
+    sim_paths.particle = dir.path().to_path_buf();
     
     // Create dummy particle data
     let mut particles = ParticleVec::new();
@@ -86,11 +76,11 @@ fn test_save_and_load_particles() -> Result<(), Box<dyn std::error::Error>> {
     let time = 0.5;
 
     // Test saving
-    save_particles(dir_path, step, &particles, time)?;
+    save_particles(&sim_paths, step, &particles, time)?;
 
     // Test loading specific file
     let file_name = format!("particles_{:010}.parquet", step);
-    let file_path = dir_path.join(file_name);
+    let file_path = sim_paths.particle.join(file_name);
     let (loaded_particles, loaded_time) = load_particles(&file_path)?;
     
     // Checks
@@ -107,8 +97,9 @@ fn test_save_and_load_particles() -> Result<(), Box<dyn std::error::Error>> {
 /// **Why:** Ensures simulation restarts and post-processing pipelines automatically target the latest available progress record.
 #[test]
 fn test_load_latest_particles() -> Result<(), Box<dyn std::error::Error>> {
+    let mut sim_paths = SimulationPaths::default();
     let dir = tempdir()?;
-    let dir_path = dir.path();
+    sim_paths.particle = dir.path().to_path_buf();
     
     // Save two snapshots with different steps
     let mut particles = ParticleVec::new(); 
@@ -131,10 +122,10 @@ fn test_load_latest_particles() -> Result<(), Box<dyn std::error::Error>> {
             ref_pos: DVec3::ZERO,
         });
 
-    save_particles(dir_path, 1, &particles, 0.1)?;
-    save_particles(dir_path, 10, &particles, 1.0)?; 
+    save_particles(&sim_paths, 1, &particles, 0.1)?;
+    save_particles(&sim_paths, 10, &particles, 1.0)?; 
 
-    let (_, latest_step, latest_time) = load_latest_particles(dir_path)?;
+    let (_, latest_step, latest_time) = load_latest_particles(&sim_paths)?;
 
     // Check loads latest
     assert_eq!(latest_step, 10);

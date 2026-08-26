@@ -2,14 +2,13 @@
 use glam::DVec3;
 
 use crate::md_sim::particle::SimulationModel;
-use crate::md_sim::{RectSpec, ObjectSpec, ParticleVec, SimulationSettings};
+use crate::md_sim::{ObjectSpec, ParticleVec, SimulationSettings, SurfaceKinematics};
 
 
 /// Computes contact forces and torques arising from collisions between a particle and simulation objects.
 ///
 /// This acts as a dispatcher function that inspects the object specification variant 
-/// (e.g., rectangles, triangles) and delegates to the appropriate geometry collision solver.
-/// Currently only implements Rectangles.
+/// (e.g., rectangles, triangles) and delegates to generic surface collision solver.
 ///
 /// # Arguments
 ///
@@ -29,115 +28,119 @@ pub fn add_particle_object_collision(
     object_spec: &ObjectSpec,
     mut force: DVec3,
     mut torque: DVec3,
-    settings: &SimulationSettings
+    settings: &SimulationSettings,
 ) -> (DVec3, DVec3) {
-    
-
-    // Extract rectangle properties
     match object_spec {
-        ObjectSpec::Rectangle(r) => {
-            let (f, t) = particle_rectangle_collision(i, particles, r, force, torque, settings);
-            force = f;
-            torque = t;
-        },
-        _ => return (force, torque),
-    };
+        ObjectSpec::Rectangle(rect) => {
+            (force, torque) = particle_contact_response(i, particles, rect, force, torque, settings);
+        }
+        ObjectSpec::Triangle(tri) => {
+            (force, torque) = particle_contact_response(i, particles, tri, force, torque, settings);
+        }
+        _ => {}
+    }
 
     (force, torque)
 }
 
-// Calculates contact mechanics (normal forces and optional Coulomb/viscous friction) 
-// between a spherical particle and a rotating/translating 3D rectangular object.
-//
-// # Arguments
-//
-// * `i` - Index of the colliding particle.
-// * `particles` - Reference to the particle state buffers.
-// * `rect_spec` - Geometry, position, orientation, and kinematic properties of the rectangle.
-// * `force` - Accumulated incoming force vector.
-// * `torque` - Accumulated incoming torque vector.
-// * `settings` - Global simulation parameters defining the contact model (`Solid` or `SolidFriction`).
-//
-// # Returns
-//
-// * `(DVec3, DVec3)` - The force and torque contributions from the rectangle-particle collision.
-fn particle_rectangle_collision(
+/// Computes the linear force and rotational torque exerted on a particle 
+/// colliding with a moving rigid surface (`SurfaceKinematics`).
+///
+/// This function uses a viscoelastic spring-dashpot contact model in the normal 
+/// direction and a viscous-damping Coulomb friction model in the tangential direction.
+///
+/// # Mathematical Model
+///
+/// 1. **Overlap & Geometry**:
+///    - $\mathbf{\delta} = \mathbf{p}_{\text{particle}} - \mathbf{p}_{\text{closest}}$
+///    - $\text{overlap} = R - \|\mathbf{\delta}\|$
+///    - $\mathbf{n} = \frac{\mathbf{\delta}}{\|\mathbf{\delta}\|}$ (unit vector towards particle)
+///
+/// 2. **Relative Velocity**:
+///    - Particle contact point: $\mathbf{r}_{\text{particle}} = -\mathbf{n} R$
+///    - Surface velocity at contact: $\mathbf{v}_{\text{surface}} = \text{surface.velocity\_at\_point}(\mathbf{p}_{\text{closest}})$
+///    - Particle contact velocity: $\mathbf{v}_{\text{particle\_contact}} = \mathbf{v}_{\text{particle}} + \boldsymbol{\omega}_{\text{particle}} \times \mathbf{r}_{\text{particle}}$
+///    - Relative velocity: $\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{particle\_contact}} - \mathbf{v}_{\text{surface}}$
+///
+/// 3. **Normal Force ($F_n$)**:
+///    $$\mathbf{F}_n = \max(0, k_n \cdot \text{overlap} - \gamma_n (\mathbf{v}_{\text{rel}} \cdot \mathbf{n})) \mathbf{n}$$
+///
+/// 4. **Tangential Friction Force ($F_t$)**:
+///    - Tangential velocity: $\mathbf{v}_{\text{tang}} = \mathbf{v}_{\text{rel}} - (\mathbf{v}_{\text{rel}} \cdot \mathbf{n})\mathbf{n}$
+///    - Clamped by Coulomb limit: $\|\mathbf{F}_t\| \le \mu \|\mathbf{F}_n\|$
+///
+/// 5. **Induced Torque ($\boldsymbol{\tau}$)**:
+///    $$\boldsymbol{\tau} = \mathbf{r}_{\text{particle}} \times \mathbf{F}_t$$
+///
+/// # Arguments
+///
+/// * `i` - Index of the active particle within the `ParticleVec` container.
+/// * `particles` - Read-only reference to particle storage vectors (positions, velocities, radii, etc.).
+/// * `surface` - Reference to any geometry implementing [`SurfaceKinematics`].
+/// * `force` - Accumulator for total force applied to particle `i`. Modified and returned.
+/// * `torque` - Accumulator for total torque applied to particle `i`. Modified and returned.
+/// * `settings` - Simulation parameters containing contact stiffness, damping, and friction coefficients.
+///
+/// # Returns
+///
+/// * `(DVec3, DVec3)` - Updated `(force, torque)` tuple for particle `i`.
+///
+/// # Panics
+///
+/// Panics if `settings.model` is not variant [`SimulationModel::Frictional`].
+pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
     i: usize,
     particles: &ParticleVec,
-    rect_spec: &RectSpec,
+    surface: &S,
     mut force: DVec3,
     mut torque: DVec3,
     settings: &SimulationSettings,
 ) -> (DVec3, DVec3) {
-    // Extract simulation parameters
-    let (pl_stiffness, pl_damping, pl_mu) = match &settings.model {
-        SimulationModel::Frictional(p) => (p.plane_stiffness, p.plane_damping, p.plane_mu),
-        _ => panic!("Unsupported model for granular collision"),
+    let (pl_stiffness, pl_damping, pl_mu) = if let SimulationModel::Frictional(p) = &settings.model {
+        (p.plane_stiffness, p.plane_damping, p.plane_mu)
+    } else {
+        panic!("Unsupported model for granular collision");
     };
-    
+
     let particle_pos = particles.position[i];
     let particle_vel = particles.velocity[i];
     let particle_omega = particles.omega[i];
     let radius = particles.radius[i];
 
-    // Rectangle kinematics & pose
-    let rect_center = rect_spec.center;
-    let orientation_inv = rect_spec.orientation.inverse();
+    let closest_point = surface.closest_point(particle_pos);
+    let delta = particle_pos - closest_point;
+    let dist_sq = delta.length_squared();
 
-    // Transform to rectangle's local coords. Centre of rectangle in local coords is (0,0,0) and normal along +z.
-    let to_particle = particle_pos - rect_center;
-    let local_pos = orientation_inv * to_particle;
-
-    // 2. Find the closest point on the rectangle surface 
-    // half_size is a DVec2 (x = half_width, y = half_height), and Z is flat on the plane (0.0)
-    let clamped_local = DVec3::new(
-        local_pos.x.clamp(-rect_spec.half_size.x, rect_spec.half_size.x),
-        local_pos.y.clamp(-rect_spec.half_size.y, rect_spec.half_size.y),
-        0.0 // The plane surface lies at local z = 0
-    );
-
-    // Find distance between closest point and particle centre
-    let local_delta = local_pos - clamped_local;
-    let dist_sq = local_delta.length_squared();
-
-    // Check for collision overlap (&& dist_sq > 1e-18)
-    if dist_sq < radius * radius  {
+    // Check overlap
+    if dist_sq < radius * radius && dist_sq > 1e-18 {
         let dist = dist_sq.sqrt();
         let overlap = radius - dist;
+        let normal = delta / dist; // Surface normal towards particle
 
-        // Surface normal pointing from the rectangle surface to the particle (in world space)
-        let local_normal = local_delta / dist;
-        let normal = rect_spec.orientation * local_normal;
-        
+        // Query surface velocity directly from Option 1 trait implementation
+        let surface_vel = surface.velocity_at_point(closest_point);
 
-        // 3. Compute Rectangle's Surface Velocity at the exact contact point in world space
-        // r_rect is the vector from the rectangle center to the contact point in world coordinates
-        let clamped_global_offset = rect_spec.orientation * clamped_local;
-        let rect_surface_vel = rect_spec.velocity + rect_spec.omega.cross(clamped_global_offset);
-
-        // 4. Contact point vector relative to the sphere's center
-        let r_particle = -normal * radius;
-
-        // Total velocity of the particle's contact point (translation + spin)
+        // Particle contact point velocity. r_particle is particle centre to contact point and not particle radius for torque calc.
+        let r_particle = -normal * dist;
         let particle_contact_vel = particle_vel + particle_omega.cross(r_particle);
 
-        // Relative velocity between particle contact point and rectangle surface velocity
-        let rel_vel = particle_contact_vel - rect_surface_vel;
+        // Relative velocity
+        let rel_vel = particle_contact_vel - surface_vel;
         let normal_vel = rel_vel.dot(normal);
 
-        // Normal force (spring-dashpot model, resisting closure)
+        // Normal force (spring-dashpot)
         let f_normal_mag = (pl_stiffness * overlap - pl_damping * normal_vel).max(0.0);
         let f_normal_vec = normal * f_normal_mag;
 
-        // 5. Tangential (Frictional) relative velocity
+        // Friction force
         let v_tang = rel_vel - normal_vel * normal;
-
         let mut f_friction_vec = DVec3::ZERO;
+
         if v_tang.length_squared() > 1e-18 {
             let f_t_ideal = -v_tang * pl_damping;
             let limit = pl_mu * f_normal_mag;
-
             let f_t_mag_sq = f_t_ideal.length_squared();
+
             f_friction_vec = if f_t_mag_sq > limit * limit {
                 f_t_ideal * (limit / f_t_mag_sq.sqrt())
             } else {
@@ -145,10 +148,10 @@ fn particle_rectangle_collision(
             };
         }
 
-        // Accumulate forces and torques acting on the sphere
         force += f_normal_vec + f_friction_vec;
         torque += r_particle.cross(f_friction_vec);
     }
 
     (force, torque)
 }
+

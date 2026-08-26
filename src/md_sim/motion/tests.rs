@@ -1,8 +1,8 @@
 
 
-use glam::{DVec3, DMat3};
+use glam::DVec3;
 
-use crate::md_sim::utils::{create_particle_vec, create_single_molecule, create_molecule_vec, setup_single_molecule_data};
+use crate::md_sim::utils::{create_particle_vec, create_single_molecule, create_molecule_vec, setup_single_molecule_data, assert_dvec3_near};
 use crate::md_sim::particle::{calculate_molecule_com, calculate_kinetic_energy, calculate_total_angular_momentum};
 use crate::md_sim::motion::{enforce_boundary,integrate_rigid_bodies, integrate_rigid_bodies_correct, integrate_singleparticle_correct, integrate_singleparticle_update, change_rad};
 use crate::md_sim::SimulationSettings;

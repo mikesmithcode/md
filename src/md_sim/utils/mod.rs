@@ -5,9 +5,10 @@ pub mod test_utils;
 use glam::DVec3;
 
 pub use file_io::{filepaths, save_sim_settings, load_sim_settings, save_particles, load_latest_particles, load_particles, load_scene_settings, load_latest_objects, save_objects, SimulationPaths};
-pub use test_utils::{create_molecule_vec, create_single_molecule, create_particle_vec, setup_single_molecule_data, create_grid_and_settings};
+pub use test_utils::{assert_dvec3_near,create_molecule_vec, create_single_molecule, create_particle_vec, setup_single_molecule_data, create_grid_and_settings};
 
-
+#[cfg(test)]
+mod tests;
 
 
 // -------------------------------------------------------------------------------------------------

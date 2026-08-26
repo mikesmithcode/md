@@ -8,7 +8,7 @@ mod objects;
 // Re-export the traits and key functions for easier access
 // This allows you to call forces::Force instead of forces::force::Force
 pub use single::{add_weight, add_viscous_drag};
-pub use objects::add_particle_object_collision;
+pub use objects::{add_particle_object_collision};
 pub use pairwise::{add_particle_particle_collision, add_coulomb};
 pub use neighbours::CellGrid;
 //pub use bonds::*;
@@ -19,6 +19,8 @@ use glam::DVec3;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::{ObjectSpec, SimulationSettings};
 
+#[cfg(test)]
+mod tests;
 
 /// Defines the physical interactions, force constraints, and update phases for a simulation.
 ///

@@ -14,8 +14,9 @@ use md::md_viz::scene::Scene;
 
 // Imports from simulation library
 use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, RectSpec, TriSpec, Simulation, SimulationSettings};
+use md::md_sim::utils::file_io::SimulationPaths;
 use md::md_sim::force::{add_weight, add_particle_object_collision};
-use md::md_sim::motion::{integrate_singleparticle_update, integrate_singleparticle_correct};
+use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::utils::{filepaths, save_particles, load_latest_particles};
 use md::md_sim::particle::MoleculeData;
 
@@ -92,7 +93,7 @@ pub fn main() {
     // copies the config file in input folder to the output folder appending sim index.
     // -----------------------------------------------------------
     
-    let (particles, start_step, time) = load_latest_particles(&particle_path).expect("Failed to return latest snapshot");
+    let (particles, start_step, time) = load_latest_particles(&sim_filepaths).expect("Failed to return latest snapshot");
     
     // load settings
     let sim_settings: SimulationSettings = SimulationSettings::new(&sim_filepaths, start_step).expect("sim settings not loaded correctly"); 
@@ -124,7 +125,7 @@ pub fn main() {
     //--------------------------------------------------------------   
 
     let mut event_loop = EventLoop::new(); 
-    let mut scene: Scene = Scene::new(&event_loop, sim.get_particles(), sim.get_objects(), scene_config_path, &sim_settings);   
+    let mut scene: Scene = Scene::new(&event_loop, sim.get_particles(), sim.get_objects(), &sim_settings);   
     
     //let _ = scene.start_recording(&video_path, start_step);
 
