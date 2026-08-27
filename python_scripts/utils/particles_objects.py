@@ -13,6 +13,7 @@ def generate_molecules(
     density: Union[float, Sequence[float]] = 1200,
     particle_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (255.0, 0.0, 0.0, 255.0),
     charge_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (0.0, 0.0, 255.0, 255.0),
+    ptype: Union[int, Sequence[int]] = 0,
     offset=0.0001
 ):
     """
@@ -43,6 +44,7 @@ def generate_molecules(
     densities = parse_scalar(density)
     p_colours = parse_tuple(particle_colour)
     c_colours = parse_tuple(charge_colour)
+    ptype_vals = parse_scalar(ptype)
     
     phi = np.random.uniform(-np.pi, np.pi, size=n_molecules)
 
@@ -60,6 +62,7 @@ def generate_molecules(
         dens = densities[i]
         p_col = p_colours[i]
         c_col = c_colours[i]
+        ptype = ptype_vals[i]
 
         mass = (4.0 / 3.0) * np.pi * (r ** 3) * dens
 
@@ -67,7 +70,7 @@ def generate_molecules(
             "t": [0.0],
             "id": [particle_id],
             "molecule_id": [mol_id],
-            "ptype": [0],
+            "ptype": [ptype],
             "x": [x], "y": [y], "z": [z],
             "rel_x": [0.0], "rel_y": [0.0], "rel_z": [0.0],
             "vx": [vx], "vy": [vy], "vz": [vz],

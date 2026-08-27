@@ -1,22 +1,22 @@
 {
-  "dt": 5e-8,
+  "dt": 1e-6,
   "sim_box_size": [0.06, 0.01, 0.06],
   "periodic": [true,true,false],
   "parallel":false,
   "cutoff": 0.05,
   "skin": 0.05,
   "start": 0,
-  "num_steps": 500000,
-  "dump": 1000,
+  "num_steps": 50000,
+  "dump": 10,
   "interaction_ptypes": [[0,2]],
   "collision_ptypes":[0],
   "model": {
     "type": "Frictional",
     "stiffness": 50000.0,
-    "damping": 2.0,
+    "damping": 0.0,
     "mu": 0.4,
     "plane_stiffness": 50000.0,
-    "plane_damping" : 2.0,
+    "plane_damping" : 0.0,
     "plane_mu" : 0.4
   }
 }

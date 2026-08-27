@@ -15,25 +15,15 @@ box = config["sim_box_size"]
 print(box)
 
 #Two moving particles and one static
-positions = [(0.02,0.025,0.04), (0.04,0.025,0.04), (0.04, 0.025, 0.005)]
+positions = [(0.02,0.025,0.03), (0.04,0.025,0.03), (0.04, 0.025, 0.005)]
 velocities = [(0.0,0.0,-10.0),(0.0,0.0,-10.0), (0.0,0.0,0.0)]
+radii = [0.0005, 0.0005, 0.005]
+ptypes = [0, 0, 2]
 
 d_r = [0.5,0.5,0.5]
 
-molecules = list(generate_molecules(positions, v=velocities, d_r=d_r))
+molecules = list(generate_molecules(positions, v=velocities, d_r=d_r, rad=radii, ptype=ptypes))
 
-df = molecules[2]
-
-# 2. Update the DataFrame using pl.when() / pl.then() / pl.otherwise()
-updated_df = df.with_columns(
-    pl.when(pl.col("id") == 4)
-    .then(2)  # Set ptype to 2 where id is 4
-    .otherwise(pl.col("ptype"))  # Keep existing ptype values elsewhere
-    .alias("ptype")
-)
-
-# 3. Put it back into the list (if needed)
-molecules[2] = updated_df
 
 df = pl.concat(molecules)
 df.write_parquet(particles_filepath)
