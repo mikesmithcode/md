@@ -332,28 +332,34 @@ impl Scene {
     
     /// Polls incoming window events, updates camera controls, and returns a boolean indicating whether a close was requested.
     pub fn poll_events(&mut self, event_loop: &mut EventLoop<()>) -> bool {
-        let mut close_requested = false;
+    let mut close_requested = false;
 
-        event_loop.run_return(|event, _, control_flow| {
-            *control_flow = winit::event_loop::ControlFlow::Exit;
+    event_loop.run_return(|event, _, control_flow| {
+        // 1. Keep polling pending events by default
+        *control_flow = winit::event_loop::ControlFlow::Poll;
 
-            if let WinitEvent::WindowEvent { event, window_id } = event {
-                if self.winit_window.id() == window_id {
-                    self.camera_control.handle_event(&event);
-
-                    if let WindowEvent::CloseRequested = event {
-                        close_requested = true;
-                    }
+        match event {
+            WinitEvent::WindowEvent { event, window_id } if self.winit_window.id() == window_id => {
+                self.camera_control.handle_event(&event);
+                if let WindowEvent::CloseRequested = event {
+                    close_requested = true;
                 }
             }
-        });
-
-        if self.camera_control.update {
-            let current_target = self.camera.target();
-            self.camera_control.update_camera(&mut self.camera, current_target);
-            self.camera_control.update = false;
+            // 2. Once Wayland/Windows has drained all pending inputs, exit the event pump
+            // Note: If you are on winit 0.29+, use WinitEvent::AboutToWait instead
+            WinitEvent::MainEventsCleared => { 
+                *control_flow = winit::event_loop::ControlFlow::Exit;
+            }
+            _ => {}
         }
-        
-        close_requested
+    });
+
+    if self.camera_control.update {
+        let current_target = self.camera.target();
+        self.camera_control.update_camera(&mut self.camera, current_target);
+        self.camera_control.update = false;
     }
+
+    close_requested
+}
 }

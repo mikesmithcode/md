@@ -6,7 +6,7 @@
   "cutoff": 0.05,
   "skin": 0.05,
   "start": 0,
-  "num_steps": 5000000,
+  "num_steps": 500000,
   "dump": 1000,
   "interaction_ptypes": [[0,2]],
   "collision_ptypes":[0],
