@@ -96,16 +96,23 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
     mut torque: DVec3,
     settings: &SimulationSettings,
 ) -> (DVec3, DVec3) {
-    //Ignore if not a collision ptype
+    // Ignore if not a collision ptype
     if !settings.collision_ptypes.contains(&(particles.ptype[i] as u8)){
         return (force, torque)
     }
 
-    let (pl_stiffness, pl_damping, pl_mu) = if let SimulationModel::Frictional(p) = &settings.model {
-        (p.plane_stiffness, p.plane_damping, p.plane_mu)
+    let (modulus, plane_modulus, damping_coeff, mu) = if let SimulationModel::Frictional(p) = &settings.model {
+        (p.modulus, p.plane_modulus, p.plane_damping_coeff, p.plane_mu)
     } else {
         panic!("Unsupported model for granular collision");
     };
+
+    // Effective modulus for two different materials (assuming nu ≈ 0.3 for both)
+    // 1 / E* = (1 - 0.3^2)/Y_particle + (1 - 0.3^2)/Y_plane
+    let y_p = modulus;
+    let y_w = plane_modulus;
+    let compliance = 0.91 * ((1.0 / y_p) + (1.0 / y_w));
+    let e_star = 1.0 / compliance;
 
     let particle_pos = particles.position[i];
     let particle_vel = particles.velocity[i];
@@ -122,10 +129,25 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
         let overlap = radius - dist;
         let normal = delta / dist; // Surface normal towards particle
 
+        // -----------------------------------------------------------------
+        // GEOMETRIC & MATERIAL STIFFNESS FOR PARTICLE-PLANE
+        // -----------------------------------------------------------------
+        // Effective radius for sphere-plane contact is simply the sphere's radius
+        let r_eff = radius;
+
+        // Base contact stiffness derived from Hertzian-linear approximation
+        let base_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
+        // -----------------------------------------------------------------
+
+        // Effective mass for a particle hitting a stationary/infinite wall is just the particle's mass
+        let m_eff = particles.mass[i];
+        let eff_stiffness = base_stiffness;
+        let eff_damping = 2.0 * damping_coeff * (m_eff * eff_stiffness).sqrt();
+
         // Query surface velocity directly from Option 1 trait implementation
         let surface_vel = surface.velocity_at_point(closest_point);
 
-        // Particle contact point velocity. r_particle is particle centre to contact point and not particle radius for torque calc.
+        // Particle contact point velocity
         let r_particle = -normal * dist;
         let particle_contact_vel = particle_vel + particle_omega.cross(r_particle);
 
@@ -133,8 +155,8 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
         let rel_vel = particle_contact_vel - surface_vel;
         let normal_vel = rel_vel.dot(normal);
 
-        // Normal force (spring-dashpot)
-        let f_normal_mag = (pl_stiffness * overlap - pl_damping * normal_vel).max(0.0);
+        // Normal force
+        let f_normal_mag = (eff_stiffness * overlap - eff_damping * normal_vel).max(0.0);
         let f_normal_vec = normal * f_normal_mag;
 
         // Friction force
@@ -142,8 +164,8 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
         let mut f_friction_vec = DVec3::ZERO;
 
         if v_tang.length_squared() > 1e-18 {
-            let f_t_ideal = -v_tang * pl_damping;
-            let limit = pl_mu * f_normal_mag;
+            let f_t_ideal = v_tang * -eff_damping;
+            let limit = mu * f_normal_mag;
             let f_t_mag_sq = f_t_ideal.length_squared();
 
             f_friction_vec = if f_t_mag_sq > limit * limit {
@@ -159,4 +181,3 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
 
     (force, torque)
 }
-

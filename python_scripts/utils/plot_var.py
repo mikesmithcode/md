@@ -47,12 +47,8 @@ plt.title("z vel")
 plt.plot(vz0, "r-")
 plt.plot(vz1, "b-")
 
-overlap0 = [max(0.0,((r1 + r2) - abs(z - z2))/2.0) for z in z0]
-overlap1 = [max(0.0,r1-abs(z - z_surf)) for z in z1]
-
-print(sum(overlap0))
 plt.figure(2)
-plt.title("overlap")
-plt.plot(overlap0, "r-")#ball on ball
-plt.plot(overlap1, "b-")#ball on surface
+plt.title("z pos")
+plt.plot(z0, "r-")#ball on ball
+plt.plot(z1, "b-")#ball on surface
 plt.show()

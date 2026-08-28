@@ -1,6 +1,7 @@
 """Setup script for coeff"""
 import polars as pl
 import matplotlib
+import numpy as np
 matplotlib.use('qtAgg')
 
 
@@ -14,10 +15,25 @@ print(objects_filepath)
 box = config["sim_box_size"]
 print(box)
 
+
+#Rectangle fills the box and has a slope.
+#Rectangle fills half the box.
+w=box[0]
+h=box[1]
+z=0.035
+theta = 5
+dz = w*np.tan(np.pi*theta/180.0)
+rect = [(0.0,0.0,z),(0.0,h,z),(w,h,z+dz),(w,0.0,z+dz)]
+
+r_ball = 0.005
+x_ball = 0.05
+z_ball = z + x_ball *np.tan(np.pi*theta/180.0) + r_ball + 0.0001
+
+
 #Two moving particles and one static
-positions = [(0.02,0.025,0.045), (0.04,0.025,0.045), (0.04, 0.025, 0.02)]
-velocities = [(0.0,0.0,-10.0),(0.0,0.0,-10.0), (0.0,0.0,0.0)]
-radii = [0.0005, 0.0005, 0.015]
+positions = [(0.02,0.025,5*r_ball), (0.05,0.025,z_ball), (0.021, 0.025, 2*r_ball)]
+velocities = [(0.0,0.0,0.0),(0.0,0.0,0.0), (0.0,0.0,0.0)]
+radii = [r_ball, r_ball, 2*r_ball]
 ptypes = [0, 0, 2]
 
 d_r = [0.5,0.5,0.5]
@@ -28,11 +44,7 @@ molecules = list(generate_molecules(positions, v=velocities, d_r=d_r, rad=radii,
 df = pl.concat(molecules)
 df.write_parquet(particles_filepath)
 
-#Rectangle fills half the box.
-w=box[0]/2.0
-h=box[1]
-z=0.035
-rect = [(0.0,0.0,z),(0.0,h,z),(w,h,z),(w,0.0,z)]
+
 # Create the rectangle DataFrame
 rect_df = create_rectangle(
     vertices=rect, 

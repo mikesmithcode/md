@@ -13,8 +13,7 @@ def generate_molecules(
     density: Union[float, Sequence[float]] = 1200,
     particle_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (255.0, 0.0, 0.0, 255.0),
     charge_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (0.0, 0.0, 255.0, 255.0),
-    ptype: Union[int, Sequence[int]] = 0,
-    offset=0.0001
+    ptype: Union[int, Sequence[int]] = 0
 ):
     """
     A generator that yields a Polars DataFrame containing both the particle 
@@ -90,7 +89,7 @@ def generate_molecules(
             "id": [particle_id],
             "molecule_id": [mol_id],
             "ptype": [1],
-            "x": [x + rel_pos * np.cos(phi[i])], "y": [y+offset], "z": [z + rel_pos * np.sin(phi[i])],
+            "x": [x + rel_pos * np.cos(phi[i])], "y": [y], "z": [z + rel_pos * np.sin(phi[i])],
             "rel_x": [rel_pos * np.cos(phi[i])], "rel_y": [0.0], "rel_z": [rel_pos * np.sin(phi[i])],
             "vx": [vx], "vy": [vy], "vz": [vz],
             "wx": [wx], "wy": [wy], "wz": [wz],
@@ -102,6 +101,7 @@ def generate_molecules(
         }
         particle_id += 1
         mol_id += 1
+    
 
         # Combine particle and charge into a single DataFrame for this molecule
         df = pl.concat([pl.DataFrame(particle), pl.DataFrame(charge)])

@@ -53,9 +53,10 @@ pub fn integrate_singleparticle_update(
 
     let _is_rotating = matches!(settings.model, SimulationModel::Frictional(_));
 
-    for (pos, vel, &mass, &force) in izip!(
+    for (pos, vel, &radius, &mass, &force) in izip!(
         &mut particles.position,
         &mut particles.velocity,
+        &particles.radius,
         &particles.mass,
         forces, 
     ) {
@@ -67,7 +68,7 @@ pub fn integrate_singleparticle_update(
         *pos += *vel * dt;
         
         // Apply boundary conditions
-        enforce_boundary(pos, vel, sim_box_size, periodic);
+        enforce_boundary(pos, vel, sim_box_size, periodic, radius);
     }
 }
 
@@ -199,7 +200,7 @@ pub fn integrate_rigid_bodies(
             particles.orientation[idx] = new_orientation;
             particles.omega[idx] = new_omega;
 
-            enforce_boundary(&mut particles.position[idx], &mut particles.velocity[idx], settings.sim_box_size, settings.periodic);
+            enforce_boundary(&mut particles.position[idx], &mut particles.velocity[idx], settings.sim_box_size, settings.periodic, particles.radius[idx]);
         }
     }
 }

@@ -71,19 +71,22 @@ pub fn add_particle_particle_collision(
         return (force, torque);
     }
 
-  
-
-    // Extract params
-    let (stiffness, damping, mu) = match &settings.model {
-        SimulationModel::Frictional(p) => (p.stiffness, p.damping, p.mu),
+    // Extract params (using modulus instead of global stiffness)
+    let (modulus, damping_coeff, mu) = match &settings.model {
+        SimulationModel::Frictional(p) => (p.modulus, p.damping_coeff, p.mu),
         _ => panic!("Unsupported model for granular collision"),
     };
+
+    // Assume poisson ~0.3 for same material: E* = Y / (2 * (1 - nu^2)) ≈ 0.55 * modulus
+    let e_star = 0.55 * modulus;
 
     // Calc separation etc
     let mut delta = particles.position[i] - particles.position[j];
     check_delta(&mut delta, settings.sim_box_size, settings.periodic);
 
-    let combined_rad = particles.radius[i] + particles.radius[j];
+    let rad_i = particles.radius[i];
+    let rad_j = particles.radius[j];
+    let combined_rad = rad_i + rad_j;
     let dist_sq = delta.length_squared();
 
     // contact?
@@ -92,25 +95,33 @@ pub fn add_particle_particle_collision(
         let normal = delta / dist; 
         let overlap = combined_rad - dist; 
 
-        // --- EFFECTIVE MASS CORRECTION ---
+        // -----------------------------------------------------------------
+        // GEOMETRIC & MATERIAL STIFFNESS DERIVATION
+        // -----------------------------------------------------------------
+        // 1. Effective radius for the two spheres (handles size disparities naturally)
+        let r_eff = (rad_i * rad_j) / combined_rad;
+
+        // 2. Base contact stiffness derived from Hertzian-linear approximation 
+        // (Factor of 4/3 comes from Hertz theory; scaling by sqrt(r_eff) matches contact mechanics)
+        let eff_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
+        // -----------------------------------------------------------------
+
         // Check if particle j is a collision ptype
-        let is_j_coll = settings.collision_ptypes.contains(&(particles.ptype[j] as u8));
-       // -----------------------------
-        let m_i = particles.mass[i];
+        let is_j_coll = settings.collision_ptypes.contains(&(particles.ptype[j] as u8));      
         
-        // Rule 2 & 3: If j is a collision ptype, use its real mass. 
-        // If j is NOT a collision ptype, treat it as infinite mass.
-        let m_eff = if !is_j_coll {
-            m_i
+        let m_i = particles.mass[i];
+        // If j is not collision ptype, treat mass as infinite
+        // else use its real mass. 
+        let m_scale = if !is_j_coll {
+            1.0
         } else {
+            
             let m_j = particles.mass[j];
-            (m_i * m_j) / (m_i + m_j)
+            m_j / (m_i + m_j)
         };
 
-        let mass_scale = m_eff / m_i;
-        let eff_stiffness = stiffness * mass_scale;
-        let eff_damping = damping * mass_scale;
-        // ---------------------------------
+        let m_eff = m_scale * m_i;
+        let eff_damping = 2.0*damping_coeff * (m_eff * eff_stiffness).sqrt() ;
 
         // Normal Force
         let rel_vel = particles.velocity[i] - particles.velocity[j];
@@ -119,8 +130,9 @@ pub fn add_particle_particle_collision(
         let f_normal_mag = (eff_stiffness * overlap - eff_damping * normal_vel).max(0.0);
         let f_normal_vec = normal * f_normal_mag;
 
-        let r_i = normal * (-particles.radius[i] + overlap / 2.0);
-        let r_j = normal * (particles.radius[j] - overlap / 2.0);
+        // This apportions the overlap proportional to the radii, keeping things consistent with a particle-plane collision.
+        let r_i = normal * (-rad_i + overlap * rad_j / combined_rad);
+        let r_j = normal * (rad_j - overlap * rad_i / combined_rad);
 
         let v_surface_rel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
                             - (particles.velocity[j] + particles.omega[j].cross(r_j));
@@ -148,7 +160,6 @@ pub fn add_particle_particle_collision(
 
     (force, torque)
 }
-
 
 
 /// Computes the electrostatic Coulomb force between two charged particles.

@@ -27,21 +27,24 @@ use crate::md_sim::{SimulationSettings, particle::ParticleVec};
 ///    * If the particle crosses the lower boundary ($< 0.0$), position is reflected inward and velocity is inverted ($v_i = -v_i$).
 ///    * If the particle crosses the upper boundary ($\ge \text{sim\_box\_size}$), position is bounced back relative to the wall and velocity is inverted.
 #[inline(always)]
-pub fn enforce_boundary(pos: &mut DVec3, vel: &mut DVec3, sim_box_size: DVec3, periodic: [bool; 3]) {
+pub fn enforce_boundary(pos: &mut DVec3, vel: &mut DVec3, sim_box_size: DVec3, periodic: [bool; 3], radius: f64) {
     for i in 0..3 {
         if periodic[i] {
             let val = pos[i] / sim_box_size[i];
             pos[i] -= sim_box_size[i] * val.floor();
         } else {
             // Precise Elastic Reflection
-            if pos[i] < 0.0 {
-                pos[i] = -pos[i]; // Reflect from 0
+            let min_bound = radius;
+            let max_bound = sim_box_size[i] - radius;
+
+            if pos[i] < min_bound {
+                pos[i] = min_bound;//2.0*min_bound - pos[i];//-pos[i]; // Reflect from 0
                 vel[i] = -vel[i]; // Reverse velocity
-            } else if pos[i] >= sim_box_size[i] {
+            } else if pos[i] >= sim_box_size[i] - radius {
                 // Reflect from box_size: 
                 // The distance past the wall is (pos[i] - sim_box_size[i])
                 // We subtract that distance from the wall to bounce back
-                pos[i] = 2.0 * sim_box_size[i] - pos[i];
+                pos[i] = max_bound;//2.0 * max_bound - pos[i];//2.0 * sim_box_size[i] - pos[i];
                 vel[i] = -vel[i];
             }
         }
