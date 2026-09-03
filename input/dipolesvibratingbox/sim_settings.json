@@ -1,0 +1,22 @@
+{
+  "dt": 1e-5,
+  "sim_box_size": [0.06, 0.02, 0.06],
+  "periodic": [true,false,false],
+  "parallel":false,
+  "cutoff": 0.005,
+  "skin": 0.0005,
+  "start": 0,
+  "num_steps": 5000000,
+  "dump": 1000,
+  "interaction_ptypes": [[0,0],[1,1]],
+  "collision_ptypes":[0],
+  "model": {
+    "type": "Frictional",
+    "modulus": 1.0e6,
+    "damping_coeff": 0.1,
+    "mu": 0.4,
+    "plane_modulus": 1.0e6,
+    "plane_damping_coeff" : 0.1,
+    "plane_mu" : 0.4
+  }
+}

@@ -61,24 +61,24 @@ def generate_molecules(
         dens = densities[i]
         p_col = p_colours[i]
         c_col = c_colours[i]
-        ptype = ptype_vals[i]
+        ptype_val = ptype_vals[i]
 
         mass = (4.0 / 3.0) * np.pi * (r ** 3) * dens
 
         particle = {
             "t": [0.0],
-            "id": [particle_id],
-            "molecule_id": [mol_id],
-            "ptype": [ptype],
-            "x": [x], "y": [y], "z": [z],
+            "id": [int(particle_id)],
+            "molecule_id": [int(mol_id)],
+            "ptype": [int(ptype_val)],
+            "x": [float(x)], "y": [float(y)], "z": [float(z)],
             "rel_x": [0.0], "rel_y": [0.0], "rel_z": [0.0],
-            "vx": [vx], "vy": [vy], "vz": [vz],
-            "wx": [wx], "wy": [wy], "wz": [wz],
-            "radius": [r],
-            "mass": [mass],
-            "charge": [qs[i]],
-            "r": [p_col[0]], "g": [p_col[1]], 
-            "b": [p_col[2]], "a": [p_col[3]]
+            "vx": [float(vx)], "vy": [float(vy)], "vz": [float(vz)],
+            "wx": [float(wx)], "wy": [float(wy)], "wz": [float(wz)],
+            "radius": [float(r)],
+            "mass": [float(mass)],
+            "charge": [float(qs[i])],
+            "r": [float(p_col[0])], "g": [float(p_col[1])], 
+            "b": [float(p_col[2])], "a": [float(p_col[3])]
         }
         particle_id += 1
 
@@ -86,23 +86,22 @@ def generate_molecules(
         
         charge = {
             "t": [0.0],
-            "id": [particle_id],
-            "molecule_id": [mol_id],
-            "ptype": [1],
-            "x": [x + rel_pos * np.cos(phi[i])], "y": [y], "z": [z + rel_pos * np.sin(phi[i])],
-            "rel_x": [rel_pos * np.cos(phi[i])], "rel_y": [0.0], "rel_z": [rel_pos * np.sin(phi[i])],
-            "vx": [vx], "vy": [vy], "vz": [vz],
-            "wx": [wx], "wy": [wy], "wz": [wz],
-            "radius": [0.1 * r],
+            "id": [int(particle_id)],
+            "molecule_id": [int(mol_id)],  # Fixed: added int() wrapper
+            "ptype": [int(1)],            # Fixed: added int() wrapper
+            "x": [float(x + rel_pos * np.cos(phi[i]))], "y": [float(y)], "z": [float(z + rel_pos * np.sin(phi[i]))],
+            "rel_x": [float(rel_pos * np.cos(phi[i]))], "rel_y": [0.0], "rel_z": [float(rel_pos * np.sin(phi[i]))],
+            "vx": [float(vx)], "vy": [float(vy)], "vz": [float(vz)],
+            "wx": [float(wx)], "wy": [float(wy)], "wz": [float(wz)],
+            "radius": [float(0.1 * r)],
             "mass": [0.0],
             "charge": [0.0],
-            "r": [c_col[0]], "g": [c_col[1]], 
-            "b": [c_col[2]], "a": [c_col[3]]
+            "r": [float(c_col[0])], "g": [float(c_col[1])], 
+            "b": [float(c_col[2])], "a": [float(c_col[3])]
         }
         particle_id += 1
         mol_id += 1
     
-
         # Combine particle and charge into a single DataFrame for this molecule
         df = pl.concat([pl.DataFrame(particle), pl.DataFrame(charge)])
         
