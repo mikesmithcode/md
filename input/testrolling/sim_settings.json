@@ -1,6 +1,6 @@
 {
   "dt": 1e-6,
-  "sim_box_size": [0.06, 0.01, 0.06],
+  "sim_box_size": [0.06, 0.06, 0.06],
   "periodic": [false,false,false],
   "parallel":false,
   "cutoff": 0.05,
@@ -12,11 +12,11 @@
   "collision_ptypes":[0],
   "model": {
     "type": "Frictional",
-    "modulus": 1.0e6,
+    "modulus": 1.0e7,
     "restitution": 0.7,
     "mu": 0.4,
-    "plane_modulus": 1.0e6,
-    "restitution_coeff" : 0.7,
+    "plane_modulus": 1.0e7,
+    "plane_restitution" : 0.7,
     "plane_mu" : 0.4
   }
 }

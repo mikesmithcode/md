@@ -1,3 +1,10 @@
+
+from pathlib import Path
+import sys
+
+# Add the parent 'python_scripts' directory to sys.path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
 """Setup script for coeff"""
 import polars as pl
 import matplotlib
@@ -31,7 +38,7 @@ z_ball = z + x_ball *np.tan(np.pi*theta/180.0) + r_ball + 0.0001
 
 
 #Two moving particles and one static
-positions = [(0.02,0.025,5*r_ball), (0.05,0.025,z_ball), (0.021, 0.025, 2*r_ball)]
+positions = [(0.02,h/2.0,5*r_ball), (0.05,h/2.0,z_ball), (0.021, h/2.0, 2*r_ball)]
 velocities = [(0.0,0.0,0.0),(0.0,0.0,0.0), (0.0,0.0,0.0)]
 radii = [r_ball, r_ball, 2*r_ball]
 ptypes = [0, 0, 2]
@@ -56,5 +63,5 @@ rect_df.write_parquet(objects_filepath)
 
 
 print(f"Successfully initialised {len(df)} particles for a {box[0]}x{box[2]} box.")
-print(df['ptype','charge'].head())
+print(df['ptype','charge', 'y'].head())
 display(df, box, objects_df=rect_df)

@@ -59,3 +59,37 @@ $$-2v_1 = 1.4v$$
 $$v_1 = -0.7v$$
 
 $$v_2 = -(-0.7v) = 0.7v$$
+
+## testrolling
+
+A solid sphere rolling down a tilted slope with a vertical height drop of $\Delta h$. 
+
+The initial gravitational potential energy at the top is converted into translational and rotational kinetic energy:
+
+$$m g \Delta h = K_{\text{trans}} + K_{\text{rot}}$$
+
+$$m g \Delta h = \frac{1}{2} m v^2 + \frac{1}{2} I \omega^2$$
+
+For a uniform solid sphere of mass $m$ and radius $r$, the moment of inertia is:
+
+$$I = \frac{2}{5} m r^2$$
+
+The rolling-without-slipping condition relates angular velocity $\omega$ to linear velocity $v$:
+
+$$\omega = \frac{v}{r}$$
+
+Substituting $I$ and $\omega$ into the energy equation:
+
+$$m g \Delta h = \frac{1}{2} m v^2 + \frac{1}{2} \left( \frac{2}{5} m r^2 \right) \left( \frac{v}{r} \right)^2$$
+
+$$m g \Delta h = \frac{1}{2} m v^2 + \frac{1}{5} m v^2$$
+
+$$m g \Delta h = \left( \frac{1}{2} + \frac{1}{5} \right) m v^2$$
+
+$$m g \Delta h = \frac{7}{10} m v^2$$
+
+Cancelling $m$ and solving for $v$:
+
+$$v^2 = \frac{10}{7} g \Delta h$$
+
+$$v = \sqrt{\frac{10}{7} g \Delta h}$$

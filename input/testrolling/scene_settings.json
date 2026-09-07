@@ -2,7 +2,7 @@
     "camera": {
       "cam_type": "Perspective",
       "fov": 35.0,
-      "rel_pos": [0.0, 0.1, 0.0], 
+      "rel_pos": [0.0, -0.1, 0.0], 
       "up":[0.0, 0.0, 1.0]
       },
     "window_size": [1280, 960],
