@@ -31,15 +31,15 @@ pub enum SimulationModel{
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct FrictionParams{
     pub modulus: f64,
-    pub damping_coeff: f64,
+    pub restitution: f64,
     pub mu: f64,
     pub plane_modulus: f64,
-    pub plane_damping_coeff: f64,
+    pub plane_restitution: f64,
     pub plane_mu: f64
 }
 
 impl Default for FrictionParams{
     fn default()-> Self{
-        FrictionParams { modulus: 1.0e9, damping_coeff: 0.2, mu: 0.3, plane_modulus: 1.0e9, plane_damping_coeff: 0.2, plane_mu: 0.3}
+        FrictionParams { modulus: 1.0e9, restitution: 0.7, mu: 0.3, plane_modulus: 1.0e9, plane_restitution: 0.7, plane_mu: 0.3}
     }
 }

@@ -3,6 +3,7 @@ mod neighbours;
 mod pairwise;
 mod single;
 mod objects;
+mod common;
 
 
 // Re-export the traits and key functions for easier access

@@ -7,16 +7,16 @@
   "skin": 0.05,
   "start": 0,
   "num_steps": 5000000,
-  "dump": 10000,
+  "dump": 1000,
   "interaction_ptypes": [[0,2]],
   "collision_ptypes":[0],
   "model": {
     "type": "Frictional",
-    "modulus": 1.0e7,
-    "damping_coeff": 0.05,
+    "modulus": 1.0e6,
+    "restitution": 0.7,
     "mu": 0.4,
-    "plane_modulus": 1.0e7,
-    "plane_damping_coeff" : 0.05,
+    "plane_modulus": 1.0e6,
+    "restitution_coeff" : 0.7,
     "plane_mu" : 0.4
   }
 }

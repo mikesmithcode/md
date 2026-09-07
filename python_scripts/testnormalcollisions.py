@@ -15,7 +15,7 @@ box = config["sim_box_size"]
 print(box)
 
 #Two moving particles and one static
-positions = [(0.02,0.025,0.045), (0.04,0.025,0.045), (0.04, 0.025, 0.02)]
+positions = [(0.02,0.025,0.036), (0.04,0.025,0.036), (0.04, 0.025, 0.02)]
 velocities = [(0.0,0.0,-10.0),(0.0,0.0,-10.0), (0.0,0.0,0.0)]
 radii = [0.0005, 0.0005, 0.015]
 ptypes = [0, 0, 2]

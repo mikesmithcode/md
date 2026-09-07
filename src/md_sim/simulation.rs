@@ -125,6 +125,7 @@ impl<S> Simulation<S>
         }
 
         if self.sim_update.has_object_forces() {
+            
             if let Some(objects) = self.objects.as_deref() {
                 for i in 0..self.particles.len() {
                     let mut total_force = DVec3::ZERO;
@@ -132,6 +133,7 @@ impl<S> Simulation<S>
 
                     // Loop through every object in the slice
                     for obj in objects {
+                        //println!("Update forces on particle {} by object", i);
                         let (force, torque) = self.sim_update.update_object_forces(
                             i, 
                             DVec3::ZERO, 

@@ -3,6 +3,7 @@ use glam::DVec3;
 
 use crate::md_sim::particle::SimulationModel;
 use crate::md_sim::{ObjectSpec, ParticleVec, SimulationSettings, SurfaceKinematics};
+use crate::md_sim::force::common::compute_contact_force_and_torque;
 
 
 /// Computes contact forces and torques arising from collisions between a particle and simulation objects.
@@ -43,51 +44,25 @@ pub fn add_particle_object_collision(
     (force, torque)
 }
 
-/// Computes the linear force and rotational torque exerted on a particle 
-/// colliding with a moving rigid surface (`SurfaceKinematics`).
-///
-/// This function uses a viscoelastic spring-dashpot contact model in the normal 
+/// Computes the linear force and rotational torque exerted on a particle
+/// colliding with a moving rigid surface (SurfaceKinematics).
+/// This function uses a viscoelastic spring-dashpot contact model in the normal
 /// direction and a viscous-damping Coulomb friction model in the tangential direction.
-///
 /// # Mathematical Model
-///
-/// 1. **Overlap & Geometry**:
-///    - $\mathbf{\delta} = \mathbf{p}_{\text{particle}} - \mathbf{p}_{\text{closest}}$
-///    - $\text{overlap} = R - \|\mathbf{\delta}\|$
-///    - $\mathbf{n} = \frac{\mathbf{\delta}}{\|\mathbf{\delta}\|}$ (unit vector towards particle)
-///
-/// 2. **Relative Velocity**:
-///    - Particle contact point: $\mathbf{r}_{\text{particle}} = -\mathbf{n} R$
-///    - Surface velocity at contact: $\mathbf{v}_{\text{surface}} = \text{surface.velocity\_at\_point}(\mathbf{p}_{\text{closest}})$
-///    - Particle contact velocity: $\mathbf{v}_{\text{particle\_contact}} = \mathbf{v}_{\text{particle}} + \boldsymbol{\omega}_{\text{particle}} \times \mathbf{r}_{\text{particle}}$
-///    - Relative velocity: $\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{particle\_contact}} - \mathbf{v}_{\text{surface}}$
-///
-/// 3. **Normal Force ($F_n$)**:
-///    $$\mathbf{F}_n = \max(0, k_n \cdot \text{overlap} - \gamma_n (\mathbf{v}_{\text{rel}} \cdot \mathbf{n})) \mathbf{n}$$
-///
-/// 4. **Tangential Friction Force ($F_t$)**:
-///    - Tangential velocity: $\mathbf{v}_{\text{tang}} = \mathbf{v}_{\text{rel}} - (\mathbf{v}_{\text{rel}} \cdot \mathbf{n})\mathbf{n}$
-///    - Clamped by Coulomb limit: $\|\mathbf{F}_t\| \le \mu \|\mathbf{F}_n\|$
-///
-/// 5. **Induced Torque ($\boldsymbol{\tau}$)**:
-///    $$\boldsymbol{\tau} = \mathbf{r}_{\text{particle}} \times \mathbf{F}_t$$
-///
-/// # Arguments
-///
-/// * `i` - Index of the active particle within the `ParticleVec` container.
-/// * `particles` - Read-only reference to particle storage vectors (positions, velocities, radii, etc.).
-/// * `surface` - Reference to any geometry implementing [`SurfaceKinematics`].
-/// * `force` - Accumulator for total force applied to particle `i`. Modified and returned.
-/// * `torque` - Accumulator for total torque applied to particle `i`. Modified and returned.
-/// * `settings` - Simulation parameters containing contact stiffness, damping, and friction coefficients.
-///
-/// # Returns
-///
-/// * `(DVec3, DVec3)` - Updated `(force, torque)` tuple for particle `i`.
-///
-/// # Panics
-///
-/// Panics if `settings.model` is not variant [`SimulationModel::Frictional`].
+/// 
+/// 1. Overlap & Geometry:
+///     - $\mathbf{\delta} = \mathbf{p}_{\text{particle}} - \mathbf{p}_{\text{closest}}$ (vector from surface closest point to particle center)
+///     - $\text{dist} = \Vert{}\mathbf{\delta}\Vert{}$, $\text{overlap} = R - \text{dist}$
+///     - $\mathbf{n} = \frac{\mathbf{\delta}}{\text{dist}}$ (unit vector pointing strictly outward from the surface toward the particle)
+/// 2. Relative Velocity:
+///     - Contact point offset: $\mathbf{r}_{\text{particle}} = -\mathbf{n} \cdot \text{dist}$ (vector from particle center of mass to the contact point)
+///     - Surface velocity at contact: $\mathbf{v}_{\text{surface}} = \text{surface.velocity\_at\_point}(\mathbf{p}_{\text{closest}})$
+///     - Particle contact point velocity: $\mathbf{v}_{\text{particle\_contact}} = \mathbf{v}_{\text{particle}} + \boldsymbol{\omega}_{\text{particle}} \times \mathbf{r}_{\text{particle}}$
+///     - Relative velocity: $\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{particle\_contact}} - \mathbf{v}_{\text{surface}}$
+///     - Normal velocity component: $v_n = \mathbf{v}_{\text{rel}} \cdot \mathbf{n}$ (negative during compression, positive during separation)
+/// 3. Normal Force ($\mathbf{F}_n$):
+///     - Elastic component: $F_{\text{elastic}} = k_n \cdot \text{overlap}$
+///     - Viscous damping component: $F_{\text{damping}} = \gamma_n \cdot v_n$///    - Clamped magnitude: $F_{n,\text{mag}} = \max\left(0, F_{\text{elastic}} - F_{\text{damping}}\right)$///    - Vector normal force: $\mathbf{F}_n = F_{n,\text{mag}} \mathbf{n}$ (pointing outward from the surface)////// 4. Tangential Friction Force ($\mathbf{F}_t$):///    - Tangential relative velocity: $\mathbf{v}_{\text{tang}} = \mathbf{v}_{\text{rel}} - v_n \mathbf{n}$///    - Ideal viscous friction: $\mathbf{F}_{t,\text{ideal}} = -\gamma_n \mathbf{v}_{\text{tang}}$///    - Coulomb friction limit: $F_{\text{limit}} = \mu F_{n,\text{mag}}$///    - Clamped friction vector: $\mathbf{F}_t = \min\left(1, \frac{F_{\text{limit}}}{\Vert{}\mathbf{F}_{t,\text{ideal}}\Vert{}}\right) \mathbf{F}_{t,\text{ideal}}$////// 5. Induced Torque ($\boldsymbol{\tau}$):///$$\boldsymbol{\tau} = \mathbf{r}_{\text{particle}} \times \mathbf{F}_t$$////// # Arguments////// * i - Index of the active particle within the ParticleVec container./// * particles - Read-only reference to particle storage vectors (positions, velocities, radii, etc.)./// * surface - Reference to any geometry implementing [SurfaceKinematics]./// * force - Accumulator for total force applied to particle i. Modified and returned./// * torque - Accumulator for total torque applied to particle i. Modified and returned./// * settings - Simulation parameters containing contact stiffness, damping, and friction coefficients.////// # Returns////// * (DVec3, DVec3) - Updated (force, torque) tuple for particle i.////// # Panics////// Panics if settings.model is not variant [SimulationModel::Frictional].
 pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
     i: usize,
     particles: &ParticleVec,
@@ -98,21 +73,8 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
 ) -> (DVec3, DVec3) {
     // Ignore if not a collision ptype
     if !settings.collision_ptypes.contains(&(particles.ptype[i] as u8)){
-        return (force, torque)
+        return (force, torque);
     }
-
-    let (modulus, plane_modulus, damping_coeff, mu) = if let SimulationModel::Frictional(p) = &settings.model {
-        (p.modulus, p.plane_modulus, p.plane_damping_coeff, p.plane_mu)
-    } else {
-        panic!("Unsupported model for granular collision");
-    };
-
-    // Effective modulus for two different materials (assuming nu ≈ 0.3 for both)
-    // 1 / E* = (1 - 0.3^2)/Y_particle + (1 - 0.3^2)/Y_plane
-    let y_p = modulus;
-    let y_w = plane_modulus;
-    let compliance = 0.91 * ((1.0 / y_p) + (1.0 / y_w));
-    let e_star = 1.0 / compliance;
 
     let particle_pos = particles.position[i];
     let particle_vel = particles.velocity[i];
@@ -123,60 +85,42 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
     let delta = particle_pos - closest_point;
     let dist_sq = delta.length_squared();
 
-    // Check overlap
     if dist_sq < radius * radius && dist_sq > 1e-18 {
         let dist = dist_sq.sqrt();
         let overlap = radius - dist;
-        let normal = delta / dist; // Surface normal towards particle
+        let normal = delta / dist; 
 
-        // -----------------------------------------------------------------
-        // GEOMETRIC & MATERIAL STIFFNESS FOR PARTICLE-PLANE
-        // -----------------------------------------------------------------
-        // Effective radius for sphere-plane contact is simply the sphere's radius
-        let r_eff = radius;
+        // Assume plane is of infinite mass.
+        let m_eff = particles.mass[i];      
 
-        // Base contact stiffness derived from Hertzian-linear approximation
-        let base_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
-        // -----------------------------------------------------------------
+        let (modulus, plane_modulus, plane_restitution, mu) = if let SimulationModel::Frictional(p) = &settings.model {
+            (p.modulus, p.plane_modulus, p.plane_restitution, p.plane_mu)
+        } else {
+            panic!("Unsupported model for granular collision");
+        };
 
-        // Effective mass for a particle hitting a stationary/infinite wall is just the particle's mass
-        let m_eff = particles.mass[i];
-        let eff_stiffness = base_stiffness;
-        let eff_damping = 2.0 * damping_coeff * (m_eff * eff_stiffness).sqrt();
+        // 1/E* = (1-nu_i^2)/Yi + (1-nu_j^2)/Yj. Assume nu = 0.3
+        let y_p = modulus;
+        let y_w = plane_modulus;
+        let compliance = 0.91 * ((1.0 / y_p) + (1.0 / y_w));
+        let e_star = 1.0 / compliance;
+        let eff_stiffness = (4.0 / 3.0) * e_star * radius.sqrt();
+        
+        let beta = -plane_restitution.ln() / (std::f64::consts::PI.powi(2) + plane_restitution.ln().powi(2)).sqrt();
+        let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
+        //println!("plane stiffness {}, damping {}", eff_stiffness, eff_damping);
 
-        // Query surface velocity directly from Option 1 trait implementation
         let surface_vel = surface.velocity_at_point(closest_point);
-
-        // Particle contact point velocity
         let r_particle = -normal * dist;
         let particle_contact_vel = particle_vel + particle_omega.cross(r_particle);
-
-        // Relative velocity
         let rel_vel = particle_contact_vel - surface_vel;
-        let normal_vel = rel_vel.dot(normal);
 
-        // Normal force
-        let f_normal_mag = (eff_stiffness * overlap - eff_damping * normal_vel).max(0.0);
-        let f_normal_vec = normal * f_normal_mag;
+        let (contact_force, contact_torque) = compute_contact_force_and_torque(
+            overlap, normal, r_particle, rel_vel, eff_stiffness, eff_damping, mu
+        );
 
-        // Friction force
-        let v_tang = rel_vel - normal_vel * normal;
-        let mut f_friction_vec = DVec3::ZERO;
-
-        if v_tang.length_squared() > 1e-18 {
-            let f_t_ideal = v_tang * -eff_damping;
-            let limit = mu * f_normal_mag;
-            let f_t_mag_sq = f_t_ideal.length_squared();
-
-            f_friction_vec = if f_t_mag_sq > limit * limit {
-                f_t_ideal * (limit / f_t_mag_sq.sqrt())
-            } else {
-                f_t_ideal
-            };
-        }
-
-        force += f_normal_vec + f_friction_vec;
-        torque += r_particle.cross(f_friction_vec);
+        force += contact_force;
+        torque += contact_torque;
     }
 
     (force, torque)

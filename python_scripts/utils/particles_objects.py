@@ -64,6 +64,8 @@ def generate_molecules(
         ptype_val = ptype_vals[i]
 
         mass = (4.0 / 3.0) * np.pi * (r ** 3) * dens
+        
+        print('mass', mass)
 
         particle = {
             "t": [0.0],

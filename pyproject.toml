@@ -10,4 +10,5 @@ dependencies = [
     "polars",
     "matplotlib",
     "pyqt6>=6.11.0",
+    "pyarrow>=25.0.1",
 ]

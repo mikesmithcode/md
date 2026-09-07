@@ -231,8 +231,10 @@ pub struct CellGrid {
             user_impl: &F,
             settings: &SimulationSettings,
         ) {
+
             // Define the core processing logic as a closure or a separate function
             let process_particle = |(i, (f_out, t_out)): (usize, (&mut DVec3, &mut DVec3))| {
+                
                 let mut local_force = DVec3::ZERO;
                 let mut local_torque = DVec3::ZERO;
 
@@ -240,6 +242,7 @@ pub struct CellGrid {
                 let end = self.verlet_offsets[i + 1];
                 
                 for &j in &self.verlet_particle_ids[start..end] {
+                    //println!("process_particle {} on particle {}", i, j);
                     let (f, t) = user_impl.update_pair_forces(
                         i, j, DVec3::ZERO, DVec3::ZERO, particles, settings
                     );
@@ -288,13 +291,15 @@ pub struct CellGrid {
                 for iy in 0..ny {
                     for ix in 0..nx {
                         let current_1d = self.get_1d_idx(ix, iy, iz);
+                        let mut unique_neighbors = Vec::with_capacity(26);
                         
                         for offset in OFFSETS {
                             let n_idx = self.get_neighbour_1d_idx(ix, iy, iz, offset);
-                            if n_idx != usize::MAX {
-                                self.neighbour_table[current_1d].push(n_idx);
+                            if n_idx != usize::MAX && n_idx != current_1d && !unique_neighbors.contains(&n_idx) {
+                                unique_neighbors.push(n_idx);
                             }
                         }
+                        self.neighbour_table[current_1d] = unique_neighbors;
                     }
                 }
             }
