@@ -1,18 +1,27 @@
 """This is a utility script for looking at output"""
 
+from pathlib import Path
+import sys
+
+# Add the parent 'python_scripts' directory to sys.path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+
 import polars as pl
 from pathlib import Path
 import matplotlib.pyplot as plt
 
 
+from utils.file_io import get_config
+
 script = "testnormalcollisions"
 
-path_to_snapshots = Path("output/" + script + "/" + script + "/particles")
+_, path_to_snapshots, _ = get_config()
 
 root = Path(__file__).parent.parent.parent
-print(root)
+print(path_to_snapshots)
 
-folder = root.joinpath(path_to_snapshots)
+folder = root.joinpath(path_to_snapshots.parent)
 files = sorted([f for f in folder.iterdir() if f.is_file()])
 
 vz0 = []
@@ -80,8 +89,7 @@ ax3.set_title("overlap")
 ax3.plot(overlap0, "rx", label="overlap (ball on ball)")
 ax3.plot(overlap1, "bx", label="overlap (ball on surface)")
 #ax3.legend()
-print(overlap0)
-print(overlap1)
+
 
 plt.tight_layout()
 plt.show()

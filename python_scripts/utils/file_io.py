@@ -43,4 +43,3 @@ def get_config(*args, **kwargs):
         config = json.load(f)
         
     return config, particles_filepath, objects_filepath
-

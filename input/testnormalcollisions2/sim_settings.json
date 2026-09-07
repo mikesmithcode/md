@@ -7,15 +7,15 @@
   "skin": 0.05,
   "start": 0,
   "num_steps": 500000,
-  "dump": 10,
-  "interaction_ptypes": [[0,2]],
+  "dump": 1000,
+  "interaction_ptypes": [[0,0]],
   "collision_ptypes":[0],
   "model": {
     "type": "Frictional",
-    "modulus": 1.0e5,
+    "modulus": 1.0e7,
     "restitution": 0.7,
     "mu": 0.4,
-    "plane_modulus": 1.0e5,
+    "plane_modulus": 1.0e7,
     "plane_restitution" : 0.7,
     "plane_mu" : 0.4
   }

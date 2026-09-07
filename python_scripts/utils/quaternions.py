@@ -57,5 +57,3 @@ colours = {
     4: 'magenta',
     5: 'yellow'
 }
-
-

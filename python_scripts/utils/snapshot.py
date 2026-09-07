@@ -3,9 +3,9 @@
 import polars as pl
 from pathlib import Path
 
-script = "testnormalcollisions"
+script = "testnormalcollisions2"
 
-path_to_snapshots = Path("output/" + script + "/" + script + "/particles")
+path_to_snapshots = Path("/home/mike/Documents/Programming/md/output/testnormalcollisions2/testnormalcollisions2/particles/")
 
 root = Path(__file__).parent.parent
 print(root)

@@ -2,17 +2,18 @@
 
 # --- Help Instructions ---
 show_help() {
-    echo "Usage: run [-c] [-b] [-r] [-x] [-h] <input_name>"
+    echo "Usage: run [-c] [-b] [-r] [-x] [-a] [-h] <input_name>"
     echo ""
     echo "Options:"
     echo "  -c    Clean & Setup Only: Runs clean, creates directories, executes Python setup, and exits."
     echo "  -b    Build Release: Compiles the code in release mode and skips launching the simulation."
     echo "  -r    Release Mode: Compiles the Rust simulation with heavy optimizations (and runs it)."
     echo "  -x    Execute Only: Runs a pre-existing binary without rebuilding (fails if missing)."
+    echo "  -a    Analyze Only: Runs the corresponding Python analysis script from python_scripts/analyse/ and exits."
     echo "  -h    Help: Displays this help message."
     echo ""
     echo "Behavior Notes:"
-    echo "  - If -b, -r, and -x are omitted, it compiles and runs in normal (debug) mode."
+    echo "  - If -b, -r, -x, and -a are omitted, it compiles and runs in normal (debug) mode."
     echo "  - If -b is specified, it automatically implies release mode."
     echo ""
     echo "Examples:"
@@ -21,6 +22,7 @@ show_help() {
     echo "  ./run -b silo_123         # Compiles 'silo' in release mode and exits"
     echo "  ./run -r silo_123         # Compiles (release) and runs 'silo' with arg 'output/silo/silo_123'"
     echo "  ./run -x silo_123         # Runs pre-built 'silo' with arg 'output/silo/silo_123' without rebuilding"
+    echo "  ./run -a silo_123         # Runs analysis script for 'silo' with arg 'silo_123'"
     exit 0
 }
 
@@ -39,9 +41,10 @@ SETUP_ONLY=false
 RELEASE_FLAG=""
 BUILD_ONLY=false
 EXECUTE_ONLY=false
+ANALYZE_ONLY=false
 
 # 2. Process flags
-while getopts "crbxh" opt; do
+while getopts "crbxah" opt; do
   case $opt in
     c) 
        RUN_CLEAN=true 
@@ -53,6 +56,7 @@ while getopts "crbxh" opt; do
        RELEASE_FLAG="--release"
        ;;
     x) EXECUTE_ONLY=true ;;
+    a) ANALYZE_ONLY=true ;;
     h) show_help ;;
     \?) echo "Invalid option: -$OPTARG. Use -h for help." >&2; exit 1 ;;
   esac
@@ -86,7 +90,19 @@ OUTPUT_DIR="output/$TARGET_NAME/$SIM_ARG"
 PROFILE_DIR=$([ "$RELEASE_FLAG" == "--release" ] && echo "release" || echo "debug")
 BINARY="./target/$PROFILE_DIR/$TARGET_NAME"
 
-# 4. Setup (Clean + Python) - Cleans specific output dir, creates nested layout, runs Python setup
+# 4. Analyze Only Logic (-a)
+if [ "$ANALYZE_ONLY" = true ]; then
+    ANALYZE_SCRIPT="python_scripts/analyse/$TARGET_NAME.py"
+    if [ ! -f "$ANALYZE_SCRIPT" ]; then
+        echo "Error: Analysis script '$ANALYZE_SCRIPT' not found."
+        exit 1
+    fi
+    echo "--- Running analysis for $TARGET_NAME ---"
+    PYTHONPATH="." "$PYTHON_EXEC" "$ANALYZE_SCRIPT" "$INPUT_NAME" || { echo "Analysis script failed"; exit 1; }
+    exit 0
+fi
+
+# 5. Setup (Clean + Python) - Cleans specific output dir, creates nested layout, runs Python setup
 if [ "$EXECUTE_ONLY" = false ] && [ "$RUN_CLEAN" = true ]; then
     echo "All output in \"$OUTPUT_DIR\" has been cleared"
     rm -rf "$OUTPUT_DIR"
@@ -94,7 +110,13 @@ if [ "$EXECUTE_ONLY" = false ] && [ "$RUN_CLEAN" = true ]; then
     # Ensure nested folders exist for particles and video
     mkdir -p "$OUTPUT_DIR/particles" "$OUTPUT_DIR/video"
     
-    "$PYTHON_EXEC" python_scripts/"$TARGET_NAME".py "$INPUT_NAME" || { echo "Python setup failed"; exit 1; }
+    SETUP_SCRIPT="python_scripts/setup/$TARGET_NAME.py"
+    if [ ! -f "$SETUP_SCRIPT" ]; then
+        echo "Error: Setup script '$SETUP_SCRIPT' not found."
+        exit 1
+    fi
+    
+    PYTHONPATH="." "$PYTHON_EXEC" "$SETUP_SCRIPT" "$INPUT_NAME" || { echo "Python setup failed"; exit 1; }
 
     if [ "$SETUP_ONLY" = true ]; then
         echo "--- Setup complete. Skipping build and execution. ---"
@@ -102,7 +124,7 @@ if [ "$EXECUTE_ONLY" = false ] && [ "$RUN_CLEAN" = true ]; then
     fi
 fi
 
-# 5. Build Logic or Execution Check
+# 6. Build Logic or Execution Check
 if [ "$EXECUTE_ONLY" = true ]; then
     if [ ! -f "$BINARY" ]; then
         echo "Error: Binary for '$TARGET_NAME' not found in target/$PROFILE_DIR/. You need to build first."
@@ -114,7 +136,7 @@ else
     cargo build $RELEASE_FLAG --bin "$TARGET_NAME" || { echo "Compilation failed"; exit 1; }
 fi
 
-# 6. Conditional Launch Logic
+# 7. Conditional Launch Logic
 if [ "$BUILD_ONLY" = true ]; then
     echo "--- Build complete. Skipping execution. ---"
 else

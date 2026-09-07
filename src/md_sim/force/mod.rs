@@ -72,13 +72,13 @@ pub trait Forces {
     /// * `(DVec3, DVec3)` - The resulting force and torque adjustments for the particle.
     fn update_single_forces(
         &self, 
-        i: usize, 
+        _i: usize, 
         force: DVec3, 
         torque: DVec3,
-        particles: &ParticleVec, 
-        settings: &SimulationSettings,
-        time: f64
-    ) -> (DVec3, DVec3);
+        _particles: &ParticleVec, 
+        _settings: &SimulationSettings,
+        _time: f64
+    ) -> (DVec3, DVec3){(force, torque)}
 
     /// Calculates contact forces (or torques) between individual particles and simulation objects such as Rectangles.
     ///
@@ -98,13 +98,13 @@ pub trait Forces {
     /// * `(DVec3, DVec3)` - The resulting force and torque contributions from object interactions.
     fn update_object_forces(
         &self, 
-        i: usize, 
+        _i: usize, 
         force: DVec3,
         torque: DVec3,
-        particles: &ParticleVec, 
-        objects: &ObjectSpec,
-        settings: &SimulationSettings
-    ) -> (DVec3, DVec3);
+        _particles: &ParticleVec, 
+        _objects: &ObjectSpec,
+        _settings: &SimulationSettings
+    ) -> (DVec3, DVec3){(force, torque)}
 
     /// Calculates interaction forces between two particles within a specified cutoff distance.
     ///
@@ -126,13 +126,13 @@ pub trait Forces {
     /// * `(DVec3, DVec3)` - The force and torque contributions acting on the particle pair.
     fn update_pair_forces(
         &self, 
-        i: usize, 
-        j: usize, 
+        _i: usize, 
+        _j: usize, 
         force: DVec3,
         torque: DVec3,
-        particles: &ParticleVec, 
-        settings: &SimulationSettings
-    ) -> (DVec3, DVec3);
+        _particles: &ParticleVec, 
+        _settings: &SimulationSettings
+    ) -> (DVec3, DVec3){(force, torque)}
 
     /// Calculates internal forces for molecules composed of multiple particles
     ///

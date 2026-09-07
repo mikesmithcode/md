@@ -1,3 +1,11 @@
+
+from pathlib import Path
+import sys
+
+# Add the parent 'python_scripts' directory to sys.path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+
 """Setup script for coeff"""
 import polars as pl
 import matplotlib
