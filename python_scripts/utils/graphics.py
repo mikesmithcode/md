@@ -128,11 +128,22 @@ def plot_objects(df, ax):
         face_colors.append(rgba)
         edge_colors.append('black')
 
-        # Object ID text positioned at the centroid (zorder=3)
-        centroid_x = np.mean([v[0] for v in verts])
-        centroid_z = np.mean([v[1] for v in verts])
+        # Calculate bounding box span of this specific object for scale-invariant offset
+        xs = [v[0] for v in verts]
+        zs = [v[1] for v in verts]
+        
+        centroid_x = np.mean(xs)
+        centroid_z = np.mean(zs)
+        
+        span_x = max(xs) - min(xs)
+        span_z = max(zs) - min(zs)
+        
+        # Offset up and right by 10% of the object's own dimensions (with a safe minimum fallback)
+        offset_x = centroid_x + max(span_x * 0.2, 1e-3)
+        offset_z = centroid_z + max(span_z * 0.2, 1e-3)
+
         ax.text(
-            centroid_x, centroid_z, str(int(row["id"])),
+            offset_x, offset_z, str(int(row["id"])),
             color='white', fontsize=7, ha='center', va='center', fontweight='bold',
             zorder=3
         )

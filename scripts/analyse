@@ -1,0 +1,34 @@
+#!/bin/bash
+set -e
+
+INPUT_NAME="$1"
+if [ -z "$INPUT_NAME" ]; then
+    echo "Error: No simulation name provided."
+    exit 1
+fi
+
+if [ -f ".venv/Scripts/python.exe" ]; then
+    PYTHON_EXEC=".venv/Scripts/python.exe"
+elif [ -f ".venv/bin/python" ]; then
+    PYTHON_EXEC=".venv/bin/python"
+else
+    echo "Error: Could not find Python executable in .venv"
+    exit 1
+fi
+
+if [[ "$INPUT_NAME" == "_"* ]]; then
+    TARGET_NAME="$INPUT_NAME"
+elif [[ "$INPUT_NAME" == *"_"* ]]; then
+    TARGET_NAME="${INPUT_NAME%%_*}"
+else
+    TARGET_NAME="$INPUT_NAME"
+fi
+
+ANALYZE_SCRIPT="python_scripts/analyse/$TARGET_NAME.py"
+if [ ! -f "$ANALYZE_SCRIPT" ]; then
+    echo "Error: Analysis script '$ANALYZE_SCRIPT' not found."
+    exit 1
+fi
+
+echo "--- Running analysis for $TARGET_NAME ---"
+PYTHONPATH="." "$PYTHON_EXEC" "$ANALYZE_SCRIPT" "$INPUT_NAME"

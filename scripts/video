@@ -1,10 +1,57 @@
 #!/bin/bash
+set -e
 
-# Ensure an argument was provided
-if [ -z "$1" ]; then
-    echo "Usage: ./video.sh <folder_name>"
+REBUILD=false
+INPUT_NAME=""
+
+print_help() {
+    echo "Usage: scripts/video [OPTIONS] <input_name>"
+    echo "Options:"
+    echo "  -r, --rebuild    Force a re-compilation of the video binary"
+    echo "  -h, --help       Display this help message"
+    exit 0
+}
+
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        -r|--rebuild)
+            REBUILD=true
+            shift
+            ;;
+        -h|--help)
+            print_help
+            ;;
+        -*)
+            echo "Error: Unknown option: $1"
+            echo "Run 'scripts/video --help' for usage."
+            exit 1
+            ;;
+        *)
+            INPUT_NAME="$1"
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$INPUT_NAME" ]; then
+    echo "Error: No simulation name provided."
+    echo "Run 'scripts/video --help' for usage."
     exit 1
 fi
 
-# Run the cleanup binary, passing the folder name
-cargo run --quiet --bin video -- "$1"
+BINARY="./target/release/video"
+
+if [ "$REBUILD" = true ] || [ ! -f "$BINARY" ]; then
+    echo "--- Compiling video renderer (limiting to 1 job) ---"
+    cargo build --release --bin video --jobs 1
+else
+    echo "--- Using existing video binary ---"
+fi
+
+echo "--- Generating Video for $INPUT_NAME ---"
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$INPUT_NAME" "$INPUT_NAME"
+else
+    "$BINARY" "$INPUT_NAME" "$INPUT_NAME"
+fi
+echo "--- Video generation complete ---"

@@ -3,99 +3,54 @@
 /// Silo consists of a 2D hopper with diagonal walls and a flat bottom. We then drop a square lattice
 /// of balls from above into it and watch everything slosh around.
 
-
 use winit::event_loop::EventLoop;
-use glam::DVec3;
-use std::collections::HashMap;
+use std::path::PathBuf;
 
-// Import everything from your md_viz library
 use md::md_viz::scene::Scene;
 use md::md_viz::scene_settings::SceneSettings;
-
-// Imports from simulation library
-use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, Simulation, SimulationSettings};
-use md::md_sim::force::{add_coulomb, add_particle_object_collision, add_particle_particle_collision, add_weight};
-use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
-use md::md_sim::utils::{filepaths, save_particles, save_objects, load_latest_particles, load_latest_objects, SimulationPaths};
-use md::md_sim::particle::MoleculeData;
-
-
-
+use md::md_sim::SimulationSettings;
+use md::md_sim::utils::{filepaths, load_particles, load_objects, load_latest_particles, load_latest_objects, SimulationPaths};
 
 pub fn main() {    
-
-    // Construct filepaths
     let sim_filepaths: SimulationPaths = filepaths();
     
-    //------------------------------------------------------------
-    // Initialise simulation with bunch of particles from a snapshot file and define simulation parameters with a config file. Takes latest snapshot in output
-    // copies the config file in input folder to the output folder appending sim index.
-    // -----------------------------------------------------------
-    let (particles, start_step, time) = load_latest_particles(&sim_filepaths).expect("Failed to return latest particle snapshot");
-    
+    // Initialise simulation settings and initial scene state
+    let (particles, start_step, _time) = load_latest_particles(&sim_filepaths).expect("Failed to load initial particle snapshot");
+    let sim_settings = SimulationSettings::new(&sim_filepaths, start_step).expect("Failed to load simulation settings"); 
+    let objects = load_latest_objects(&sim_filepaths).unwrap_or(None);
 
-    // load settings
-    let sim_settings: SimulationSettings = SimulationSettings::new(&sim_filepaths, start_step).expect("sim settings not loaded correctly"); 
-    
-    //--------------------------------------------------------------
-    //Load surface
-    //--------------------------------------------------------------
-    let objects = load_latest_objects(&sim_filepaths).expect("Failed to return latest object snapshot");
+    // Setup Graphics & Recording
+    let event_loop = EventLoop::new(); 
+    let scene_settings = SceneSettings::new(&sim_filepaths, &sim_settings); 
+    let mut scene = Scene::new(&event_loop, &particles, objects.as_deref(), scene_settings);   
+    let _ = scene.start_recording(&sim_filepaths, start_step).expect("Failed to start recording");
 
-    //-------------------------------------------------------------
-    // Create simulation
-    //
-    // Initialise simulation with bunch of particles from a snapshot file. Takes latest snapshot in output
-    // copies the config file in input folder to the output folder appending sim index.
-    // Simulation::new() creates the simulation
-    // sim.update() to advance the simulation by one step
-    // If you have no objects supply None.
-    // file_io::save_snapshot(&snapshot_path, step, &sim.get_particles(), sim.time).expect("Error saving simulation snapshot"); for data dump.
-    //--------------------------------------------------------------  
-    //let mut sim= Simulation::new(particles, objects, SimUpdate, sim_settings.clone(), time);
-
-    //----------------------------------------------------------------
-    //  Setup Graphics
-    //
-    //  event_loop and scene.init_window(&event_loop) for live display. Optional video output.
-    //  scene.init_headless() for headless video 
-    //  Call scene.display() to update window, scene.save_img() to write
-    //--------------------------------------------------------------   
-    let mut event_loop = EventLoop::new(); 
-    let scene_settings: SceneSettings = SceneSettings::new(&sim_filepaths, &sim_settings); 
-    let mut scene: Scene = Scene::new(&event_loop, &particles, objects.as_deref(), scene_settings.clone());   
-    let _ = scene.start_recording(&sim_filepaths, start_step); // sim_filepaths will handle where the video gets stored.
-
-
-    
-    //--------------------------------------------------------------
-    // Make Video
-    //-------------------------------------------------------------
     println!("Video started...");
 
-    //Find all the files in the particles and objects folder
-    // #[derive(Default)]
-/// Encapsulates all major file paths required for running and saving a simulation.
-//pub struct SimulationPaths {
-//    pub output: PathBuf,
-//    pub sim_config: PathBuf,
-//    pub scene_config: PathBuf,
-//    pub object: PathBuf,
-//    pub particle: PathBuf,
-//    pub video: PathBuf,
-//}
-
-    // We have these two functions which when given a filepath will return the objects and particles needed for the scene to render an image
-    // pub fn load_objects(sim_paths: &SimulationPaths, step: usize) -> Result<Vec<ObjectSpec>, Box<dyn std::error::Error>>
-    // pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn std::error::Error>> 
-    // the SimulationPaths object and particle provide the paths to the folders where the particles_0000000000.parquet and objects_0000000000.parquet etc are stored.
-    // need to sort and loop over all files in each folder. Read them in. Pass to .save_frame
+    // Gather, filter, and sort all parquet snapshot files cleanly
+    let mut file_paths: Vec<PathBuf> = std::fs::read_dir(&sim_filepaths.particle)
+        .expect("Failed to read particle directory")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "parquet"))
+        .collect();
     
-                
-    let _ = scene.save_frame(&particles, objects.as_deref());
+    file_paths.sort();
 
-            
+    // Process each frame
+    for file_path in file_paths {
+        if let Ok((current_particles, _)) = load_particles(&file_path) {
+            let step = file_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.chars().filter(|c| c.is_ascii_digit()).collect::<String>().parse::<usize>().ok())
+                .unwrap_or(0);
+
+            let current_objects = load_objects(&sim_filepaths, step).ok();
+            let _ = scene.save_frame(&current_particles, current_objects.as_deref());
+        }
+    }
+
     scene.close();
     println!("Video finished");
-
 }

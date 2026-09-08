@@ -25,8 +25,8 @@ rayon = "1.10"
 
 
 [profile.release]
-debug = true #comment out when not profiling
-opt-level = 3
+lto = false
+codegen-units = 16
 
 [lib]
 doctest = false

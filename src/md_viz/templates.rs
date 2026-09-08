@@ -52,9 +52,9 @@ impl SphereTemplate {
         );
 
         let mat = if colour.a < 255 { 
-            create_transparent_material(Some(Srgba::WHITE))
+            create_transparent_material(None)
         } else {
-            create_opaque_material(Some(Srgba::WHITE))
+            create_opaque_material(None)
         };
 
         // Build the initial color buffer once
@@ -88,7 +88,7 @@ impl SphereTemplate {
     pub fn push_colour_and_visibility(&self, i: usize, particles: &ParticleVec, colours: &mut Vec<Srgba>) {
         colours.push(particles.colour[i]);
     }
-}
+}   
 
 
 /// ------------------------------------------------------------------------------------
@@ -432,16 +432,16 @@ fn create_transparent_material(colour: Option<Srgba>) -> PhysicalMaterial {
 
 fn create_opaque_material(colour: Option<Srgba>) -> PhysicalMaterial {
     let mut mat = PhysicalMaterial::default();
-    if let Some(colour)=colour{
+    if let Some(colour) = colour {
         mat.albedo = colour;
-    }else{
+    } else {
         mat.albedo = Srgba::WHITE;
     }
     
-    // Disable backface culling so surfaces render from both sides
+    // Disable backface culling and ensure depth is written
     mat.render_states = three_d::RenderStates {
-        cull: Cull::None,//None, Back, Front
-        write_mask: WriteMask::COLOR, //None
+        cull: Cull::None,
+        write_mask: WriteMask::COLOR_AND_DEPTH, // Fixed: must write depth for opaque objects!
         depth_test: DepthTest::Less,
         ..Default::default()
     };

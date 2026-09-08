@@ -169,7 +169,8 @@ pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3
     let r_mag_sq = r.length_squared();
     let inv_r = 1.0 / r_mag_sq.sqrt(); // One square root
     let inv_r_cubed = inv_r * inv_r * inv_r;
-
+    
+    let df = (particles.charge[i] * particles.charge[j] / (4.0 * PI * EPS0)) * r * inv_r_cubed;
     
     force+=(particles.charge[i] * particles.charge[j] / (4.0 * PI * EPS0)) * r * inv_r_cubed;
     

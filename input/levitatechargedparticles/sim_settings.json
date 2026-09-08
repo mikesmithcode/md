@@ -1,0 +1,23 @@
+{
+  "dt": 1e-6,
+  "sim_box_size": [0.02, 0.01, 0.02],
+  "periodic": [false,false,false],
+  "parallel":false,
+  "cutoff": 0.01,
+  "skin": 0.005,
+  "start": 0,
+  "num_steps": 5000000,
+  "dump": 1000,
+  "interaction_ptypes": [[0,0], [1,1]],
+  "collision_ptypes":[0],
+  "model": {
+    "type": "Frictional",
+    "modulus": 1.0e6,
+    "restitution": 0.7,
+    "mu": 0.4,
+    "plane_modulus": 1.0e6,
+    "plane_restitution" : 0.7,
+    "plane_mu" : 0.4,
+    "viscosity" : 0.000001
+  }
+}

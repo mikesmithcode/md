@@ -14,7 +14,8 @@ use md::md_viz::scene_settings::SceneSettings;
 
 // Imports from simulation library
 use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, Simulation, SimulationSettings};
-use md::md_sim::force::{add_particle_object_collision, add_particle_particle_collision, add_weight};
+use md::md_sim::particle::SimulationModel;
+use md::md_sim::force::{add_coulomb, add_particle_particle_collision, add_viscous_drag, add_weight};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::utils::{filepaths, save_particles, load_latest_particles, load_latest_objects, SimulationPaths};
 use md::md_sim::particle::MoleculeData;
@@ -33,37 +34,35 @@ impl Forces for SimUpdate{
         true
     }
 
-    fn has_object_forces(&self) -> bool {
-        true
-    }
-
-
     //Forces which apply to every particle individually
-    fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
+    fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
         // Only the main particle has weight
+        
         if particles.ptype[i] == 0{
-        force = add_weight(i, force, particles);
-        }
+            force = add_confining_potential(i, particles, force, settings);
+            //force = add_weight(i, force, particles);
+        
+            let viscosity = match &settings.model {
+              SimulationModel::Frictional(params) => params.viscosity,
+              _ => panic!("Expected Frictional model"), // or handle other variants appropriately
+            };
+            force = add_viscous_drag(i, particles, force, viscosity);
+            }
+
         (force, _torque)
     }
 
-    fn update_object_forces(&self, i: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec, objects: &ObjectSpec, settings: &SimulationSettings)->(DVec3, DVec3){
-        //Only main particle collides with the surface
-        if particles.ptype[i] == 0{
-           (force,torque) = add_particle_object_collision(i, particles, objects, force, torque, settings);
-        }
-        (force, torque)
-    }
 
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize,mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
         // guaranteed that i and j will be same ptype due to verlet list specs
-        
-        //main particles have granular collisions. 
-        (force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);
-
-       
-        
+        if particles.ptype[i] == 1{
+            force = add_coulomb(i, j, particles, force, settings);
+        }else if  settings.collision_ptypes.contains(&(particles.ptype[i] as u8)){
+            //main particles have granular collisions. 
+            (force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);
+        }
+    
         (force, torque)
     }
 
@@ -81,6 +80,20 @@ impl Motion for SimUpdate{
 }
 
 
+pub fn add_confining_potential(i: usize, particles: &ParticleVec, mut force: DVec3, settings: &SimulationSettings)-> DVec3{
+    let stiffness = DVec3::new(0.02,0.01,0.02);
+    let simbox = settings.sim_box_size;
+
+    //potential centred in the simulation box.
+    let pos = particles.position[i];
+    let mass = particles.mass[i];
+
+    let delta_f = -1.0*stiffness * (pos - simbox/2.0);
+
+    force += delta_f;
+
+    force
+}
 
 
 pub fn main() {    

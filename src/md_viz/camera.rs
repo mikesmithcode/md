@@ -106,7 +106,12 @@ fn create_perspective_camera(viewport: Viewport, scene_settings: SceneSettings) 
 
     let eye_pos = centre + scene_settings.camera.rel_pos;
 
-    let up = Vector3::new(0.0, 0.0, 1.0);
+    // Extract the up vector from settings instead of hardcoding it
+    let up = Vector3::new(
+        scene_settings.camera.up[0] as f32,
+        scene_settings.camera.up[1] as f32,
+        scene_settings.camera.up[2] as f32,
+    );
 
     Camera::new_perspective(
         viewport,

@@ -1,0 +1,45 @@
+#!/bin/bash
+set -e
+
+INPUT_NAME="$1"
+if [ -z "$INPUT_NAME" ]; then
+    echo "Error: No simulation name provided."
+    echo "Usage: scripts/setup <input_name>"
+    exit 1
+fi
+
+if [ -f ".venv/Scripts/python.exe" ]; then
+    PYTHON_EXEC=".venv/Scripts/python.exe"
+elif [ -f ".venv/bin/python" ]; then
+    PYTHON_EXEC=".venv/bin/python"
+else
+    echo "Error: Could not find Python executable in .venv"
+    exit 1
+fi
+
+if [[ "$INPUT_NAME" == "_"* ]]; then
+    TARGET_NAME="$INPUT_NAME"
+    SIM_ARG="$INPUT_NAME"
+elif [[ "$INPUT_NAME" == *"_"* ]]; then
+    TARGET_NAME="${INPUT_NAME%%_*}"
+    SIM_ARG="$INPUT_NAME"
+else
+    TARGET_NAME="$INPUT_NAME"
+    SIM_ARG="$INPUT_NAME"
+fi
+
+OUTPUT_DIR="output/$TARGET_NAME/$SIM_ARG"
+
+echo "Clearing output in \"$OUTPUT_DIR\"..."
+rm -rf "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR/particles" "$OUTPUT_DIR/video"
+
+SETUP_SCRIPT="python_scripts/setup/$TARGET_NAME.py"
+if [ ! -f "$SETUP_SCRIPT" ]; then
+    echo "Error: Setup script '$SETUP_SCRIPT' not found."
+    exit 1
+fi
+
+echo "--- Running Python setup for $TARGET_NAME ---"
+PYTHONPATH="." "$PYTHON_EXEC" "$SETUP_SCRIPT" "$INPUT_NAME"
+echo "--- Setup complete ---"

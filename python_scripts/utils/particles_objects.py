@@ -11,8 +11,8 @@ def generate_molecules(
     rad: Union[float, Sequence[float]] = 0.005, 
     d_r: Union[float, Sequence[float]] = 0.0, 
     density: Union[float, Sequence[float]] = 1200,
-    particle_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (255.0, 0.0, 0.0, 255.0),
-    charge_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (0.0, 0.0, 255.0, 255.0),
+    particle_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (255.0, 0.0, 0.0, 150.0),
+    charge_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (0.0, 255.0, 255.0, 255.0),
     ptype: Union[int, Sequence[int]] = 0
 ):
     """
@@ -37,7 +37,7 @@ def generate_molecules(
     # Parse all keyword arguments
     ws = parse_tuple(w)
     qs = parse_scalar(q)
-    vels = parse_tuple(v)
+    #vels = parse_tuple(v)
     rads = parse_scalar(rad)
     d_rs = parse_scalar(d_r)
     densities = parse_scalar(density)
@@ -55,51 +55,53 @@ def generate_molecules(
         wx, wy, wz = ws[i]
         
         # Extract per-molecule values for this iteration
-        vx, vy, vz = vels[i]
+        vx, vy, vz = v[i]
         r = rads[i]
         dr = d_rs[i]
         dens = densities[i]
         p_col = p_colours[i]
         c_col = c_colours[i]
         ptype_val = ptype_vals[i]
+        q = qs[i]
+        r=rads[i]
+ 
 
         mass = (4.0 / 3.0) * np.pi * (r ** 3) * dens
         
-        print('mass', mass)
 
         particle = {
-            "t": [0.0],
-            "id": [int(particle_id)],
-            "molecule_id": [int(mol_id)],
-            "ptype": [int(ptype_val)],
-            "x": [float(x)], "y": [float(y)], "z": [float(z)],
-            "rel_x": [0.0], "rel_y": [0.0], "rel_z": [0.0],
-            "vx": [float(vx)], "vy": [float(vy)], "vz": [float(vz)],
-            "wx": [float(wx)], "wy": [float(wy)], "wz": [float(wz)],
-            "radius": [float(r)],
-            "mass": [float(mass)],
-            "charge": [float(qs[i])],
-            "r": [float(p_col[0])], "g": [float(p_col[1])], 
-            "b": [float(p_col[2])], "a": [float(p_col[3])]
+            "t": 0.0,
+            "id": int(particle_id),
+            "molecule_id": int(mol_id),
+            "ptype": int(ptype_val),
+            "x": float(x), "y": float(y), "z": float(z),
+            "rel_x": 0.0, "rel_y": 0.0, "rel_z": 0.0,
+            "vx": float(vx), "vy": float(vy), "vz": float(vz),
+            "wx": float(wx), "wy": float(wy), "wz": float(wz),
+            "radius": float(r),
+            "mass": float(mass),
+            "charge": 0.0,
+            "r": float(p_col[0]), "g": float(p_col[1]), 
+            "b": float(p_col[2]), "a": float(p_col[3])
         }
         particle_id += 1
 
         rel_pos = -r * dr
         
         charge = {
-            "t": [0.0],
-            "id": [int(particle_id)],
-            "molecule_id": [int(mol_id)],  # Fixed: added int() wrapper
-            "ptype": [int(1)],            # Fixed: added int() wrapper
-            "x": [float(x + rel_pos * np.cos(phi[i]))], "y": [float(y)], "z": [float(z + rel_pos * np.sin(phi[i]))],
-            "rel_x": [float(rel_pos * np.cos(phi[i]))], "rel_y": [0.0], "rel_z": [float(rel_pos * np.sin(phi[i]))],
-            "vx": [float(vx)], "vy": [float(vy)], "vz": [float(vz)],
-            "wx": [float(wx)], "wy": [float(wy)], "wz": [float(wz)],
-            "radius": [float(0.1 * r)],
-            "mass": [0.0],
-            "charge": [0.0],
-            "r": [float(c_col[0])], "g": [float(c_col[1])], 
-            "b": [float(c_col[2])], "a": [float(c_col[3])]
+            "t": 0.0,
+            "id": int(particle_id),
+            "molecule_id": int(mol_id),
+            "ptype": int(ptype_val)+1,
+            "x": float(x + rel_pos * np.cos(phi[i])), "y": float(y), "z": float(z + rel_pos * np.sin(phi[i])),
+            "rel_x": float(rel_pos * np.cos(phi[i])), "rel_y": 0.0, "rel_z": float(rel_pos * np.sin(phi[i])),
+            "vx": float(vx), "vy": float(vy), "vz": float(vz),
+            "wx": float(wx), "wy": float(wy), "wz": float(wz),
+            "radius": float(0.1 * r),
+            "mass": 0.0,
+            "charge": float(q),
+            "r": float(c_col[0]), "g": float(c_col[1]), 
+            "b": float(c_col[2]), "a": float(c_col[3])
         }
         particle_id += 1
         mol_id += 1
@@ -167,3 +169,36 @@ def create_triangle(
         "r": [float(colour[0])], "g": [float(colour[1])], "b": [float(colour[2])], "a": [float(colour[3])],
         "visible": [bool(visible)],
     })
+    
+    
+
+
+def generate_particle_positions(n_particles, min_dist, **kwargs):
+    min_bound = kwargs.get('min_bound', 0.005)
+    max_bound = kwargs.get('max_bound', 0.015)
+    h = kwargs.get('h', 0.02)
+
+    positions = []
+    max_attempts = 10000
+    attempts = 0
+
+    while len(positions) < n_particles and attempts < max_attempts:
+        x = np.random.uniform(min_bound, max_bound)
+        z = np.random.uniform(min_bound, max_bound)
+        
+        overlap = False
+        for px, _, pz in positions:
+            dist = np.sqrt((x - px)**2 + (z - pz)**2)
+            if dist < min_dist:
+                overlap = True
+                break
+                
+        if not overlap:
+            positions.append((x, h / 2.0, z))
+            
+        attempts += 1
+
+    if len(positions) < n_particles:
+        print(f"Warning: Only managed to place {len(positions)} out of {n_particles} non-overlapping particles.")
+
+    return positions
