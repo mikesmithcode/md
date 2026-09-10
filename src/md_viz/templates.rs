@@ -41,35 +41,23 @@ pub struct SphereTemplate {
 }
 
 impl SphereTemplate {
-    pub fn new(context: &Context, particles: &ParticleVec) -> Self {
+    pub fn new(context: &Context, transparent: bool) -> Self {
         let cpu_mesh = CpuMesh::sphere(16);
 
-        let colour = Srgba::new(
-            particles.colour[0].r,
-            particles.colour[0].g,
-            particles.colour[0].b,
-            particles.colour[0].a
-        );
-
-        let mat = if colour.a < 255 { 
+        let mat = if transparent {
             create_transparent_material(None)
         } else {
             create_opaque_material(None)
         };
 
-        // Build the initial color buffer once
-        let mut initial_colours = Vec::with_capacity(particles.len());
-        for i in 0..particles.len() {
-            initial_colours.push(particles.colour[i]);
-        }
-
         let mesh = Gm::new(
             InstancedMesh::new(context, &Instances::default(), &cpu_mesh),
-            mat
+            mat,
         );
 
         Self { mesh }
     }
+
 
     // Helper to update instance of particle
     pub fn push_transform(&self, i: usize, particles: &ParticleVec, transforms: &mut Vec<three_d::Mat4>) {
@@ -425,7 +413,7 @@ fn create_transparent_material(colour: Option<Srgba>) -> PhysicalMaterial {
         },
         cull: Cull::None,//None, Back, Front
         write_mask: WriteMask::COLOR, //None
-        depth_test: DepthTest::Less,
+        depth_test: DepthTest::Always,
     };
     mat
 }
@@ -442,7 +430,7 @@ fn create_opaque_material(colour: Option<Srgba>) -> PhysicalMaterial {
     mat.render_states = three_d::RenderStates {
         cull: Cull::None,
         write_mask: WriteMask::COLOR_AND_DEPTH, // Fixed: must write depth for opaque objects!
-        depth_test: DepthTest::Less,
+        depth_test: DepthTest::Always,
         ..Default::default()
     };
     mat

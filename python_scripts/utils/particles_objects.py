@@ -3,49 +3,81 @@ import polars as pl
 from typing import Union, Sequence, Tuple
 
 
+from typing import Sequence, Tuple, Union
+import numpy as np
+import polars as pl
+
+from typing import Dict, Optional, Sequence, Tuple, Union
+import numpy as np
+import polars as pl
+
+# Default colour mapping matching previous values:
+# 0: Main sphere (+q) -> White alpha=150
+# 1: Charge sphere (+q) -> Magenta
+# 2: Main sphere (-q) -> White alpha=150
+# 3: Charge sphere (-q) -> Cyan
+DEFAULT_PTYPE_COLOURS: Dict[int, Tuple[float, float, float, float]] = {
+    0: (255.0, 255.0, 255.0, 150.0),
+    1: (255.0, 0.0, 255.0, 255.0),
+    2: (255.0, 255.0, 255.0, 150.0),
+    3: (0.0, 255.0, 255.0, 255.0),
+}
+
+
 def generate_molecules(
-    positions: Sequence[Tuple[float, float, float]], 
-    w: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0), 
-    q: Union[float, Sequence[float]] = 1e-9, 
-    v: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0), 
-    rad: Union[float, Sequence[float]] = 0.005, 
-    d_r: Union[float, Sequence[float]] = 0.0, 
+    positions: Sequence[Tuple[float, float, float]],
+    w: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0),
+    q_mag: Union[float, Sequence[float]] = 1e-9,
+    v: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0),
+    rad: Union[float, Sequence[float]] = 0.005,
+    d_r: Union[float, Sequence[float]] = 0.0,
     density: Union[float, Sequence[float]] = 1200,
-    particle_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (255.0, 0.0, 0.0, 150.0),
-    charge_colour: Union[Tuple[float, float, float, float], Sequence[Tuple[float, float, float, float]]] = (0.0, 255.0, 255.0, 255.0),
-    ptype: Union[int, Sequence[int]] = 0
+    mixed: bool = False,
+    ptype_colours: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
 ):
-    """
-    A generator that yields a Polars DataFrame containing both the particle 
-    and its charge for each molecule. Kwargs accept either a single value/tuple 
-    or a list/array matching the length of positions.
+    """Yields a Polars DataFrame containing both the particle and its charge for each molecule.
+
+    Sign logic:
+      - If mixed=True and q_mag >= 0: Charges randomly pick positive or negative.
+      - If mixed=False OR q_mag < 0: All charges get the sign of q_mag.
+
+    Particle Types:
+      - Positive molecule: Main ptype = 0, Charge ptype = 1
+      - Negative molecule: Main ptype = 2, Charge ptype = 3
     """
     n_molecules = len(positions)
-    
-    # Helper 1: For scalar/single values (e.g., rad, density, d_r, q)
+
+    # Merge user-defined colours with defaults
+    colours = DEFAULT_PTYPE_COLOURS.copy()
+    if ptype_colours is not None:
+        colours.update(ptype_colours)
+
     def parse_scalar(param):
         if isinstance(param, (list, np.ndarray)) and len(param) == n_molecules:
             return param
         return [param] * n_molecules
 
-    # Helper 2: For tuple values (e.g., w, vel, particle_colour, charge_colour)
     def parse_tuple(param):
         if isinstance(param, (list, np.ndarray)) and len(param) == n_molecules and isinstance(param[0], (list, tuple, np.ndarray)):
             return param
         return [param] * n_molecules
 
-    # Parse all keyword arguments
     ws = parse_tuple(w)
-    qs = parse_scalar(q)
-    #vels = parse_tuple(v)
+    qs_mag = parse_scalar(q_mag)
+    vels = parse_tuple(v)
     rads = parse_scalar(rad)
     d_rs = parse_scalar(d_r)
     densities = parse_scalar(density)
-    p_colours = parse_tuple(particle_colour)
-    c_colours = parse_tuple(charge_colour)
-    ptype_vals = parse_scalar(ptype)
-    
+
     phi = np.random.uniform(-np.pi, np.pi, size=n_molecules)
+
+    # Determine signs per particle
+    signs = np.zeros(n_molecules, dtype=int)
+    for idx, q_val in enumerate(qs_mag):
+        if mixed and q_val >= 0:
+            signs[idx] = np.random.choice([1, -1])
+        else:
+            signs[idx] = 1 if q_val >= 0 else -1
 
     mol_id = 0
     particle_id = 0
@@ -53,27 +85,32 @@ def generate_molecules(
     for i, pos_data in enumerate(positions):
         x, y, z = pos_data
         wx, wy, wz = ws[i]
-        
-        # Extract per-molecule values for this iteration
-        vx, vy, vz = v[i]
+        vx, vy, vz = vels[i]
         r = rads[i]
         dr = d_rs[i]
         dens = densities[i]
-        p_col = p_colours[i]
-        c_col = c_colours[i]
-        ptype_val = ptype_vals[i]
-        q = qs[i]
-        r=rads[i]
- 
+        q_val = qs_mag[i]
+
+        sign = signs[i]
+        actual_q = sign * abs(q_val)
+
+        if sign > 0:
+            main_ptype = 0
+            charge_ptype = 1
+        else:
+            main_ptype = 2
+            charge_ptype = 3
+
+        main_col = colours[main_ptype]
+        charge_col = colours[charge_ptype]
 
         mass = (4.0 / 3.0) * np.pi * (r ** 3) * dens
-        
 
         particle = {
             "t": 0.0,
             "id": int(particle_id),
             "molecule_id": int(mol_id),
-            "ptype": int(ptype_val),
+            "ptype": int(main_ptype),
             "x": float(x), "y": float(y), "z": float(z),
             "rel_x": 0.0, "rel_y": 0.0, "rel_z": 0.0,
             "vx": float(vx), "vy": float(vy), "vz": float(vz),
@@ -81,40 +118,43 @@ def generate_molecules(
             "radius": float(r),
             "mass": float(mass),
             "charge": 0.0,
-            "r": float(p_col[0]), "g": float(p_col[1]), 
-            "b": float(p_col[2]), "a": float(p_col[3])
+            "r": float(main_col[0]), "g": float(main_col[1]),
+            "b": float(main_col[2]), "a": float(main_col[3])
         }
         particle_id += 1
 
         rel_pos = -r * dr
-        
+
         charge = {
             "t": 0.0,
             "id": int(particle_id),
             "molecule_id": int(mol_id),
-            "ptype": int(ptype_val)+1,
-            "x": float(x + rel_pos * np.cos(phi[i])), "y": float(y), "z": float(z + rel_pos * np.sin(phi[i])),
-            "rel_x": float(rel_pos * np.cos(phi[i])), "rel_y": 0.0, "rel_z": float(rel_pos * np.sin(phi[i])),
+            "ptype": int(charge_ptype),
+            "x": float(x + rel_pos * np.cos(phi[i])),
+            "y": float(y),
+            "z": float(z + rel_pos * np.sin(phi[i])),
+            "rel_x": float(rel_pos * np.cos(phi[i])),
+            "rel_y": 0.0,
+            "rel_z": float(rel_pos * np.sin(phi[i])),
             "vx": float(vx), "vy": float(vy), "vz": float(vz),
             "wx": float(wx), "wy": float(wy), "wz": float(wz),
-            "radius": float(0.1 * r),
+            "radius": float(0.2 * r),
             "mass": 0.0,
-            "charge": float(q),
-            "r": float(c_col[0]), "g": float(c_col[1]), 
-            "b": float(c_col[2]), "a": float(c_col[3])
+            "charge": float(actual_q),
+            "r": float(charge_col[0]), "g": float(charge_col[1]),
+            "b": float(charge_col[2]), "a": float(charge_col[3])
         }
         particle_id += 1
         mol_id += 1
-    
-        # Combine particle and charge into a single DataFrame for this molecule
+
         df = pl.concat([pl.DataFrame(particle), pl.DataFrame(charge)])
-        
+
         df = df.with_columns(
             pl.col("ptype").cast(pl.UInt64),
             pl.col("id").cast(pl.UInt64),
             pl.col("molecule_id").cast(pl.UInt64)
         )
-        
+
         yield df
 
 

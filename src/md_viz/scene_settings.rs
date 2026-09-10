@@ -51,14 +51,20 @@ impl Default for SceneSettings {
     }
 }
 
-/// Container holding shared GPU rendering assets, lighting configurations, geometry templates, and instance buffers.
 pub struct GpuResources {
     pub ambient_light: AmbientLight,
     pub directional_light: DirectionalLight,
     pub simbox_template: WireBoxTemplate,
-    #[allow(dead_code)]
-    pub sphere_template: SphereTemplate, // Create instances which are updated starting from a single template
-    pub object_templates: Vec<ObjectTemplate>, // Each object gets its own template stored in the Vec which is transformed
-    pub instance_transforms: Vec<Mat4>,
-    pub instance_colours: Vec<Srgba>,
+    
+    // Separate sphere templates for opaque and transparent instances
+    pub opaque_sphere_template: SphereTemplate,
+    pub transparent_sphere_template: SphereTemplate,
+    
+    pub object_templates: Vec<ObjectTemplate>,
+    
+    // Instance buffers split by transparency mode
+    pub opaque_instance_transforms: Vec<Mat4>,
+    pub opaque_instance_colours: Vec<Srgba>,
+    pub transparent_instance_transforms: Vec<Mat4>,
+    pub transparent_instance_colours: Vec<Srgba>,
 }

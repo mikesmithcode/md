@@ -72,7 +72,7 @@ impl<S> Simulation<S>
         let n = particles.len();
         let molecule_map = build_molecule_map(&particles);
         let mut cell_grid = CellGrid::new(n, &settings);
-        cell_grid.init(&mut particles, &settings);
+        cell_grid.init(&mut particles);
 
         Self {
             particles,

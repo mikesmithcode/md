@@ -99,19 +99,18 @@ impl Scene {
     // 
     // 
     // Creates and stores the initial graphic templates for rendering.
-    fn _init_gpu_resources(context: &Context, particles: &ParticleVec, objects: Option<&[ObjectSpec]>, scene_settings: &SceneSettings) -> Result<GpuResources, Box<dyn std::error::Error>> { 
+    fn _init_gpu_resources(
+        context: &Context, 
+        particles: &ParticleVec, 
+        objects: Option<&[ObjectSpec]>, 
+        scene_settings: &SceneSettings
+    ) -> Result<GpuResources, Box<dyn std::error::Error>> { 
         let simbox_template = WireBoxTemplate::new(context, scene_settings.sim_box);
-        let sphere_template = SphereTemplate::new(context, particles);
-
-        let count = particles.len();
-        let mut instance_transforms = Vec::with_capacity(count);
-        let mut instance_colours = Vec::with_capacity(count);
-
-        for i in 0..count {
-            sphere_template.push_transform(i, particles, &mut instance_transforms);
-            sphere_template.push_colour_and_visibility(i, particles, &mut instance_colours);
-        }
         
+        // Create distinct templates for opaque and transparent rendering pipelines
+        let opaque_sphere_template = SphereTemplate::new(context, false);
+        let transparent_sphere_template = SphereTemplate::new(context, true);
+
         // Generate all object templates
         let mut object_templates = vec![];
         if let Some(objs) = objects {
@@ -124,15 +123,21 @@ impl Scene {
             }
         }
 
-        let resources = GpuResources { 
+        let mut resources = GpuResources { 
             ambient_light: create_ambient_light(context), 
             directional_light: create_directional_light(context),
             simbox_template,
-            sphere_template,
             object_templates,
-            instance_transforms,
-            instance_colours,
+            opaque_sphere_template,
+            transparent_sphere_template,
+            opaque_instance_transforms: Vec::new(),
+            opaque_instance_colours: Vec::new(),
+            transparent_instance_transforms: Vec::new(),
+            transparent_instance_colours: Vec::new(),
         };
+
+        // Populate initial particle transform and colour buffers across opaque/transparent sets
+        Self::update_particles(&mut resources, particles);
 
         Ok(resources)
     }
@@ -140,20 +145,53 @@ impl Scene {
     // Particles use a single Sphere template but multiple instances. Every step we 
     // update there positions, radii and colours.
     fn update_particles(resources: &mut GpuResources, particles: &ParticleVec) {
-        let mut transforms = std::mem::take(&mut resources.instance_transforms);
-        let mut colours = std::mem::take(&mut resources.instance_colours);
-        transforms.clear();
-        colours.clear();
-        
-        for (pos, rad, col) in soa_zip!(particles, [position, radius, colour]) {
-                transforms.push(Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32)) * Mat4::from_scale(*rad as f32));
-                colours.push(*col);
-            }
-        
-        resources.instance_transforms = transforms;
-        resources.instance_colours = colours;
-    }
+        // Take ownership of vectors to avoid reallocations
+        let mut opaque_transforms = std::mem::take(&mut resources.opaque_instance_transforms);
+        let mut opaque_colours = std::mem::take(&mut resources.opaque_instance_colours);
+        let mut transparent_transforms = std::mem::take(&mut resources.transparent_instance_transforms);
+        let mut transparent_colours = std::mem::take(&mut resources.transparent_instance_colours);
 
+        opaque_transforms.clear();
+        opaque_colours.clear();
+        transparent_transforms.clear();
+        transparent_colours.clear();
+
+        for (pos, rad, col) in soa_zip!(particles, [position, radius, colour]) {
+            let transform = Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32))
+                * Mat4::from_scale(*rad as f32);
+
+            // Alpha threshold check (assuming 0..255 representation or 0.0..1.0)
+            // If Srgba uses standard u8 channels:
+            if col.a >= 254 {
+                opaque_transforms.push(transform);
+                opaque_colours.push(*col);
+            } else {
+                transparent_transforms.push(transform);
+                transparent_colours.push(*col);
+            }
+        }
+
+        // Assign populated vectors back into resources
+        resources.opaque_instance_transforms = opaque_transforms;
+        resources.opaque_instance_colours = opaque_colours;
+        resources.transparent_instance_transforms = transparent_transforms;
+        resources.transparent_instance_colours = transparent_colours;
+
+        // Apply instances to respective sphere mesh templates
+        let opaque_instances = Instances {
+            transformations: resources.opaque_instance_transforms.clone(),
+            texture_transformations: None,
+            colors: Some(resources.opaque_instance_colours.clone()),
+        };
+        resources.opaque_sphere_template.mesh.set_instances(&opaque_instances);
+
+        let transparent_instances = Instances {
+            transformations: resources.transparent_instance_transforms.clone(),
+            texture_transformations: None,
+            colors: Some(resources.transparent_instance_colours.clone()),
+        };
+        resources.transparent_sphere_template.mesh.set_instances(&transparent_instances);
+}
     
     /// Objects, if they exist each have their own template stored in the gpu resources.
     /// 
@@ -219,54 +257,75 @@ impl Scene {
     ) -> Result<(), Box<dyn std::error::Error>> {
         target.clear(ClearState::color_and_depth(0.0, 0.0, 0.0, 1.0, 1.0));
 
-        // 1. Particle updates
+        // 1. Update particle instances (populates opaque and transparent sphere instances)
         Self::update_particles(resources, particles);
-        
 
-        let instances = Instances {
-            transformations: resources.instance_transforms.clone(),
-            texture_transformations: None,
-            colors: Some(resources.instance_colours.clone()),
-        };
-        resources.sphere_template.mesh.set_instances(&instances);
-
-        // 3. Object transform updates (run every frame)
+        // 2. Update single-object transformation matrices
         if let Some(objects) = objects {
             Self::update_object_transforms(resources, objects);
         }
 
-        // 4. Gather renderable objects dynamically
-        let mut scene_objects: Vec<&dyn Object> = Vec::new();
-        // Display simulation box outline
+        let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
+
+        // =========================================================================
+        // PASS 1: OPAQUE PASS
+        // =========================================================================
+        let mut opaque_objects: Vec<&dyn Object> = Vec::new();
+
+        // Simulation Box Wireframe
         if resources.simbox_template.boxspec.visible {
-            scene_objects.push(&resources.simbox_template.mesh);
+            opaque_objects.push(&resources.simbox_template.mesh);
         }
 
+        // Opaque Static/Dynamic Objects (Rectangles, Triangles, WireBoxes)
         for template in &resources.object_templates {
             match template {
-                ObjectTemplate::Rectangle(t) => scene_objects.push(&t.mesh),
-                ObjectTemplate::Triangle(t) => scene_objects.push(&t.mesh),
-                ObjectTemplate::WireBox(t) => scene_objects.push(&t.mesh),
+                ObjectTemplate::Rectangle(t) if t.rectspec.colour.a >= 254 => opaque_objects.push(&t.mesh),
+                ObjectTemplate::Triangle(t) if t.trispec.colour.a >= 254 => opaque_objects.push(&t.mesh),
+                ObjectTemplate::WireBox(t) => opaque_objects.push(&t.mesh),
+                _ => {}
             }
         }
 
-        scene_objects.push(&resources.sphere_template.mesh);
-
-        
-
-        // Setup lights and execute draw call
-        let lights: Vec<&dyn Light> = vec![&resources.ambient_light, &resources.directional_light];
-
-        if !scene_objects.is_empty() {
-            target.render(camera, scene_objects, &lights);
+        // Instanced Opaque Particles
+        if !resources.opaque_instance_transforms.is_empty() {
+            opaque_objects.push(&resources.opaque_sphere_template.mesh);
         }
 
-        // ==========================================
-        // PASS 2: Particles (Drawn LAST, Guaranteed)
-        // ==========================================
-        let particle_objects: Vec<&dyn Object> = vec![&resources.sphere_template.mesh];
-        target.render(camera, particle_objects, &lights);
-        
+        if !opaque_objects.is_empty() {
+            target.render(camera, &opaque_objects, &lights);
+        }
+
+        // =========================================================================
+        // PASS 2: TRANSPARENT PASS
+        // =========================================================================
+        let mut transparent_objects: Vec<&dyn Object> = Vec::new();
+
+        // Transparent Static/Dynamic Objects
+        for template in &resources.object_templates {
+            match template {
+                ObjectTemplate::Rectangle(t) if t.rectspec.colour.a < 254 => transparent_objects.push(&t.mesh),
+                ObjectTemplate::Triangle(t) if t.trispec.colour.a < 254 => transparent_objects.push(&t.mesh),
+                _ => {}
+            }
+        }
+
+        // Instanced Transparent Particles
+        if !resources.transparent_instance_transforms.is_empty() {
+            transparent_objects.push(&resources.transparent_sphere_template.mesh);
+        }
+
+        if !transparent_objects.is_empty() {
+            // Sort transparent geometry back-to-front relative to camera
+            transparent_objects.sort_by(|a, b| {
+                let dist_a = camera.position().distance(a.aabb().center());
+                let dist_b = camera.position().distance(b.aabb().center());
+                dist_b.partial_cmp(&dist_a).unwrap_or(std::cmp::Ordering::Equal)
+            });
+
+            target.render(camera, &transparent_objects, &lights);
+        }
+
         Ok(())
     }
 
@@ -331,22 +390,38 @@ impl Scene {
     /// ---------------------------------------------------------------------
     
     /// Polls incoming window events, updates camera controls, and returns a boolean indicating whether a close was requested.
-    pub fn poll_events(&mut self, event_loop: &mut EventLoop<()>) -> bool {
+    /// Polls incoming window events, updates camera controls, and returns a boolean indicating whether a close was requested.
+pub fn poll_events(&mut self, event_loop: &mut EventLoop<()>) -> bool {
     let mut close_requested = false;
 
+    // Use explicit ref to avoid borrow-checker conflicts inside the closure
+    let windowed_context = &mut self.windowed_context;
+    let frame_input_generator = &mut self.frame_input_generator;
+    let camera_control = &mut self.camera_control;
+    let winit_window_id = self.winit_window.id();
+
     event_loop.run_return(|event, _, control_flow| {
-        // 1. Keep polling pending events by default
         *control_flow = winit::event_loop::ControlFlow::Poll;
 
         match event {
-            WinitEvent::WindowEvent { event, window_id } if self.winit_window.id() == window_id => {
-                self.camera_control.handle_event(&event);
-                if let WindowEvent::CloseRequested = event {
-                    close_requested = true;
+            WinitEvent::WindowEvent { event, window_id } if window_id == winit_window_id => {
+                // Pass event to three-d frame input generator
+                frame_input_generator.handle_winit_window_event(&event);
+
+                // Pass event to camera controller
+                camera_control.handle_event(&event);
+
+                match event {
+                    WindowEvent::Resized(physical_size) => {
+                        // Crucial step: Resize the underlying graphics context
+                        windowed_context.resize(physical_size);
+                    }
+                    WindowEvent::CloseRequested => {
+                        close_requested = true;
+                    }
+                    _ => {}
                 }
             }
-            // 2. Once Wayland/Windows has drained all pending inputs, exit the event pump
-            // Note: If you are on winit 0.29+, use WinitEvent::AboutToWait instead
             WinitEvent::MainEventsCleared => { 
                 *control_flow = winit::event_loop::ControlFlow::Exit;
             }

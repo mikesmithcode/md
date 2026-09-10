@@ -11,9 +11,11 @@ def load_simulation_data() -> pl.DataFrame:
     script_name_with_ending = Path(__file__).stem.replace(
         "analyse", script_ending
     )
-    particles_dir = Path(__file__).parents[1].joinpath(
+    particles_dir = Path(__file__).parents[2].joinpath(
         "output", script_name, script_name_with_ending, "particles"
     )
+
+    print(particles_dir)
 
     if not particles_dir.exists():
         raise FileNotFoundError(f"Directory does not exist: {particles_dir}")
@@ -135,6 +137,15 @@ def plot_charge_position(
 
 
 if __name__ == "__main__":
+
+  from pathlib import Path
+
+  p = Path(r"C:\Code\md\python_scripts\output\dipolesvibratingbox\dipolesvibratingbox\particles")
+
+  print("Path exists:", p.exists())
+  print("Is directory:", p.is_dir())
+  print("Parent contents:", list(p.parent.glob("*")) if p.parent.exists() else "Parent missing")
+    
   df_particles = load_simulation_data()
 
   # Swap between whichever analysis method you want to inspect:

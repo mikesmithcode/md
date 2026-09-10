@@ -38,12 +38,12 @@ use crate::md_sim::utils::file_io::load_sim_settings;
 /// * `dt` - The integration time step size.
 /// * `sim_box_size` - The $x, y, z$ dimensions of the simulation domain boundary.
 /// * `periodic` - Boolean flags enabling or disabling periodic boundary conditions along each axis.
-/// * `cutoff` - The interaction cutoff distance within which neighbors are identified by the cell grid / verlet lists.
 /// * `skin` - Extra buffer distance added beyond the cutoff; neighbor lists are rebuilt when any particle travels more than `skin / 2`.
 /// * `start` - The initial step counter value.
 /// * `num_steps` - The total number of steps the simulation will execute before termination.
 /// * `dump` - Frequency (in steps) for writing data output files or saving video snapshots.
-/// * `interaction_ptypes` - Allowed particle type pairs `[type_a, type_b]` evaluated for forces (non-reciprocal unless explicitly mirrored).
+/// * `interaction_ptypes` - Allowed particle type pairs `(type_a, type_b, cutoff)` evaluated for forces (non-reciprocal unless explicitly mirrored). 
+///    The interaction cutoff distance within which neighbors are identified by the cell grid / verlet lists.
 /// * `model` - Specific physical interaction model parameters and configuration. See [`SimulationModel`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimulationSettings {
@@ -51,12 +51,11 @@ pub struct SimulationSettings {
     pub sim_box_size: DVec3, 
     pub periodic: [bool; 3],
     pub parallel: bool,
-    pub cutoff: f64,
     pub skin: f64,
     pub start: usize,
     pub num_steps: usize,
     pub dump: usize,
-    pub interaction_ptypes: Vec<[u8; 2]>,
+    pub interaction_ptypes: Vec<(usize,usize,f64)>,
     pub collision_ptypes: Vec<u8>,
     pub model: SimulationModel,  
 }
@@ -75,12 +74,11 @@ impl Default for SimulationSettings {
             sim_box_size: DVec3::new(10.0, 0.1, 10.0),
             periodic: [true; 3],
             parallel: true,
-            cutoff: 1.0,
             skin: 0.2,
             start: 0,
             num_steps: 15,
             dump: 1000,
-            interaction_ptypes: vec![[0, 0]],
+            interaction_ptypes: vec![(0, 0, 10.0)],
             collision_ptypes: vec![0],
             model: SimulationModel::Frictional(FrictionParams::default()),
         }

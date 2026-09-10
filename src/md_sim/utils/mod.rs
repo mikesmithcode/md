@@ -6,9 +6,7 @@ use glam::DVec3;
 
 pub use file_io::{filepaths, save_sim_settings, load_sim_settings, save_particles, load_latest_particles, load_objects, load_particles, load_scene_settings, load_latest_objects, save_objects, SimulationPaths};
 pub use test_utils::{assert_dvec3_near,create_molecule_vec, create_single_molecule, create_particle_vec, setup_single_molecule_data, create_grid_and_settings};
-
-#[cfg(test)]
-mod tests;
+pub use crate::md_sim::SimulationSettings;
 
 
 // -------------------------------------------------------------------------------------------------
@@ -81,9 +79,41 @@ pub fn check_delta(delta: &mut DVec3, sim_box_size: DVec3,periodic:[bool;3]) {
 /// * `periodic` - Boolean flags specifying periodicity along each of the three Cartesian axes `[x, y, z]`.
 /// * `search_radius_sq` - Pre-squared neighbor cutoff search radius to avoid expensive square root operations during distance checks.
 /// * `interaction_ptypes` - Slice of allowed particle type pairs `[type_a, type_b]` that evaluate interaction forces.
-pub struct InteractionContext<'a> {
+const MAX_PTYPES: usize = 10;
+
+#[derive(Debug, Clone)]
+pub struct InteractionContext {
     pub sim_box_size: DVec3,
     pub periodic: [bool; 3],
-    pub search_radius_sq: f64,
-    pub interaction_ptypes: &'a [[u8; 2]],
+    pub max_cutoff: f64,
+    pub search_radius_sq_matrix: [[f64; MAX_PTYPES]; MAX_PTYPES],
+}
+
+impl InteractionContext {
+    pub fn new(settings: &SimulationSettings) -> Self {
+        let mut matrix = [[0.0; MAX_PTYPES]; MAX_PTYPES];
+        let mut max_cutoff = 0.0f64;
+
+        for &(i, j, cutoff) in &settings.interaction_ptypes {
+            debug_assert!(
+                i < MAX_PTYPES && j < MAX_PTYPES,
+                "Particle type index ({}, {}) exceeds MAX_PTYPES ({})",
+                i, j, MAX_PTYPES
+            );
+
+            if cutoff > max_cutoff {
+                max_cutoff = cutoff;
+            }
+
+            let search_radius = cutoff + settings.skin;
+            matrix[i][j] = search_radius.powi(2);
+        }
+
+        Self {
+            sim_box_size: settings.sim_box_size,
+            periodic: settings.periodic,
+            max_cutoff,
+            search_radius_sq_matrix: matrix,
+        }
+    }
 }

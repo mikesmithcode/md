@@ -3,12 +3,11 @@
   "sim_box_size": [0.06, 0.01, 0.06],
   "periodic": [true,true,false],
   "parallel":false,
-  "cutoff": 0.05,
   "skin": 0.05,
   "start": 0,
   "num_steps": 500000,
   "dump": 2,
-  "interaction_ptypes": [[0,2]],
+  "interaction_ptypes": [[0,2,0.05]],
   "collision_ptypes":[0],
   "model": {
     "type": "Frictional",

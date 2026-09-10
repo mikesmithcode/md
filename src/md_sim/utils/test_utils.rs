@@ -284,11 +284,10 @@ pub fn setup_single_molecule_data(particles: &ParticleVec) -> HashMap<usize, Mol
 pub fn create_grid_and_settings() -> (CellGrid, SimulationSettings) {
     let particle_count = 6;
     let settings = SimulationSettings {
-        cutoff: 2.8,
         skin: 0.2,
         sim_box_size: DVec3::splat(9.0),
         periodic: [true; 3],
-        interaction_ptypes: vec![[0, 1]],
+        interaction_ptypes: vec![(0, 1, 2.8)],
         ..Default::default()
     };
 

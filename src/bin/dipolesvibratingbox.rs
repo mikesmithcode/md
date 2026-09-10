@@ -41,15 +41,15 @@ impl Forces for SimUpdate{
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
         // Only the main particle has weight
-        if particles.ptype[i] == 0{
-        force = add_weight(i, force, particles);
+        if particles.ptype[i] == 0 || particles.ptype[i] == 2{
+            force = add_weight(i, force, particles);
         }
         (force, _torque)
     }
 
     fn update_object_forces(&self, i: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec, objects: &ObjectSpec, settings: &SimulationSettings)->(DVec3, DVec3){
         //Only main particle collides with the surface
-        if particles.ptype[i] == 0{
+        if particles.ptype[i] == 0 || particles.ptype[i] == 2{
            (force,torque) = add_particle_object_collision(i, particles, objects, force, torque, settings);
         }
         (force, torque)
@@ -58,14 +58,14 @@ impl Forces for SimUpdate{
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
         // guaranteed that i and j will be same ptype due to verlet list specs
-        if particles.ptype[i] == 0{
+        if particles.ptype[i] == 0 || particles.ptype[i] == 2{
             //Only main particles have granular collisions. 
             (force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);
         }
-        else{
-            // ptype == 1 is the charge.
-            force = add_coulomb(i, j, particles, force, settings);
-        }
+        //else{
+        //    // ptype == 1 is the charge.
+        //    force = add_coulomb(i, j, particles, force, settings);
+        //}
 
     
         (force, torque)
