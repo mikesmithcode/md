@@ -93,7 +93,7 @@ pub trait Motion {
     /// * **Default Behavior:** By default, objects are assumed to be passive or static (no movement).
     /// * **Prescribed Motion:** Override this method to apply time-dependent trajectories (e.g., oscillating walls 
     ///   via sine waves) by matching on the object variants and calling `.transform(...)`.
-    fn update_objects(&self, _object: &mut ObjectSpec, _settings: &SimulationSettings, _time: f64) {
+    fn update_objects(&self, _object: &mut ObjectSpec, _particles: &mut ParticleVec,_settings: &SimulationSettings, _time: f64) {
         //Optional no movement by default. It is assumed all objects are passive moving according to prescribed rules
         //match object {
         //    ObjectSpec::Rect(rect) => {

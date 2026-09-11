@@ -68,19 +68,15 @@ fn validate_simulation_inputs(dir_path: &Path, required_files: &[&str]) -> io::R
     Ok(())
 }
 
-/// Parses command-line arguments, constructs input/output simulation filepaths, 
-/// and validates that necessary configuration and initial snapshot files exist on disk.
-///
-/// Expects two command-line arguments:
-/// 1. The simulation target name (e.g., `silo`)
-/// 2. The specific run argument/identifier (e.g., `silo_123`)
-///
-/// Returns a `SimulationPaths` struct containing the organized `PathBuf` entries.
-pub fn filepaths() -> SimulationPaths {
-    // Grab command line arguments directly at the top of the function
+pub struct SimulationContext {
+    pub paths: SimulationPaths,
+    pub headless: bool,
+    pub record_video: bool,
+}
+
+pub fn parse_simulation_args() -> SimulationContext {
     let args: Vec<String> = std::env::args().collect();
     
-    // Expect the target name and simulation argument to be present
     let target_name = args.get(1).expect(
         "Error: No target name provided. \n\
          Usage: Please run via your shell script (e.g., `./run silo_123`) \n\
@@ -89,14 +85,21 @@ pub fn filepaths() -> SimulationPaths {
     let sim_arg = args.get(2).expect(
         "Error: No simulation argument provided."
     );
+    
+    // Check if headless flag was passed as the third argument (defaults to true if omitted)
+    let headless = args.get(3)
+        .map(|val| val.parse::<bool>().unwrap_or(true))
+        .unwrap_or(true);
+
+    let record_video = args.get(4)
+        .map(|val| val.parse::<bool>().unwrap_or(false))
+        .unwrap_or(false);
 
     const INPUT_PATH: &'static str = "input";
     
-    // Construct paths cleanly from the explicit components
     let config_path = Path::new(INPUT_PATH).join(target_name);
     let output_path = Path::new("output").join(target_name).join(sim_arg);
 
-    // Run your validation checks
     let required_files = vec!["sim_settings.json", "scene_settings.json"];
     let _ = validate_simulation_inputs(&config_path, &required_files);
     let sim_config = config_path.join("sim_settings.json"); 
@@ -116,13 +119,17 @@ pub fn filepaths() -> SimulationPaths {
     };
     let video = video_dir.join(format!("{}.mp4", sim_arg));
 
-    SimulationPaths {
-        output: output_path,
-        sim_config,
-        scene_config,
-        object,
-        particle,
-        video,
+    SimulationContext {
+        paths: SimulationPaths {
+            output: output_path,
+            sim_config,
+            scene_config,
+            object,
+            particle,
+            video,
+        },
+        headless,
+        record_video
     }
 }
 

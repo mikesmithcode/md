@@ -50,6 +50,7 @@ pub struct SimulationSettings {
     pub dt: f64,
     pub sim_box_size: DVec3, 
     pub periodic: [bool; 3],
+    pub dimensions: Dimensions,
     pub parallel: bool,
     pub skin: f64,
     pub start: usize,
@@ -74,6 +75,7 @@ impl Default for SimulationSettings {
             sim_box_size: DVec3::new(10.0, 0.1, 10.0),
             periodic: [true; 3],
             parallel: true,
+            dimensions: Dimensions::XZ,
             skin: 0.2,
             start: 0,
             num_steps: 15,
@@ -83,4 +85,15 @@ impl Default for SimulationSettings {
             model: SimulationModel::Frictional(FrictionParams::default()),
         }
     }
+}
+
+
+/// Used to define whether simulation occurs in a plane or not.
+/// If a 2D plane the force component on the other dimension is set to zero.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Dimensions{
+    XY,
+    XZ,
+    YZ,
+    XYZ
 }

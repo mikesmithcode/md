@@ -9,10 +9,13 @@ use std::path::PathBuf;
 use md::md_viz::scene::Scene;
 use md::md_viz::scene_settings::SceneSettings;
 use md::md_sim::SimulationSettings;
-use md::md_sim::utils::{filepaths, load_particles, load_objects, load_latest_particles, load_latest_objects, SimulationPaths};
+use md::md_sim::utils::{parse_simulation_args, load_particles, load_objects, load_latest_particles, load_latest_objects, SimulationPaths};
 
 pub fn main() {    
-    let sim_filepaths: SimulationPaths = filepaths();
+    // Construct filepaths
+    let ctx = parse_simulation_args();
+    let sim_filepaths = ctx.paths;
+    let headless = ctx.headless;
     
     // Initialise simulation settings and initial scene state
     let (particles, start_step, _time) = load_latest_particles(&sim_filepaths).expect("Failed to load initial particle snapshot");

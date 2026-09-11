@@ -2,22 +2,29 @@
 set -e
 
 show_help() {
-    echo "Usage: scripts/run [-b] [-r] [-x] [-h] <input_name>"
+    echo "Usage: scripts/run [-b] [-r] [-x] [-g] [-v] [-h] <input_name>"
     echo "  -b    Build Release: Compiles in release mode and exits."
     echo "  -r    Release Mode: Compiles with release optimizations and runs."
     echo "  -x    Execute Only: Runs pre-existing binary without rebuilding."
+    echo "  -g    Graphics Mode: Enables live window display (runs headless by default)."
+    echo "  -v    Video Recording: Enables video output rendering."
+    echo "  -h    Show help."
     exit 0
 }
 
 RELEASE_FLAG=""
 BUILD_ONLY=false
 EXECUTE_ONLY=false
+HEADLESS=true
+RECORD_VIDEO=false
 
-while getopts "brxh" opt; do
+while getopts "brxgvh" opt; do
   case $opt in
     r) RELEASE_FLAG="--release" ;;
     b) BUILD_ONLY=true; RELEASE_FLAG="--release" ;;
     x) EXECUTE_ONLY=true ;;
+    g) HEADLESS=false ;;
+    v) RECORD_VIDEO=true ;;
     h) show_help ;;
     \?) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
   esac
@@ -60,9 +67,9 @@ if [ "$BUILD_ONLY" = true ]; then
     exit 0
 fi
 
-echo "--- Launching Simulation ---"
+echo "--- Launching Simulation (Headless: $HEADLESS, Record Video: $RECORD_VIDEO) ---"
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$TARGET_NAME" "$SIM_ARG"
+    GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO"
 else
-    "$BINARY" "$TARGET_NAME" "$SIM_ARG"
+    "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO"
 fi

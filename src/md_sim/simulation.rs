@@ -40,7 +40,7 @@ use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::force::CellGrid;
 use crate::md_sim::Forces;
 use crate::md_sim::Motion;
-use crate::md_sim::SimulationSettings;
+use crate::md_sim::{SimulationSettings, Dimensions};
 
 
 /// The main simulation engine orchestrating particle states, forces, boundary grids, and time integration steps.
@@ -106,7 +106,7 @@ impl<S> Simulation<S>
         // Move any objects
         if let Some(scene_objects) = self.objects.as_deref_mut() {
             for object in scene_objects {
-                self.sim_update.update_objects(object, &self.settings, self.time);
+                self.sim_update.update_objects(object, &mut self.particles, &self.settings, self.time);
             }
         }
 
@@ -165,6 +165,29 @@ impl<S> Simulation<S>
                 &self.sim_update, 
                 &self.settings
             );
+        }
+
+        // Correct finite precision error if simulation in 2D
+        match self.settings.dimensions {
+            Dimensions::XY => {
+                // Lock Z to 0
+                for f in &mut self.forces {
+                    f.z = 0.0;
+                }
+            }
+            Dimensions::XZ => {
+                // Lock Y to 0
+                for f in &mut self.forces {
+                    f.y = 0.0;
+                }
+            }
+            Dimensions::YZ => {
+                // Lock X to 0
+                for f in &mut self.forces {
+                    f.x = 0.0;
+                }
+            }
+            Dimensions::XYZ => {}
         }
 
         //----------------------------------------------------------------------------

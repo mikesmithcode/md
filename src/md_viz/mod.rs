@@ -49,8 +49,35 @@ pub mod scene_settings;
 pub mod templates;
 pub mod video;
     
+use winit::event_loop::EventLoop;
+use crate::md_sim::{ObjectSpec, ParticleVec, SimulationSettings};
+use crate::md_sim::utils::SimulationPaths;
 
 pub use self::scene::Scene;
 pub use self::scene_settings::SceneSettings;
 pub use self::templates::{SphereTemplate, ObjectTemplate, RectTemplate, WireBoxTemplate};
 
+
+pub fn init_scene(
+    headless: bool,
+    record_video: bool,
+    sim_filepaths: &SimulationPaths,
+    sim_settings: &SimulationSettings,
+    particles: &ParticleVec,
+    objects: Option<&[ObjectSpec]>,
+    start_step: usize,
+) -> Option<(EventLoop<()>, Scene)> {
+    if headless && !record_video {
+        return None;
+    }
+
+    let event_loop = EventLoop::new();
+    let scene_settings = SceneSettings::new(sim_filepaths, sim_settings);
+    let mut scene = Scene::new(&event_loop, particles, objects, scene_settings);
+
+    if record_video {
+        let _ = scene.start_recording(sim_filepaths, start_step);
+    }
+
+    Some((event_loop, scene))
+}

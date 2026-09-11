@@ -2,19 +2,24 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
+import sys
+
 
 
 def load_simulation_data() -> pl.DataFrame:
-    """Loads and combines all parquet files matching the script and run paths."""
-    script_name = Path(__file__).stem.replace("analyse", "")
-    script_ending = ""
-    script_name_with_ending = Path(__file__).stem.replace(
-        "analyse", script_ending
-    )
-    particles_dir = Path(__file__).parents[2].joinpath(
-        "output", script_name, script_name_with_ending, "particles"
-    )
+    # Extract $INPUT_NAME passed from the bash wrapper (e.g. vibratingdipoles_dr0.0)
+    input_name = sys.argv[1] if len(sys.argv) > 1 else Path(__file__).stem
 
+    # script_name becomes base name like 'vibratingdipoles' (derived from the file name, e.g. 'analyse_vibratingdipoles.py')
+    script_name = Path(__file__).stem.replace("analyse", "").strip("_")
+
+    # script_name_with_ending uses the full $INPUT_NAME passed via command line
+    script_name_with_ending = input_name
+
+    particles_dir = Path(__file__).parents[2].joinpath(
+        "output", script_name, script_name_with_ending, "particles")
+
+    print(script_name)
     print(particles_dir)
 
     if not particles_dir.exists():
@@ -24,9 +29,6 @@ def load_simulation_data() -> pl.DataFrame:
     if not files:
         raise FileNotFoundError(f"No parquet files found in: {particles_dir}")
 
-    dfs = [pl.read_parquet(file).filter(pl.col("ptype") == 0) for file in files]
-    # Note: if using the charge method, we need ptype 1 as well, so let's load all ptypes
-    # and filter inside the specific functions instead.
     dfs_all = [pl.read_parquet(file) for file in files]
     return pl.concat(dfs_all)
 
@@ -137,18 +139,26 @@ def plot_charge_position(
 
 
 if __name__ == "__main__":
+    input_name = sys.argv[1] if len(sys.argv) > 1 else Path(__file__).stem
+    script_name = Path(__file__).stem.replace("analyse", "").strip("_")
+    script_name_with_ending = input_name
 
-  from pathlib import Path
+    # Set up the graphs directory inside output/script_name/graphs
+    graphs_dir = Path(__file__).parents[2].joinpath("output", script_name, "graphs")
+    graphs_dir.mkdir(parents=True, exist_ok=True)
 
-  p = Path(r"C:\Code\md\python_scripts\output\dipolesvibratingbox\dipolesvibratingbox\particles")
+    df_particles = load_simulation_data()
 
-  print("Path exists:", p.exists())
-  print("Is directory:", p.is_dir())
-  print("Parent contents:", list(p.parent.glob("*")) if p.parent.exists() else "Parent missing")
-    
-  df_particles = load_simulation_data()
+    # Generate and save quaternion plot (Figure 2)
+    plot_quaternion(df_particles, num=2)
+    quat_path = graphs_dir / f"{script_name_with_ending}_quaternion.png"
+    plt.figure(2)
+    plt.savefig(quat_path, dpi=300)
 
-  # Swap between whichever analysis method you want to inspect:
-  plot_quaternion(df_particles, num=2)
-  plot_charge_position(df_particles, num=3)
-  plt.show()
+    # Generate and save charge position plot (Figure 3)
+    #plot_charge_position(df_particles, num=3)
+    #charge_path = graphs_dir / f"{script_name_with_ending}_charge.png"
+    #plt.figure(3)
+    #plt.savefig(charge_path, dpi=300)
+
+    plt.show()

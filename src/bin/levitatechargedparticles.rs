@@ -17,7 +17,7 @@ use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, Simulation, Simulation
 use md::md_sim::particle::SimulationModel;
 use md::md_sim::force::{add_coulomb, add_particle_particle_collision, add_viscous_drag, add_weight};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
-use md::md_sim::utils::{filepaths, save_particles, load_latest_particles, load_latest_objects, SimulationPaths};
+use md::md_sim::utils::{parse_simulation_args, save_particles, load_latest_particles, load_latest_objects, SimulationPaths};
 use md::md_sim::particle::MoleculeData;
 
 
@@ -99,7 +99,9 @@ pub fn add_confining_potential(i: usize, particles: &ParticleVec, mut force: DVe
 pub fn main() {    
 
     // Construct filepaths
-    let sim_filepaths: SimulationPaths = filepaths();
+    let ctx = parse_simulation_args();
+    let sim_filepaths = ctx.paths;
+    let headless = ctx.headless;
     
     //------------------------------------------------------------
     // Initialise simulation with bunch of particles from a snapshot file and define simulation parameters with a config file. Takes latest snapshot in output
