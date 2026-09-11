@@ -62,10 +62,10 @@ impl Forces for SimUpdate{
             //Only main particles have granular collisions. 
             (force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);
         }
-        //else{
-        //    // ptype == 1 is the charge.
-        //    force = add_coulomb(i, j, particles, force, settings);
-        //}
+        else{
+            //ptype == 1 is the charge.
+            force = add_coulomb(i, j, particles, force, settings);
+        }
 
     
         (force, torque)

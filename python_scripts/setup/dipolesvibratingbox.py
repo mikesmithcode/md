@@ -35,7 +35,7 @@ rect_df = create_rectangle(
 rect_df.write_parquet(objects_filepath)
 
 r_ball = 0.0025
-dr_ball = 0.25
+dr_ball = 0.25 # variance in radius
 
 pos_template = [(r_ball + r_ball * 2 * i, d / 2, h - r_ball) for i in range(11)]
 positions = []
@@ -48,7 +48,7 @@ for j in range(8):
 
 rads = [r_ball - dr_ball * r_ball * np.random.uniform(1.0, 0.0) for _ in range(len(positions))]
 
-d_r = 0.75
+d_r = 0.75 # fractional position of charge
 q_mag = 1e-9   # Charge magnitude
 mixed = True   # Enable mixed positive/negative charge generation
 
