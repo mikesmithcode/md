@@ -21,6 +21,8 @@ use md::md_sim::particle::MoleculeData;
 
 pub struct SimUpdate;
 
+impl Interactivity for SimUpdate{}
+
 impl Forces for SimUpdate{
     // Default implementation is true, set to false if not using
     fn has_pair_forces(&self)-> bool {

@@ -13,7 +13,7 @@ use md::md_viz::scene::Scene;
 use md::md_viz::scene_settings::SceneSettings;
 
 // Imports from simulation library
-use md::md_sim::{Forces, Motion, ObjectSpec, ParticleVec, Simulation, SimulationSettings};
+use md::md_sim::{Interactivity, Forces, Motion, ObjectSpec, ParticleVec, Simulation, SimulationSettings};
 use md::md_sim::force::{add_particle_object_collision, add_particle_particle_collision, add_weight};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::utils::{parse_simulation_args, save_particles, load_latest_particles, load_latest_objects, SimulationPaths};
@@ -22,6 +22,8 @@ use md::md_sim::particle::MoleculeData;
 
 
 pub struct SimUpdate;
+
+impl Interactivity for SimUpdate{}
 
 impl Forces for SimUpdate{
     // Default implementation is true, set to false if not using
