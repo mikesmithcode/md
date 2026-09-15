@@ -89,20 +89,24 @@ fn create_perspective_camera(viewport: Viewport, scene_settings: SceneSettings) 
 
     let centre = Vector3::new(dim_x * 0.5, dim_y * 0.5, dim_z * 0.5);
     
+    // Calculate half-extents and the bounding sphere radius of the box
+    let hx = buffered_x * 0.5;
+    let hy = buffered_y * 0.5;
+    let hz = buffered_z * 0.5;
+    let radius = (hx * hx + hy * hy + hz * hz).sqrt();
+
     let fov_deg = scene_settings.camera.fov;
     let fov_rad = fov_deg * std::f32::consts::PI / 180.0;
     let aspect = viewport.width as f32 / viewport.height as f32;
 
-    // Calculate distance based on vertical (Y) and horizontal (X) extents
-    let dist_y = (buffered_y * 0.5) / (fov_rad * 0.5).tan();
+    // Calculate required distance based on vertical and horizontal FOV to fit the bounding radius
+    let dist_v = radius / (fov_rad * 0.5).sin();
     
-    // Adjust horizontal FOV based on aspect ratio
     let horizontal_fov_rad: f32 = 2.0 * ((fov_rad * 0.5).tan() * aspect).atan();
-    let dist_x = (buffered_x * 0.5) / (horizontal_fov_rad * 0.5).tan();
+    let dist_h = radius / (horizontal_fov_rad * 0.5).sin();
 
-    // Take the max distance and add half the depth (Z) to clear the front face
-    let base_distance = dist_y.max(dist_x);
-    let eye_distance = (base_distance + (buffered_z * 0.5)) * 1.1; // 10% extra padding
+    // Take the maximum distance needed and add a small safety factor
+    let eye_distance = dist_v.max(dist_h) * 1.1;
 
     let eye_pos = centre + scene_settings.camera.rel_pos;
 
@@ -113,6 +117,9 @@ fn create_perspective_camera(viewport: Viewport, scene_settings: SceneSettings) 
         scene_settings.camera.up[2] as f32,
     );
 
+    // Ensure the far clipping plane accounts for the full depth + eye distance
+    let far_plane = eye_distance + buffered_z * 2.0 + 10.0;
+
     Camera::new_perspective(
         viewport,
         eye_pos,
@@ -120,7 +127,7 @@ fn create_perspective_camera(viewport: Viewport, scene_settings: SceneSettings) 
         up,
         degrees(fov_deg),
         0.01,                   
-        eye_distance + buffered_z + 10.0, 
+        far_plane, 
     )
 }
 

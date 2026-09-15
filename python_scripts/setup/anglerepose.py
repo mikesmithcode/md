@@ -12,19 +12,18 @@ matplotlib.use('qtAgg')
 
 from utils.file_io import get_config
 from utils.graphics import display
-from utils.particles_objects import create_rectangle, generate_molecules
+from utils.particles_objects import create_rectangle, create_line, generate_molecules, generate_particle_cube
 
 config, particles_filepath, objects_filepath = get_config()
-print(objects_filepath)
+
 box = config["sim_box_size"]
-print(box)
 
 # Sinusoidally vibrating rectangle surface
 w = box[0]
 d = box[1]
 h = box[2]
 
-z = 0.005
+z = 0.0025
 rect = [(0.0, 0.0, z), (0.0, d, z), (w, d, z), (w, 0.0, z)]
 
 rect_df = create_rectangle(
@@ -32,25 +31,51 @@ rect_df = create_rectangle(
     id_val=0, 
     colour=(0, 255, 0, 254)
 )
-rect_df.write_parquet(objects_filepath)
+#rect_df.write_parquet(objects_filepath)
+
+#Add an up_line
+up_line_vertices = [(0.0,d, h*1.25),(w,d, h*1.25)]
+
+
+line = create_line(up_line_vertices, thickness=0.002, colour=(0,255,0,255))
+line.write_parquet(objects_filepath)
+
+
 
 r_ball = 0.0025
 dr_ball = 0.25 # variance in radius
 
 pos_template = [(r_ball + r_ball * 2 * i, d / 2, h - r_ball) for i in range(11)]
-positions = []
-for j in range(8):
-    if j % 2 == 0:
-        pos1 = [(pos[0] + r_ball, pos[1], h - (2 * j + 1) * r_ball) for pos in pos_template]
-    if j % 2 == 1:
-        pos1 = [(pos[0], pos[1], h - (2 * j + 1) * r_ball) for pos in pos_template]
-    positions.extend(pos1)
+
+spacing = 2.2*r_ball
+
+#grid of static particles at the bottom
+static_particle_positions = generate_particle_cube(round(w/spacing), round(d/spacing), 1,spacing, z, w/2, d/2)
+#cube of particles to drop
+positions = generate_particle_cube(round(w/spacing), round(d/spacing), round((0.75*h)/spacing), 1.1*spacing, 0.25*h, w/2, d/2)
+
+num_dynamic = positions.shape[0]
+num_static = static_particle_positions.shape[0]
+
+positions = np.append(static_particle_positions, positions, axis=0)
+
+
+
 
 rads = [r_ball - dr_ball * r_ball * np.random.uniform(1.0, 0.0) for _ in range(len(positions))]
 
 d_r = 0.5 # fractional position of charge
-q_mag = 1e-9   # Charge magnitude
+q_mag = 0e-9   # Charge magnitude
 mixed = True   # Enable mixed positive/negative charge generation
+
+ptypes_static = [4]*num_static
+
+bool_list = np.random.choice([True, False], size=num_dynamic).tolist()
+ptypes_dynamic = [0 if val else 2 for val in bool_list]
+
+ptypes = []
+ptypes.extend(ptypes_static)
+ptypes.extend( ptypes_dynamic)
 
 # Define colour dictionary mapping ptype to (R, G, B, A)
 ptype_colours = {
@@ -58,11 +83,14 @@ ptype_colours = {
     1: (255.0, 0.0, 255.0, 255.0),   # Positive charge (Magenta)
     2: (255.0, 255.0, 255.0, 150.0), # Negative main particle (White alpha=150)
     3: (0.0, 255.0, 255.0, 255.0),   # Negative charge (Cyan)
+    4: (0.0, 255.0, 0.0, 150.0),    # Static particles
+    5: (0.0, 255.0, 255.0, 255.0),    # Charges on static particles
 }
 
 molecules = list(generate_molecules(
     positions, 
     rad=rads, 
+    ptype=ptypes,
     d_r=d_r, 
     q_mag=q_mag, 
     mixed=mixed,
@@ -70,8 +98,12 @@ molecules = list(generate_molecules(
 ))
 
 df = pl.concat(molecules)
+
+# remove the charges
+#df = df.filter(pl.col("ptype") % 2 == 0)
+
 df.write_parquet(particles_filepath)
 
 print(f"Successfully initialised {len(df)} particles for a {box[0]}x{box[2]} box.")
 print(df['ptype', 'charge', 'r', 'g', 'b'].head(10))
-display(df, box, objects_df=rect_df)
+display(df, box, objects_df=None)

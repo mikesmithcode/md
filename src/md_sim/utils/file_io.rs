@@ -21,7 +21,7 @@ use glam::{DVec3, DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
-use crate::md_sim::{Particle, ParticleVec, SimulationSettings, ObjectSpec, RectSpec, TriSpec};
+use crate::md_sim::{Particle, ParticleVec, SimulationSettings, LineSpec, ObjectSpec, RectSpec, TriSpec};
 use crate::md_viz::SceneSettings;
 
 
@@ -522,6 +522,9 @@ pub fn load_objects(
     let wy = df.column("wy")?.f64()?;
     let wz = df.column("wz")?.f64()?;
 
+    // Safely extract thickness column if present (fallback to 0.05 for legacy files)
+    let thickness_col = df.column("thickness").ok().and_then(|c| c.f64().ok());
+
     let r = df.column("r")?.f64()?;
     let g = df.column("g")?.f64()?;
     let b = df.column("b")?.f64()?;
@@ -544,7 +547,7 @@ pub fn load_objects(
             wz.get(i).unwrap_or(0.0),
         );
 
-        // Reconstruct Srgba color (assuming u8 values mapped from f64)
+        // Reconstruct Srgba color
         let colour = Srgba {
             r: r.get(i).unwrap_or(0.0) as u8,
             g: g.get(i).unwrap_or(0.0) as u8,
@@ -554,15 +557,20 @@ pub fn load_objects(
 
         let v1 = DVec3::new(x1.get(i).unwrap_or(0.0), y1.get(i).unwrap_or(0.0), z1.get(i).unwrap_or(0.0));
         let v2 = DVec3::new(x2.get(i).unwrap_or(0.0), y2.get(i).unwrap_or(0.0), z2.get(i).unwrap_or(0.0));
-        let v3 = DVec3::new(x3.get(i).unwrap_or(0.0), y3.get(i).unwrap_or(0.0), z3.get(i).unwrap_or(0.0));
-
+        
         let visible = vis.get(i).unwrap_or(true);
         
+        let current_x3 = x3.get(i).unwrap_or(f64::NAN);
         let current_x4 = x4.get(i).unwrap_or(f64::NAN);
+        let thickness = thickness_col.and_then(|c| c.get(i)).unwrap_or(0.05);
 
-        if current_x4.is_nan() {
+        if current_x3.is_nan() {
+            // It's a line (2 vertices)
+            let line_spec = LineSpec::new([v1, v2], thickness, colour, visible);
+            objects.push(ObjectSpec::Line(line_spec));
+        } else if current_x4.is_nan() {
             // It's a triangle (3 vertices)
-            // Note: You will need a TriSpec constructor matching your struct definition
+            let v3 = DVec3::new(current_x3, y3.get(i).unwrap_or(0.0), z3.get(i).unwrap_or(0.0));
             let mut tri_spec = TriSpec::new([v1, v2, v3], colour, visible);
             tri_spec.velocity = velocity;
             tri_spec.omega = omega;
@@ -570,13 +578,10 @@ pub fn load_objects(
             objects.push(ObjectSpec::Triangle(tri_spec));
         } else {
             // It's a rectangle (4 vertices)
-            let v4 = DVec3::new(
-                current_x4,
-                y4.get(i).unwrap_or(0.0),
-                z4.get(i).unwrap_or(0.0),
-            );
+            let v3 = DVec3::new(current_x3, y3.get(i).unwrap_or(0.0), z3.get(i).unwrap_or(0.0));
+            let v4 = DVec3::new(current_x4, y4.get(i).unwrap_or(0.0), z4.get(i).unwrap_or(0.0));
             
-            let mut rect_spec = RectSpec::new([v1, v2, v3, v4],colour,visible);
+            let mut rect_spec = RectSpec::new([v1, v2, v3, v4], colour, visible);
             rect_spec.velocity = velocity;
             rect_spec.omega = omega;
 
@@ -587,20 +592,9 @@ pub fn load_objects(
     Ok(objects)
 }
 
-/// Finds and loads the latest valid object snapshot file from the specified simulation path directory.
-/// 
-/// Scans the directory for files matching `objects_*.parquet`, sorts them descending 
-/// by step index, and loads the newest uncorrupted snapshot.
-/// 
-/// # Arguments
-/// * `sim_paths` - Reference to the `SimulationPaths` struct containing directories.
-/// 
-/// # Returns
-/// * `(Vec<ObjectSpec>, usize, f64)` - Vector of objects, step number, and simulation timestamp.
 pub fn load_latest_objects(
     sim_paths: &SimulationPaths,
 ) -> Result<Option<Vec<ObjectSpec>>, Box<dyn std::error::Error>> {
-    // If the object directory doesn't exist yet, it's safe to return None
     if !sim_paths.object.exists() {
         return Ok(None);
     }
@@ -620,7 +614,6 @@ pub fn load_latest_objects(
         return Ok(None);
     }
 
-    // Sort descending so the highest step index comes first
     entries.sort_by(|a, b| b.1.cmp(&a.1));
 
     for (_path, step) in entries {
@@ -629,11 +622,8 @@ pub fn load_latest_objects(
         }
     }
 
-    // If all files were corrupted or failed to load
     Ok(None)
 }
-    
-
 
 pub fn save_objects(
     sim_paths: &SimulationPaths,
@@ -641,85 +631,95 @@ pub fn save_objects(
     objects: Option<&[ObjectSpec]>,
     time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(all_objects) = objects{ 
-    fs::create_dir_all(&sim_paths.object)?;
+    if let Some(all_objects) = objects { 
+        fs::create_dir_all(&sim_paths.object)?;
 
-    let count = all_objects.len();
-    let t: Vec<f64> = vec![time; count];
-    let sentinel = f64::NAN;
+        let count = all_objects.len();
+        let sentinel = f64::NAN;
 
-    // Temporary vectors to accumulate properties across different object types
-    let mut ids = Vec::with_capacity(count);
-    let mut velocities = Vec::with_capacity(count);
-    let mut omegas = Vec::with_capacity(count);
-    let mut colours = Vec::with_capacity(count);
-    
-    // Vertex coordinate vectors (x1..x4, y1..y4, z1..z4)
-    let mut x1 = Vec::with_capacity(count); let mut y1 = Vec::with_capacity(count); let mut z1 = Vec::with_capacity(count);
-    let mut x2 = Vec::with_capacity(count); let mut y2 = Vec::with_capacity(count); let mut z2 = Vec::with_capacity(count);
-    let mut x3 = Vec::with_capacity(count); let mut y3 = Vec::with_capacity(count); let mut z3 = Vec::with_capacity(count);
-    let mut x4 = Vec::with_capacity(count); let mut y4 = Vec::with_capacity(count); let mut z4 = Vec::with_capacity(count);
+        let mut ids = Vec::with_capacity(count);
+        let mut velocities = Vec::with_capacity(count);
+        let mut omegas = Vec::with_capacity(count);
+        let mut thicknesses = Vec::with_capacity(count);
+        let mut colours = Vec::with_capacity(count);
+        
+        let mut x1 = Vec::with_capacity(count); let mut y1 = Vec::with_capacity(count); let mut z1 = Vec::with_capacity(count);
+        let mut x2 = Vec::with_capacity(count); let mut y2 = Vec::with_capacity(count); let mut z2 = Vec::with_capacity(count);
+        let mut x3 = Vec::with_capacity(count); let mut y3 = Vec::with_capacity(count); let mut z3 = Vec::with_capacity(count);
+        let mut x4 = Vec::with_capacity(count); let mut y4 = Vec::with_capacity(count); let mut z4 = Vec::with_capacity(count);
 
-    for obj in all_objects {
-        match obj {
-            ObjectSpec::Rectangle(rect) => {
-                ids.push(rect.id as u64);
-                velocities.push(rect.velocity);
-                omegas.push(rect.omega);
-                colours.push(rect.colour);
+        for obj in all_objects {
+            match obj {
+                ObjectSpec::Rectangle(rect) => {
+                    ids.push(rect.id as u64);
+                    velocities.push(rect.velocity);
+                    omegas.push(rect.omega);
+                    thicknesses.push(0.0); // Not applicable for solid faces
+                    colours.push(rect.colour);
 
-                // Rectangles have 4 vertices
-                x1.push(rect.vertices[0].x); y1.push(rect.vertices[0].y); z1.push(rect.vertices[0].z);
-                x2.push(rect.vertices[1].x); y2.push(rect.vertices[1].y); z2.push(rect.vertices[1].z);
-                x3.push(rect.vertices[2].x); y3.push(rect.vertices[2].y); z3.push(rect.vertices[2].z);
-                x4.push(rect.vertices[3].x); y4.push(rect.vertices[3].y); z4.push(rect.vertices[3].z);
-            }
-            ObjectSpec::Triangle(tri) => {
-                ids.push(tri.id as u64);
-                velocities.push(tri.velocity);
-                omegas.push(tri.omega);
-                colours.push(tri.colour);
+                    x1.push(rect.vertices[0].x); y1.push(rect.vertices[0].y); z1.push(rect.vertices[0].z);
+                    x2.push(rect.vertices[1].x); y2.push(rect.vertices[1].y); z2.push(rect.vertices[1].z);
+                    x3.push(rect.vertices[2].x); y3.push(rect.vertices[2].y); z3.push(rect.vertices[2].z);
+                    x4.push(rect.vertices[3].x); y4.push(rect.vertices[3].y); z4.push(rect.vertices[3].z);
+                }
+                ObjectSpec::Triangle(tri) => {
+                    ids.push(tri.id as u64);
+                    velocities.push(tri.velocity);
+                    omegas.push(tri.omega);
+                    thicknesses.push(0.0);
+                    colours.push(tri.colour);
 
-                // Triangles have 3 vertices; pad the 4th vertex with NaN sentinel
-                x1.push(tri.vertices[0].x); y1.push(tri.vertices[0].y); z1.push(tri.vertices[0].z);
-                x2.push(tri.vertices[1].x); y2.push(tri.vertices[1].y); z2.push(tri.vertices[1].z);
-                x3.push(tri.vertices[2].x); y3.push(tri.vertices[2].y); z3.push(tri.vertices[2].z);
-                x4.push(sentinel);         y4.push(sentinel);         z4.push(sentinel);
-            }
-            ObjectSpec::WireBox(boxspec) => {
-                // If wire boxes are handled as objects, you can unpack their vertices similarly, 
-                // or handle them via an alternative representation if they use bounding boxes instead.
-                // For now, we can log or handle them if needed.
-                let _ = boxspec; 
+                    x1.push(tri.vertices[0].x); y1.push(tri.vertices[0].y); z1.push(tri.vertices[0].z);
+                    x2.push(tri.vertices[1].x); y2.push(tri.vertices[1].y); z2.push(tri.vertices[1].z);
+                    x3.push(tri.vertices[2].x); y3.push(tri.vertices[2].y); z3.push(tri.vertices[2].z);
+                    x4.push(sentinel);         y4.push(sentinel);         z4.push(sentinel);
+                }
+                ObjectSpec::Line(line) => {
+                    ids.push(line.id as u64);
+                    velocities.push(DVec3::ZERO); // Dummy values for table consistency
+                    omegas.push(DVec3::ZERO);
+                    thicknesses.push(line.thickness);
+                    colours.push(line.colour);
+
+                    x1.push(line.vertices[0].x); y1.push(line.vertices[0].y); z1.push(line.vertices[0].z);
+                    x2.push(line.vertices[1].x); y2.push(line.vertices[1].y); z2.push(line.vertices[1].z);
+                    x3.push(sentinel);         y3.push(sentinel);         z3.push(sentinel);
+                    x4.push(sentinel);         y4.push(sentinel);         z4.push(sentinel);
+                }
+                ObjectSpec::WireBox(_boxspec) => {
+                    // Handled separately if needed
+                }
             }
         }
-    }
 
-    let mut df = df!(
-        "t" => &t,
-        "id" => &ids,
-        "x1" => &x1, "y1" => &y1, "z1" => &z1,
-        "x2" => &x2, "y2" => &y2, "z2" => &z2,
-        "x3" => &x3, "y3" => &y3, "z3" => &z3,
-        "x4" => &x4, "y4" => &y4, "z4" => &z4,
-        "vx" => &velocities.iter().map(|v| v.x).collect::<Vec<_>>(),
-        "vy" => &velocities.iter().map(|v| v.y).collect::<Vec<_>>(),
-        "vz" => &velocities.iter().map(|v| v.z).collect::<Vec<_>>(),
-        "wx" => &omegas.iter().map(|w| w.x).collect::<Vec<_>>(),
-        "wy" => &omegas.iter().map(|w| w.y).collect::<Vec<_>>(),
-        "wz" => &omegas.iter().map(|w| w.z).collect::<Vec<_>>(),
-        "r"  => &colours.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
-        "g"  => &colours.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
-        "b"  => &colours.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
-        "a"  => &colours.iter().map(|c| c.a as f64).collect::<Vec<_>>(),
-    )?;
+        let t: Vec<f64> = vec![time; count];
 
-    let filename = format!("objects_{:010}.parquet", step);
-    let final_path = sim_paths.object.join(&filename);
-    
-    let file = std::fs::File::create(&final_path)?;
-    ParquetWriter::new(file).finish(&mut df)?;
-    }else{
+        let mut df = df!(
+            "t" => &t,
+            "id" => &ids,
+            "x1" => &x1, "y1" => &y1, "z1" => &z1,
+            "x2" => &x2, "y2" => &y2, "z2" => &z2,
+            "x3" => &x3, "y3" => &y3, "z3" => &z3,
+            "x4" => &x4, "y4" => &y4, "z4" => &z4,
+            "vx" => &velocities.iter().map(|v| v.x).collect::<Vec<_>>(),
+            "vy" => &velocities.iter().map(|v| v.y).collect::<Vec<_>>(),
+            "vz" => &velocities.iter().map(|v| v.z).collect::<Vec<_>>(),
+            "wx" => &omegas.iter().map(|w| w.x).collect::<Vec<_>>(),
+            "wy" => &omegas.iter().map(|w| w.y).collect::<Vec<_>>(),
+            "wz" => &omegas.iter().map(|w| w.z).collect::<Vec<_>>(),
+            "thickness" => &thicknesses,
+            "r"  => &colours.iter().map(|c| c.r as f64).collect::<Vec<_>>(),
+            "g"  => &colours.iter().map(|c| c.g as f64).collect::<Vec<_>>(),
+            "b"  => &colours.iter().map(|c| c.b as f64).collect::<Vec<_>>(),
+            "a"  => &colours.iter().map(|c| c.a as f64).collect::<Vec<_>>(),
+        )?;
+
+        let filename = format!("objects_{:010}.parquet", step);
+        let final_path = sim_paths.object.join(&filename);
+        
+        let file = std::fs::File::create(&final_path)?;
+        ParquetWriter::new(file).finish(&mut df)?;
+    } else {
         println!("Skipping saving objects as Option(objects) = None");
     }
     Ok(())

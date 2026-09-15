@@ -10,19 +10,21 @@ use three_d::{Context, CpuMesh,Mesh, Gm, InstancedMesh, Instances, Srgba, Physic
     Blend, BlendEquationType, BlendMultiplierType, Cull, DepthTest,
     RenderStates, WriteMask};
 
-use crate::md_sim::{ParticleVec, BoxSpec, RectSpec, TriSpec, ObjectSpec};
+use crate::md_sim::{ParticleVec, LineSpec, BoxSpec, RectSpec, TriSpec, ObjectSpec};
 
 ///Used by all shapes except SphereTemplate which is used for particles
 pub enum ObjectTemplate {
     WireBox(WireBoxTemplate),
     Rectangle(RectTemplate),
     Triangle(TriTemplate),
+    Line(LineTemplate),
 }
 
 impl ObjectTemplate {
     /// Returns a reference to the underlying `three-d` object for rendering
     pub fn get_mesh(&self) -> &(dyn three_d::Object + 'static) {
         match self {
+            ObjectTemplate::Line(l) => &l.mesh,
             ObjectTemplate::WireBox(w) => &w.mesh,
             ObjectTemplate::Rectangle(r) => &r.mesh,
             ObjectTemplate::Triangle(t) => &t.mesh,
@@ -78,6 +80,92 @@ impl SphereTemplate {
     }
 }   
 
+pub struct LineTemplate {
+    pub mesh: Gm<Mesh, PhysicalMaterial>,
+    pub linespec: LineSpec,
+}
+
+impl LineTemplate {
+    pub fn new(context: &Context, linespec: LineSpec) -> Self {
+        let mut mat = create_opaque_material(None);
+        mat.albedo = linespec.colour;
+
+        let mesh = Gm::new(
+            Mesh::new(context, &CpuMesh::cube()),
+            mat,
+        );
+
+        let mut template = Self { mesh, linespec: linespec.clone() };
+        template.update_transform(&ObjectSpec::Line(linespec));
+        template
+    }
+
+    // Called every frame to position and stretch the line along your vector
+   pub fn update_transform(&mut self, spec: &ObjectSpec) {
+        let linespec = match spec {
+            ObjectSpec::Line(l) => l,
+            _ => return,
+        };
+
+        let start = linespec.vertices[0];
+        let end = linespec.vertices[1];
+        let mid = linespec.centre;
+        let line_vec = end - start;
+        let length = line_vec.length();
+        let i = linespec.id;
+
+        if length < 1e-12 {
+            return;
+        }
+
+        let dir = line_vec / length;            
+
+        // 1. Translation to the midpoint
+        let translation = three_d::Mat4::from_translation(three_d::Vec3::new(
+            mid.x as f32,
+            mid.y as f32,
+            mid.z as f32,
+        ));
+
+        // 2. Rotation: Align local Z (0,0,1) to the line's direction vector
+        let rot_quat = glam::DQuat::from_rotation_arc(glam::DVec3::Z, dir);
+        let m = glam::DMat3::from_quat(rot_quat);
+        let rotation = three_d::Mat4::from_cols(
+            three_d::Vec4::new(m.x_axis.x as f32, m.x_axis.y as f32, m.x_axis.z as f32, 0.0),
+            three_d::Vec4::new(m.y_axis.x as f32, m.y_axis.y as f32, m.y_axis.z as f32, 0.0),
+            three_d::Vec4::new(m.z_axis.x as f32, m.z_axis.y as f32, m.z_axis.z as f32, 0.0),
+            three_d::Vec4::new(0.0, 0.0, 0.0, 1.0),
+        );
+
+        // 3. Scale: CpuMesh spans [-1, 1] (size 2), so multiply by 0.5 to match exact units
+        let half_thickness = (linespec.thickness * 0.5) as f32;
+        let half_length = (length * 0.5) as f32;
+        let scale_mat = three_d::Mat4::from_nonuniform_scale(
+            half_thickness,
+            half_thickness,
+            half_length,
+        );
+
+        // Standard TRS (Translation * Rotation * Scale) applied right-to-left
+        let transform = translation * rotation * scale_mat;
+        self.mesh.set_transformation(transform);
+    }
+
+    // Called during update_templates() when colours change
+    pub fn update_colour(&mut self, spec: &ObjectSpec) {
+        let linespec = match spec {
+            ObjectSpec::Line(l) => l,
+            _ => return,
+        };
+
+        if self.linespec == *linespec {
+            return;
+        }
+
+        self.mesh.material.albedo = linespec.colour;
+        self.linespec = *linespec;
+    }
+}
 
 /// ------------------------------------------------------------------------------------
 /// Wire framed box primarily used to indicate the simulation box. 

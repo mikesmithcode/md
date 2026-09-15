@@ -8,7 +8,7 @@ mod common;
 
 // Re-export the traits and key functions for easier access
 // This allows you to call forces::Force instead of forces::force::Force
-pub use single::{add_weight, add_viscous_drag};
+pub use single::{add_weight, add_directional_weight, add_viscous_drag};
 pub use objects::{add_particle_object_collision};
 pub use pairwise::{add_particle_particle_collision, add_coulomb};
 pub use neighbours::CellGrid;

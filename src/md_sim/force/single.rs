@@ -38,6 +38,15 @@ pub fn add_weight(i: usize, mut force: DVec3, particles: &ParticleVec)-> DVec3 {
     force
 }
 
+pub fn add_directional_weight(i: usize, mut force: DVec3, particles: &ParticleVec, up: DVec3)-> DVec3 {
+    let gravity = -9.81 * up;
+    let mass = particles.mass[i];
+
+    let weight = gravity * mass;
+    force += weight;
+    force
+}
+
 
 /// Calculates and adds the viscous drag force (Stokes' Law) to a specific particle.
 ///

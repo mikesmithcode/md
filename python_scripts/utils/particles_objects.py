@@ -32,6 +32,7 @@ def generate_molecules(
     rad: Union[float, Sequence[float]] = 0.005,
     d_r: Union[float, Sequence[float]] = 0.0,
     density: Union[float, Sequence[float]] = 1200,
+    ptype: Union[int, Sequence[int]] = 0,
     mixed: bool = False,
     ptype_colours: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
 ):
@@ -62,12 +63,14 @@ def generate_molecules(
             return param
         return [param] * n_molecules
 
+    #print('check', ptype)
     ws = parse_tuple(w)
     qs_mag = parse_scalar(q_mag)
     vels = parse_tuple(v)
     rads = parse_scalar(rad)
     d_rs = parse_scalar(d_r)
     densities = parse_scalar(density)
+    ptypes = parse_scalar(ptype)
 
     phi = np.random.uniform(-np.pi, np.pi, size=n_molecules)
 
@@ -93,13 +96,9 @@ def generate_molecules(
 
         sign = signs[i]
         actual_q = sign * abs(q_val)
-
-        if sign > 0:
-            main_ptype = 0
-            charge_ptype = 1
-        else:
-            main_ptype = 2
-            charge_ptype = 3
+        
+        main_ptype = int(ptypes[i])
+        charge_ptype = main_ptype + 1
 
         main_col = colours[main_ptype]
         charge_col = colours[charge_ptype]
@@ -158,6 +157,18 @@ def generate_molecules(
         yield df
 
 
+def _base_object_df(id_val, time, velocity, omega, colour, visible, thickness):
+    """Internal helper to generate the common columns for any object."""
+    return {
+        "t": [float(time)],
+        "id": [int(id_val)],
+        "vx": [float(velocity[0])], "vy": [float(velocity[1])], "vz": [float(velocity[2])],
+        "wx": [float(omega[0])], "wy": [float(omega[1])], "wz": [float(omega[2])],
+        "thickness": [float(thickness)],
+        "r": [float(colour[0])], "g": [float(colour[1])], "b": [float(colour[2])], "a": [float(colour[3])],
+        "visible": [bool(visible)],
+    }
+
 def create_rectangle(
     vertices, 
     id_val=0, 
@@ -171,18 +182,14 @@ def create_rectangle(
     if verts.shape != (4, 3):
         raise ValueError("A rectangle requires exactly 4 vertices of shape (4, 3).")
     
-    return pl.DataFrame({
-        "t": [float(time)],
-        "id": [int(id_val)],
+    data = _base_object_df(id_val, time, velocity, omega, colour, visible, thickness=0.0)
+    data.update({
         "x1": [verts[0, 0]], "y1": [verts[0, 1]], "z1": [verts[0, 2]],
         "x2": [verts[1, 0]], "y2": [verts[1, 1]], "z2": [verts[1, 2]],
         "x3": [verts[2, 0]], "y3": [verts[2, 1]], "z3": [verts[2, 2]],
         "x4": [verts[3, 0]], "y4": [verts[3, 1]], "z4": [verts[3, 2]],
-        "vx": [float(velocity[0])], "vy": [float(velocity[1])], "vz": [float(velocity[2])],
-        "wx": [float(omega[0])], "wy": [float(omega[1])], "wz": [float(omega[2])],
-        "r": [float(colour[0])], "g": [float(colour[1])], "b": [float(colour[2])], "a": [float(colour[3])],
-        "visible": [bool(visible)],
     })
+    return pl.DataFrame(data)
 
 def create_triangle(
     vertices, 
@@ -197,20 +204,37 @@ def create_triangle(
     if verts.shape != (3, 3):
         raise ValueError("A triangle requires exactly 3 vertices of shape (3, 3).")
     
-    return pl.DataFrame({
-        "t": [float(time)],
-        "id": [int(id_val)],
+    data = _base_object_df(id_val, time, velocity, omega, colour, visible, thickness=0.0)
+    data.update({
         "x1": [verts[0, 0]], "y1": [verts[0, 1]], "z1": [verts[0, 2]],
         "x2": [verts[1, 0]], "y2": [verts[1, 1]], "z2": [verts[1, 2]],
         "x3": [verts[2, 0]], "y3": [verts[2, 1]], "z3": [verts[2, 2]],
-        "x4": [np.nan], "y4": [np.nan], "z4": [np.nan],  # NaN sentinels for triangle
-        "vx": [float(velocity[0])], "vy": [float(velocity[1])], "vz": [float(velocity[2])],
-        "wx": [float(omega[0])], "wy": [float(omega[1])], "wz": [float(omega[2])],
-        "r": [float(colour[0])], "g": [float(colour[1])], "b": [float(colour[2])], "a": [float(colour[3])],
-        "visible": [bool(visible)],
+        "x4": [np.nan], "y4": [np.nan], "z4": [np.nan],
     })
+    return pl.DataFrame(data)
+
+def create_line(
+    vertices, 
+    id_val=0, 
+    thickness=0.001,
+    time=0.0,
+    velocity=(0.0, 0.0, 0.0), 
+    omega=(0.0, 0.0, 0.0), 
+    colour=(255, 255, 255, 255),
+    visible=True
+):
+    verts = np.array(vertices, dtype=float)
+    if verts.shape != (2, 3):
+        raise ValueError("A line requires exactly 2 vertices of shape (2, 3).")
     
-    
+    data = _base_object_df(id_val, time, velocity, omega, colour, visible, thickness=thickness)
+    data.update({
+        "x1": [verts[0, 0]], "y1": [verts[0, 1]], "z1": [verts[0, 2]],
+        "x2": [verts[1, 0]], "y2": [verts[1, 1]], "z2": [verts[1, 2]],
+        "x3": [np.nan], "y3": [np.nan], "z3": [np.nan],
+        "x4": [np.nan], "y4": [np.nan], "z4": [np.nan],
+    })
+    return pl.DataFrame(data)
 
 
 def generate_particle_positions(n_particles, min_dist, **kwargs):
@@ -242,3 +266,19 @@ def generate_particle_positions(n_particles, min_dist, **kwargs):
         print(f"Warning: Only managed to place {len(positions)} out of {n_particles} non-overlapping particles.")
 
     return positions
+
+
+def generate_particle_cube(nx, ny, nz, spacing, z_base, center_x, center_y):
+    total_x = (nx - 1) * spacing
+    total_y = (ny - 1) * spacing
+    
+    start_x = center_x - total_x / 2.0
+    start_y = center_y - total_y / 2.0
+    
+    x = start_x + np.arange(nx) * spacing
+    y = start_y + np.arange(ny) * spacing
+    z = z_base + np.arange(nz) * spacing
+    
+    xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')
+    
+    return np.column_stack((xx.ravel(), yy.ravel(), zz.ravel()))

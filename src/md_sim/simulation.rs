@@ -40,7 +40,9 @@ use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::force::CellGrid;
 use crate::md_sim::Forces;
 use crate::md_sim::Motion;
+use crate::md_sim::Interactivity;
 use crate::md_sim::{SimulationSettings, Dimensions};
+use crate::md_viz::actions::UserAction;
 
 
 /// The main simulation engine orchestrating particle states, forces, boundary grids, and time integration steps.
@@ -49,7 +51,7 @@ use crate::md_sim::{SimulationSettings, Dimensions};
 #[derive(Debug)]
 pub struct Simulation<S> 
     where 
-        S: Forces + Motion,
+        S: Forces + Motion + Interactivity,
 {
     pub particles: ParticleVec,
     pub objects: Option<Vec<ObjectSpec>>,
@@ -65,7 +67,7 @@ pub struct Simulation<S>
 
 impl<S> Simulation<S> 
     where 
-        S: Forces + Motion + Sync,
+        S: Forces + Motion + Interactivity + Sync,
 {
     /// Creates and initializes a new simulation instance, building molecule groupings and setting up the spatial cell grid.
     pub fn new(mut particles: ParticleVec, objects: Option<Vec<ObjectSpec>>, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
@@ -200,6 +202,10 @@ impl<S> Simulation<S>
         
         // Update simulation time
         self.time += self.settings.dt;
+    }
+
+    pub fn handle_key(&mut self, key: UserAction){
+        self.sim_update.handle_key(key);
     }
 
     /// Returns an immutable reference to the particle collection.

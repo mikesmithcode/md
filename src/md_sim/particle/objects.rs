@@ -14,6 +14,8 @@ pub fn next_id() -> usize {
 
 #[derive(Debug, Clone)]
 pub enum ObjectSpec {
+    /// A line constructed from stretched cube
+    Line(LineSpec),
     /// A wireframe or solid box object specification.
     WireBox(BoxSpec),
     /// A 2D rectangular plane object specification.
@@ -23,6 +25,14 @@ pub enum ObjectSpec {
 }
 
 impl ObjectSpec {
+    pub fn get_line_spec(&self) -> Option<LineSpec> {
+        match self {
+            ObjectSpec::Line(linespec) => Some(*linespec),
+            _ => None,
+        }
+    }
+
+
     /// Returns an optional reference to the underlying `BoxSpec` if this variant is a wire box.
     pub fn get_box_spec(&self) -> Option<BoxSpec> {
         match self {
@@ -47,6 +57,132 @@ impl ObjectSpec {
         }
     }
 }
+
+///------------------------------------------------------------------------------
+/// LineSpec
+/// 
+/// This is purely a graphical element like the wirebox to draw a line in the scene.It is rendered
+/// in md_viz by a LineTemplate in md_viz::templates.rs
+///------------------------------------------------------------------------------
+/// Configuration for a line in the scene. 
+/// 
+/// Fields:
+/// 
+/// visible - turn display of item on and off
+/// thickness - Line has thickness and depth which are equal.
+/// position - this coord sets the centre of the box. The axis of system is 0,0,0 in bottom, left, back corner
+/// box_size - dimensions. The axis of system is x across, y front-back, z up down 
+///--------------------------------------------------------------------------------------------------------
+/// TriSpec
+/// -------------------------------------------------------------------------------------------------------
+/// 3D triangular surface in space
+#[derive(Clone, Debug, Copy, PartialEq)]
+pub struct LineSpec {
+    /// Unique identifier for the line instance.
+    pub id: usize,
+    /// centre position vector in world space.
+    pub centre: DVec3,
+    /// Rotation quaternion transforming local space to world space.
+    pub orientation: DQuat,
+    /// Evaluated world-space coordinates of the ends `[v0, v1]`.
+    pub vertices: [DVec3; 2],    
+    /// Pre-scaled raw vertices stored relative to the local centre `(0,0,0)`.
+    pub local_vertices: [DVec3; 2], 
+    /// RGBA colour representation for rendering.
+    pub colour: Srgba,
+    /// Flag determining whether the line is rendered in the visualization scene.
+    pub visible: bool,
+    /// Line thickness
+    pub thickness: f64,
+}
+
+impl LineSpec {
+    /// Creates a LineSpec from 2 vertices with a specified thickness.
+    pub fn new(vertices: [DVec3; 2], thickness: f64, colour: Srgba, visible: bool) -> Self {
+        let id = next_id(); 
+        let mut line = Self {
+            id,
+            centre: DVec3::ZERO,
+            orientation: DQuat::IDENTITY,
+            vertices: [DVec3::ZERO; 2],
+            local_vertices: [DVec3::ZERO; 2],
+            colour,
+            visible,
+            thickness,
+        };
+        line.update_endpoints(vertices);
+        line
+    }
+
+    pub fn update_endpoints(&mut self, vertices: [DVec3; 2]) {
+        let [v0, v1] = vertices;
+
+        let centre = (v0 + v1) * 0.5;
+        let line_vec = v1 - v0;
+        let length = line_vec.length();
+
+        let dir = line_vec / length;
+
+        // Directly rotate local Z (0, 0, 1) to match the line direction (x, y, z)
+        let orientation = glam::DQuat::from_rotation_arc(DVec3::Z, dir);
+
+        // Canonical local span from -half_len to +half_len along local Z
+        let half_len = length * 0.5;
+        let local_vertices = [
+            DVec3::new(0.0, 0.0, -half_len),
+            DVec3::new(0.0, 0.0, half_len),
+        ];
+
+        self.centre = centre;
+        self.orientation = orientation;
+        self.local_vertices = local_vertices;
+        self.vertices = [v0, v1];
+    }
+
+    /// Helper to get the primary direction vector of the line in world space
+    pub fn direction(&self) -> DVec3 {
+        self.orientation * DVec3::Z
+    }
+
+    /// Recalculates world-space vertices based on current centre, orientation, and local geometry.
+    pub fn update_vertices(&mut self) {
+        self.vertices = [
+            self.centre + self.orientation * self.local_vertices[0],
+            self.centre + self.orientation * self.local_vertices[1],
+        ];
+    }
+
+    /// Applies a rigid-body translation and rotation (via a DQuat) to the line.
+    pub fn transform(&mut self, translation_delta: DVec3, rotation: Option<DQuat>) {
+        self.centre += translation_delta;
+        if let Some(rot) = rotation {
+            self.orientation = rot * self.orientation;
+        }
+        self.update_vertices();
+    }
+
+    /// Directly set a new position and orientation.
+    pub fn set(&mut self, new_centre: DVec3, new_orientation: DQuat) {
+        self.centre = new_centre;
+        self.orientation = new_orientation;
+        self.update_vertices();
+    }
+
+    /// Panics if the line geometry is degenerate.
+    pub fn validate(&self) {
+        let [v0, v1] = self.local_vertices;
+        let length = (v1 - v0).length();
+        assert!(
+            length > 1e-12,
+            "LineSpec (id: {}) error: Local vertices are degenerate (zero length).",
+            self.id
+        );
+    }
+}
+
+
+
+
 
 
 ///------------------------------------------------------------------------------

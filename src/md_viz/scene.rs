@@ -16,11 +16,12 @@ use crate::md_sim::particle::{ParticleVec, ObjectSpec};
 
 use crate::md_sim::utils::SimulationPaths;
 use crate::md_viz::lights::{create_ambient_light, create_directional_light};
-use crate::md_viz::templates::{SphereTemplate, RectTemplate, TriTemplate, WireBoxTemplate, ObjectTemplate};
+use crate::md_viz::templates::{SphereTemplate, RectTemplate, TriTemplate, LineTemplate, WireBoxTemplate, ObjectTemplate};
 use crate::md_viz::camera::{create_camera, CameraControl};
 use crate::md_viz::video::VideoExporter;
 use crate::md_viz::SceneSettings;
 use crate::md_viz::scene_settings::GpuResources;
+use crate::md_viz::actions::UserAction;
 
 /// Manages the rendering context, live window, camera controls, GPU resources, and video export pipelines.
 pub struct Scene {
@@ -119,6 +120,7 @@ impl Scene {
                     ObjectSpec::Rectangle(rectspec) => object_templates.push(ObjectTemplate::Rectangle(RectTemplate::new(context, rectspec))),
                     ObjectSpec::Triangle(trispec) => object_templates.push(ObjectTemplate::Triangle(TriTemplate::new(context, trispec))),
                     ObjectSpec::WireBox(boxspec) => object_templates.push(ObjectTemplate::WireBox(WireBoxTemplate::new(context, boxspec))),
+                    ObjectSpec::Line(linespec) => object_templates.push(ObjectTemplate::Line(LineTemplate::new(context, linespec))),
                 }
             }
         }
@@ -206,6 +208,7 @@ impl Scene {
                 ObjectTemplate::Rectangle(t) => t.update_transform(spec),
                 ObjectTemplate::Triangle(t) => t.update_transform(spec),
                 ObjectTemplate::WireBox(t) => t.update_transform(spec),
+                ObjectTemplate::Line(t) => t.update_transform(spec),
             }
         }
     }
@@ -225,6 +228,7 @@ impl Scene {
                         ObjectSpec::WireBox(boxspec) => ObjectTemplate::WireBox(WireBoxTemplate::new(&self.context, *boxspec)),
                         ObjectSpec::Rectangle(rectspec) => ObjectTemplate::Rectangle(RectTemplate::new(&self.context, *rectspec)),
                         ObjectSpec::Triangle(trispec) => ObjectTemplate::Triangle(TriTemplate::new(&self.context, *trispec)),
+                        ObjectSpec::Line(linespec) => ObjectTemplate::Line(LineTemplate::new(&self.context, *linespec)),
                     })
                     .collect();
             }
@@ -233,6 +237,7 @@ impl Scene {
             for (template, spec) in self.resources.object_templates.iter_mut().zip(specs.iter()) {
                 match template {
                     ObjectTemplate::Rectangle(t) => t.update_colour(spec),
+                    ObjectTemplate::Line(t) => t.update_colour(spec),
                     ObjectTemplate::Triangle(t) => t.update_colour(spec),
                     ObjectTemplate::WireBox(t) => t.update_colour(spec),
                 }
@@ -282,6 +287,7 @@ impl Scene {
             match template {
                 ObjectTemplate::Rectangle(t) if t.rectspec.colour.a >= 254 => opaque_objects.push(&t.mesh),
                 ObjectTemplate::Triangle(t) if t.trispec.colour.a >= 254 => opaque_objects.push(&t.mesh),
+                ObjectTemplate::Line(t) if t.linespec.colour.a >= 254 => opaque_objects.push(&t.mesh),
                 ObjectTemplate::WireBox(t) => opaque_objects.push(&t.mesh),
                 _ => {}
             }
@@ -306,6 +312,7 @@ impl Scene {
             match template {
                 ObjectTemplate::Rectangle(t) if t.rectspec.colour.a < 254 => transparent_objects.push(&t.mesh),
                 ObjectTemplate::Triangle(t) if t.trispec.colour.a < 254 => transparent_objects.push(&t.mesh),
+                ObjectTemplate::Line(l) if l.linespec.colour.a < 254 => transparent_objects.push(&l.mesh),
                 _ => {}
             }
         }
@@ -391,50 +398,69 @@ impl Scene {
     
     /// Polls incoming window events, updates camera controls, and returns a boolean indicating whether a close was requested.
     /// Polls incoming window events, updates camera controls, and returns a boolean indicating whether a close was requested.
-pub fn poll_events(&mut self, event_loop: &mut EventLoop<()>) -> bool {
-    let mut close_requested = false;
+    pub fn poll_events(&mut self, event_loop: &mut EventLoop<()>) -> (bool, UserAction) {
+        let mut close_requested = false;
+        let mut action = UserAction::None;
 
-    // Use explicit ref to avoid borrow-checker conflicts inside the closure
-    let windowed_context = &mut self.windowed_context;
-    let frame_input_generator = &mut self.frame_input_generator;
-    let camera_control = &mut self.camera_control;
-    let winit_window_id = self.winit_window.id();
+        // Use explicit ref to avoid borrow-checker conflicts inside the closure
+        let windowed_context = &mut self.windowed_context;
+        let frame_input_generator = &mut self.frame_input_generator;
+        let camera_control = &mut self.camera_control;
+        let winit_window_id = self.winit_window.id();
 
-    event_loop.run_return(|event, _, control_flow| {
-        *control_flow = winit::event_loop::ControlFlow::Poll;
+        event_loop.run_return(|event, _, control_flow| {
+            *control_flow = winit::event_loop::ControlFlow::Poll;
 
-        match event {
-            WinitEvent::WindowEvent { event, window_id } if window_id == winit_window_id => {
-                // Pass event to three-d frame input generator
-                frame_input_generator.handle_winit_window_event(&event);
+            match event {
+                WinitEvent::WindowEvent { event, window_id } if window_id == winit_window_id => {
+                    // Pass event to three-d frame input generator
+                    frame_input_generator.handle_winit_window_event(&event);
 
-                // Pass event to camera controller
-                camera_control.handle_event(&event);
+                    // Pass event to camera controller
+                    camera_control.handle_event(&event);
 
-                match event {
-                    WindowEvent::Resized(physical_size) => {
-                        // Crucial step: Resize the underlying graphics context
-                        windowed_context.resize(physical_size);
+                    match event {
+                        WindowEvent::Resized(physical_size) => {
+                            // Crucial step: Resize the underlying graphics context
+                            windowed_context.resize(physical_size);
+                        }
+                        WindowEvent::CloseRequested => {
+                            close_requested = true;
+                        }
+                        WindowEvent::KeyboardInput {
+                            input: winit::event::KeyboardInput {
+                                state: winit::event::ElementState::Pressed,
+                                virtual_keycode: Some(keycode),
+                                ..
+                            },
+                            ..
+                        } => {
+                            match keycode {
+                                winit::event::VirtualKeyCode::Left => action = UserAction::Left,
+                                winit::event::VirtualKeyCode::Right => action = UserAction::Right,
+                                winit::event::VirtualKeyCode::Up => action = UserAction::Up,
+                                winit::event::VirtualKeyCode::Down => action = UserAction::Down,
+                                winit::event::VirtualKeyCode::Return => action = UserAction::Enter,
+                                winit::event::VirtualKeyCode::Space => action = UserAction::Space,
+                                _ => {}
+                            }
+                        }
+                        _ => {}
                     }
-                    WindowEvent::CloseRequested => {
-                        close_requested = true;
-                    }
-                    _ => {}
                 }
+                WinitEvent::MainEventsCleared => { 
+                    *control_flow = winit::event_loop::ControlFlow::Exit;
+                }
+                _ => {}
             }
-            WinitEvent::MainEventsCleared => { 
-                *control_flow = winit::event_loop::ControlFlow::Exit;
-            }
-            _ => {}
+        });
+
+        if self.camera_control.update {
+            let current_target = self.camera.target();
+            self.camera_control.update_camera(&mut self.camera, current_target);
+            self.camera_control.update = false;
         }
-    });
 
-    if self.camera_control.update {
-        let current_target = self.camera.target();
-        self.camera_control.update_camera(&mut self.camera, current_target);
-        self.camera_control.update = false;
+        (close_requested, action)
     }
-
-    close_requested
-}
 }

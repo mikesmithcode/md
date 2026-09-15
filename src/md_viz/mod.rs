@@ -48,6 +48,7 @@ pub mod scene;
 pub mod scene_settings;
 pub mod templates;
 pub mod video;
+pub mod actions;
     
 use winit::event_loop::EventLoop;
 use crate::md_sim::{ObjectSpec, ParticleVec, SimulationSettings};
