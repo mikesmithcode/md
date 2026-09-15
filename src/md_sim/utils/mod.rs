@@ -19,6 +19,29 @@ use crate::md_viz::actions::UserAction;
 // -------------------------------------------------------------------------------------------------
 
 /// Impl this trait on SimUpdate struct whenever you need to create user interaction through keyboard etc.
+/// md_viz::actions::UserAction is an enum that provides indication of which key has been pressed. Expand if you
+/// need additional keys.
+/// 
+/// '''rust
+/// 
+/// #[derive(Debug)]
+///pub enum UserAction{
+///    Left,
+///    Right,
+///    Up,
+///    Down,
+///    Enter,
+///    Space,
+///    None,
+///}
+/// '''
+/// 
+/// If you don't want this trait you must write a default impl for Interactivity trait in your script.
+/// 
+/// '''rust
+/// impl<T: Forces + Motion> Interactivity for T {}
+/// '''
+/// 
 pub trait Interactivity{
     fn handle_key(&mut self, key: UserAction) {
         println!("No keys implemented: You pressed {:?}", key);

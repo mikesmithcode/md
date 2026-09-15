@@ -24,9 +24,9 @@ pub struct SimUpdate{
     angle: f64,
 }
 
-//impl<T: Forces + Motion> Interactivity for T {}
-
 impl Interactivity for SimUpdate{
+
+    // Left and Right Arrow tilt the box around y axis.
     fn handle_key(&mut self, key: UserAction) {
         let vertical = glam::DVec3::Z; 
         match key {
@@ -78,14 +78,6 @@ impl Forces for SimUpdate{
         (force, _torque)
     }
 
-    /*fn update_object_forces(&self, i: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec, objects: &ObjectSpec, settings: &SimulationSettings)->(DVec3, DVec3){
-        //Only main particle collides with the surface
-        if particles.ptype[i] == 0 || particles.ptype[i] == 2{
-           (force,torque) = add_particle_object_collision(i, particles, objects, force, torque, settings);
-        }
-        (force, torque)
-    }*/
-
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
         if particles.ptype[i] == 0 || particles.ptype[i] == 2{
@@ -112,7 +104,10 @@ impl Motion for SimUpdate{
         integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
     }
 
+
     fn update_objects(&self, object: &mut ObjectSpec, _particles: &mut ParticleVec, settings: &SimulationSettings, time: f64) {
+    
+        // Provides a line to indicate the slope.
         match object {
             ObjectSpec::Line(line) => {
                 //Rotate around midpoint according to angle to indicate tilt.
