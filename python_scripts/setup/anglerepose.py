@@ -33,8 +33,12 @@ rect_df = create_rectangle(
 )
 #rect_df.write_parquet(objects_filepath)
 
+
+r_ball = 0.0025
+dr_ball = 0.25 # variance in radius
+
 #Add an up_line
-up_line_vertices = [(0.0,d, h*1.25),(w,d, h*1.25)]
+up_line_vertices = [(0.0,d, -5*r_ball),(w,d, -5*r_ball)]
 
 
 line = create_line(up_line_vertices, thickness=0.002, colour=(0,255,0,255))
@@ -42,17 +46,16 @@ line.write_parquet(objects_filepath)
 
 
 
-r_ball = 0.0025
-dr_ball = 0.25 # variance in radius
+
 
 pos_template = [(r_ball + r_ball * 2 * i, d / 2, h - r_ball) for i in range(11)]
 
-spacing = 2.2*r_ball
+spacing = 3.0*r_ball
 
 #grid of static particles at the bottom
 static_particle_positions = generate_particle_cube(round(w/spacing), round(d/spacing), 1,spacing, z, w/2, d/2)
 #cube of particles to drop
-positions = generate_particle_cube(round(w/spacing), round(d/spacing), round((0.75*h)/spacing), 1.1*spacing, 0.25*h, w/2, d/2)
+positions = generate_particle_cube(round(w/spacing), round(d/spacing), round((0.75*h)/spacing), 1.1*spacing, 0.15*h, w/2, d/2)
 
 num_dynamic = positions.shape[0]
 num_static = static_particle_positions.shape[0]
@@ -65,7 +68,7 @@ positions = np.append(static_particle_positions, positions, axis=0)
 rads = [r_ball - dr_ball * r_ball * np.random.uniform(1.0, 0.0) for _ in range(len(positions))]
 
 d_r = 0.5 # fractional position of charge
-q_mag = 0e-9   # Charge magnitude
+q_mag = 0.5e-9   # Charge magnitude
 mixed = True   # Enable mixed positive/negative charge generation
 
 ptypes_static = [4]*num_static
