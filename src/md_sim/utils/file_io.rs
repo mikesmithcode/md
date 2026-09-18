@@ -21,20 +21,11 @@ use glam::{DVec3, DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
-use crate::md_sim::{Particle, ParticleVec, SimulationSettings, LineSpec, ObjectSpec, RectSpec, TriSpec};
+use crate::md_sim::{LineSpec, ObjectSpec, Particle, ParticleVec, RectSpec, Simulation, SimulationSettings, TriSpec};
 use crate::md_viz::SceneSettings;
 
 
-#[derive(Default, Debug)]
-/// Encapsulates all major file paths required for running and saving a simulation.
-pub struct SimulationPaths {
-    pub output: PathBuf,
-    pub sim_config: PathBuf,
-    pub scene_config: PathBuf,
-    pub object: PathBuf,
-    pub particle: PathBuf,
-    pub video: PathBuf,
-}
+
 
 /// Validates that a target directory exists and contains a specified list of required files.
 ///
@@ -68,10 +59,30 @@ fn validate_simulation_inputs(dir_path: &Path, required_files: &[&str]) -> io::R
     Ok(())
 }
 
-pub struct SimulationContext {
-    pub paths: SimulationPaths,
+#[derive(Default, Debug)]
+/// Encapsulates all major file paths required for running and saving a simulation.
+pub struct SimulationPaths {
+    pub output: PathBuf,
+    pub sim_config: PathBuf,
+    pub scene_config: PathBuf,
+    pub model_config: PathBuf,
+    pub object: PathBuf,
+    pub particle: PathBuf,
+    pub video: PathBuf,
+}
+
+#[derive(Clone, Debug)]
+pub struct OutputSettings {
     pub headless: bool,
     pub record_video: bool,
+    pub save_particles: bool,
+    pub save_objects: bool,
+}
+
+#[derive(Debug)]
+pub struct SimulationContext {
+    pub paths: SimulationPaths,
+    pub output_settings: OutputSettings,
 }
 
 pub fn parse_simulation_args() -> SimulationContext {
@@ -79,21 +90,29 @@ pub fn parse_simulation_args() -> SimulationContext {
     
     let target_name = args.get(1).expect(
         "Error: No target name provided. \n\
-         Usage: Please run via your shell script (e.g., `./run silo_123`) \n\
+         Usage: Please run via your shell script (e.g., `./scripts/run silo_123`) \n\
          or pass the target name and sim argument explicitly."
     );
     let sim_arg = args.get(2).expect(
         "Error: No simulation argument provided."
     );
     
-    // Check if headless flag was passed as the third argument (defaults to true if omitted)
+    // Parse output & display flags matching the shell script order and new defaults
     let headless = args.get(3)
-        .map(|val| val.parse::<bool>().unwrap_or(true))
-        .unwrap_or(true);
+        .map(|val| val.parse::<bool>().unwrap_or(false))
+        .unwrap_or(false); // Default: false (graphics enabled by default)
 
     let record_video = args.get(4)
         .map(|val| val.parse::<bool>().unwrap_or(false))
-        .unwrap_or(false);
+        .unwrap_or(false); // Default: false
+
+    let save_particles = args.get(5)
+        .map(|val| val.parse::<bool>().unwrap_or(true))
+        .unwrap_or(true); // Default: true
+
+    let save_objects = args.get(6)
+        .map(|val| val.parse::<bool>().unwrap_or(false))
+        .unwrap_or(false); // Default: false
 
     const INPUT_PATH: &'static str = "input";
     
@@ -104,6 +123,7 @@ pub fn parse_simulation_args() -> SimulationContext {
     let _ = validate_simulation_inputs(&config_path, &required_files);
     let sim_config = config_path.join("sim_settings.json"); 
     let scene_config = config_path.join("scene_settings.json");
+    let model_config = config_path.join("model.json");
 
     let particle = output_path.join("particles");
     let _ = validate_simulation_inputs(&particle, &["particles_0000000000.parquet"]);
@@ -113,6 +133,11 @@ pub fn parse_simulation_args() -> SimulationContext {
         eprintln!("Error creating directory");
     };
 
+    //check a folder exists for outputting config copies
+    if let Err(_e) = fs::create_dir_all(output_path.join("config")) {
+        eprintln!("Error creating directory");
+    };
+    
     let video_dir = output_path.join("video");
     if let Err(_e) = fs::create_dir_all(&video_dir) {
         eprintln!("Error creating directory");
@@ -124,15 +149,19 @@ pub fn parse_simulation_args() -> SimulationContext {
             output: output_path,
             sim_config,
             scene_config,
+            model_config,
             object,
             particle,
             video,
         },
-        headless,
-        record_video
+        output_settings: OutputSettings {
+            headless,
+            record_video,
+            save_particles,
+            save_objects,
+        },
     }
 }
-
 //-------------------------------------------------------------
 // Config of simulation
 //-------------------------------------------------------------
@@ -151,7 +180,7 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
     sim_settings.start = index;
 
     // Save a copy of config to output with simulation index as suffix.
-    save_sim_settings(&sim_settings, &sim_paths.output)?;
+    save_sim_settings(&sim_settings, &sim_paths)?;
     
     Ok(sim_settings)
 }
@@ -167,13 +196,20 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
 /// # Errors
 /// This function will return an [`Error`] if the directory is not writable 
 /// or if an I/O issue occurs during writing.
-pub fn save_sim_settings(sim_settings: &SimulationSettings, snapshot_path: &Path) -> Result<(), Error> 
+pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &SimulationPaths) -> Result<(), Error> 
 {
     let sim_filename = format!("sim_config_{:010}.json", sim_settings.start);
-    let full_filename = Path::new(&snapshot_path).join(sim_filename);
+    let model_filename = format!("model_config_{:010}.json", sim_settings.start);
+
+    let full_sim_filename = Path::new(&sim_paths.output).join("config").join(sim_filename);
+    let input_model_filename = Path::new(&sim_paths.model_config);
+    let output_model_filename = Path::new(&sim_paths.output).join("config").join(model_filename);
+
     let json = serde_json::to_string_pretty(sim_settings)
         .expect("Error serializing metadata");
-    fs::write(full_filename, json)?;
+    fs::write(full_sim_filename, json)?;
+    fs::copy(input_model_filename, &output_model_filename)
+    .expect("Failed to copy model.json to output config directory");
     Ok(())
 }
 
@@ -199,7 +235,7 @@ pub fn load_scene_settings(sim_paths: &SimulationPaths) -> Result<SceneSettings,
 
 pub fn save_scene_settings(scene_settings: &SceneSettings, snapshot_path: &Path) -> Result<(), Error> 
 {
-    let output_filename = Path::new(&snapshot_path).join("scene_config.json");
+    let output_filename = Path::new(&snapshot_path).join("config").join("scene_config.json");
     let json = serde_json::to_string_pretty(scene_settings)
         .expect("Error serializing metadata");
     fs::write(output_filename, json)?;

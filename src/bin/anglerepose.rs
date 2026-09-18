@@ -6,23 +6,60 @@
 
 use glam::DVec3;
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 
 // Import everything from your md_viz library
 
 
 // Imports from simulation library
-use md::md_sim::{ObjectSpec, Forces, Motion, ParticleVec, SimulationSettings, Interactivity};
-use md::md_sim::force::{add_directional_weight, add_particle_particle_collision};
+use md::md_sim::{Forces, Interactivity, Motion, ObjectSpec, ParticleVec, Simulation, SimulationSettings};
+use md::md_sim::force::{add_directional_weight, add_coulomb, CoulombParams, add_particle_particle_collision, CollisionParams};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
+use md::md_sim::utils::file_io::SimulationContext;
 use md::md_sim::particle::MoleculeData;
+use md::md_sim::particle::models::ForceModel;
 use md::md_viz::actions::UserAction;
 
 
 
-pub struct SimUpdate{
-    up: DVec3,
-    angle: f64,
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Variables {
+    pub up: DVec3,
+    pub angle: f64,
 }
+
+pub struct ForceModel{
+    pub coulomb: CoulombParams,
+    pub collision: CollisionParams,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SimUpdate {
+    pub model: ForceModel,
+    pub variable: Variables,
+}
+
+impl SimUpdate {
+    pub fn new(ctx: &SimulationContext) -> Self {
+        let model_file_path = &ctx.paths.model_config; // or wherever your model.json path is stored
+        let file = fs::File::open(model_file_path)
+            .unwrap_or_else(|_| panic!("Failed to open {:?}", model_file_path));
+        
+        // Deserialize the fixed/static part from model.json
+        let model: ForceModel = serde_json::from_reader(file)
+            .unwrap_or_else(|e| panic!("Failed to parse model.json: {}", e));
+
+        // Initialize your variables with defaults or supplementary data if needed
+        let variable = Variables {
+            up: DVec3::new(0.0, 1.0, 0.0),
+            angle: 0.0,
+        };
+
+        Self { model, variable }
+    }
+}
+
 
 impl Interactivity for SimUpdate{
 
@@ -81,11 +118,12 @@ impl Forces for SimUpdate{
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
         if particles.ptype[i] == 0 || particles.ptype[i] == 2{
-            //Only main particles have granular collisions. 
+            //Only main particles have granular collisions.
+            //println!("possible collide i {}, j {}",particles.ptype[i],particles.ptype[j]); 
             (force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);
         }
-        //else{
-        //    //ptype == 1 is the charge.
+        //else if particles.ptype[i] == 1 || particles.ptype[i] == 3{
+            //println!("possible coulomb i {}, j {}",particles.ptype[i],particles.ptype[j]);
         //    force = add_coulomb(i, j, particles, force, settings);
         //}
 
@@ -140,5 +178,6 @@ impl Motion for SimUpdate{
 
 
 pub fn main() {    
-    md::run_simulation(SimUpdate {up: DVec3::new(0.0,0.0,1.0), angle: 0.0});
+    let ctx = parse_simulation_args();
+    md::run_simulation(SimUpdate::new(ctx), ctx);
 }

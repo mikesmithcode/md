@@ -2,33 +2,81 @@
 set -e
 
 show_help() {
-    echo "Usage: scripts/run [-b] [-r] [-x] [-g] [-v] [-h] <input_name>"
-    echo "  -b    Build Release: Compiles in release mode and exits."
-    echo "  -r    Release Mode: Compiles with release optimizations and runs."
+    echo "Usage: scripts/run [-b] [-d] [-r] [-x] [-n] [-v] [-s] [-o] [-h] <input_name>"
+    echo "  Note: The flags -b, -d, -r, and -x are mutually exclusive (you can only use one)."
+    echo "  Note: You cannot use -s and -o together."
+    echo "  -b    Build Only: Compiles and exits."
+    echo "  -d    Debug Mode: Compiles and runs in debug mode."
+    echo "  -r    Release Mode: Compiles and runs in release mode (default)."
     echo "  -x    Execute Only: Runs pre-existing binary without rebuilding."
-    echo "  -g    Graphics Mode: Enables live window display (runs headless by default)."
+    echo "  -n    Headless Mode: Runs without launching a live graphical window."
     echo "  -v    Video Recording: Enables video output rendering."
+    echo "  -s    Skip Particle Saving: Disables periodic particle data dumping."
+    echo "  -o    Object Saving: Enables periodic object data dumping."
     echo "  -h    Show help."
     exit 0
 }
 
-RELEASE_FLAG=""
+RELEASE_FLAG="--release"  # Release mode is default
 BUILD_ONLY=false
 EXECUTE_ONLY=false
-HEADLESS=true
+HEADLESS=false            # Graphics enabled by default
 RECORD_VIDEO=false
+SAVE_PARTICLES=true
+SAVE_OBJECTS=false
 
-while getopts "brxgvh" opt; do
+# Track explicit flag usage and conflicts
+MODE_COUNT=0
+EXPLICIT_S=false
+EXPLICIT_O=false
+
+while getopts "bdrnxvsoh" opt; do
   case $opt in
-    r) RELEASE_FLAG="--release" ;;
-    b) BUILD_ONLY=true; RELEASE_FLAG="--release" ;;
-    x) EXECUTE_ONLY=true ;;
-    g) HEADLESS=false ;;
+    d) 
+      RELEASE_FLAG="" 
+      MODE_COUNT=$((MODE_COUNT + 1))
+      ;;
+    r) 
+      RELEASE_FLAG="--release" 
+      MODE_COUNT=$((MODE_COUNT + 1))
+      ;;
+    b) 
+      BUILD_ONLY=true 
+      MODE_COUNT=$((MODE_COUNT + 1))
+      ;;
+    x) 
+      EXECUTE_ONLY=true 
+      MODE_COUNT=$((MODE_COUNT + 1))
+      ;;
+    n) HEADLESS=true ;;
     v) RECORD_VIDEO=true ;;
+    s) 
+      SAVE_PARTICLES=false 
+      EXPLICIT_S=true
+      ;;
+    o) 
+      SAVE_OBJECTS=true 
+      EXPLICIT_O=true
+      ;;
     h) show_help ;;
     \?) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
   esac
 done
+
+# Check for conflicting mode flags (-b, -d, -r, -x)
+if [ "$MODE_COUNT" -gt 1 ]; then
+    echo "Error: Conflicting flags detected. You can only use one of [-b, -d, -r, -x]." >&2
+    echo "Run 'scripts/run -h' for help." >&2
+    exit 1
+fi
+
+# Check for conflict between -s and -o
+if [ "$EXPLICIT_S" = true ] && [ "$EXPLICIT_O" = true ]; then
+    echo "Error: Conflicting output flags detected. You cannot use both -s (skip particles) and -o (save objects) together." >&2
+    echo "Run 'scripts/run -h' for help." >&2
+    exit 1
+fi
+
 shift $((OPTIND-1))
 
 INPUT_NAME="$1"
@@ -56,9 +104,9 @@ if [ "$EXECUTE_ONLY" = true ]; then
         echo "Error: Binary not found at $BINARY. Build first."
         exit 1
     fi
-    echo "--- Using existing binary (-x) ---"
+    echo "--- Using existing binary (-x) in [$PROFILE_DIR mode] ---"
 else
-    echo "--- Compiling $TARGET_NAME ${RELEASE_FLAG:-'(debug mode)'} ---"
+    echo "--- Compiling $TARGET_NAME ${RELEASE_FLAG:+'(release mode)'} ${RELEASE_FLAG:-'(debug mode)'} ---"
     cargo build $RELEASE_FLAG --bin "$TARGET_NAME"
 fi
 
@@ -67,9 +115,9 @@ if [ "$BUILD_ONLY" = true ]; then
     exit 0
 fi
 
-echo "--- Launching Simulation (Headless: $HEADLESS, Record Video: $RECORD_VIDEO) ---"
+echo "--- Launching Simulation (Headless: $HEADLESS, Video: $RECORD_VIDEO, Save Particles: $SAVE_PARTICLES, Save Objects: $SAVE_OBJECTS) ---"
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO"
+    GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
 else
-    "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO"
+    "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
 fi

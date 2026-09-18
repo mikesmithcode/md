@@ -23,8 +23,80 @@ DEFAULT_PTYPE_COLOURS: Dict[int, Tuple[float, float, float, float]] = {
     3: (0.0, 255.0, 255.0, 255.0),
 }
 
+def generate_spheres(
+    positions: Sequence[Tuple[float, float, float]],
+    w: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0),
+    v: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0),
+    rad: Union[float, Sequence[float]] = 0.005,
+    density: Union[float, Sequence[float]] = 1200,
+    ptype: Union[int, Sequence[int]] = 0,
+    ptype_colours: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
+):
+    """Yields a Polars DataFrame containing a single sphere particle for each position."""
+    n_particles = len(positions)
 
-def generate_molecules(
+    # Merge user-defined colours with defaults
+    colours = DEFAULT_PTYPE_COLOURS.copy()
+    if ptype_colours is not None:
+        colours.update(ptype_colours)
+
+    def parse_scalar(param):
+        if isinstance(param, (list, np.ndarray)) and len(param) == n_particles:
+            return param
+        return [param] * n_particles
+
+    def parse_tuple(param):
+        if isinstance(param, (list, np.ndarray)) and len(param) == n_particles and isinstance(param[0], (list, tuple, np.ndarray)):
+            return param
+        return [param] * n_particles
+
+    ws = parse_tuple(w)
+    vels = parse_tuple(v)
+    rads = parse_scalar(rad)
+    densities = parse_scalar(density)
+    ptypes = parse_scalar(ptype)
+
+    particle_id = 0
+
+    for i, pos_data in enumerate(positions):
+        x, y, z = pos_data
+        wx, wy, wz = ws[i]
+        vx, vy, vz = vels[i]
+        r = rads[i]
+        dens = densities[i]
+        
+        main_ptype = int(ptypes[i])
+        main_col = colours.get(main_ptype, (1.0, 1.0, 1.0, 1.0))
+
+        mass = (4.0 / 3.0) * np.pi * (r ** 3) * dens
+
+        particle = {
+            "t": 0.0,
+            "id": int(particle_id),
+            "molecule_id": int(particle_id),
+            "ptype": int(main_ptype),
+            "x": float(x), "y": float(y), "z": float(z),
+            "rel_x": 0.0, "rel_y": 0.0, "rel_z": 0.0,
+            "vx": float(vx), "vy": float(vy), "vz": float(vz),
+            "wx": float(wx), "wy": float(wy), "wz": float(wz),
+            "radius": float(r),
+            "mass": float(mass),
+            "charge": 0.0,
+            "r": float(main_col[0]), "g": float(main_col[1]),
+            "b": float(main_col[2]), "a": float(main_col[3])
+        }
+        particle_id += 1
+
+        df = pl.DataFrame(particle)
+        df = df.with_columns(
+            pl.col("ptype").cast(pl.UInt64),
+            pl.col("id").cast(pl.UInt64),
+            pl.col("molecule_id").cast(pl.UInt64)
+        )
+
+        yield df
+
+def generate_dipoles(
     positions: Sequence[Tuple[float, float, float]],
     w: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0),
     q_mag: Union[float, Sequence[float]] = 1e-9,
@@ -268,17 +340,34 @@ def generate_particle_positions(n_particles, min_dist, **kwargs):
     return positions
 
 
-def generate_particle_cube(nx, ny, nz, spacing, z_base, center_x, center_y):
-    total_x = (nx - 1) * spacing
-    total_y = (ny - 1) * spacing
-    
-    start_x = center_x - total_x / 2.0
-    start_y = center_y - total_y / 2.0
-    
+def generate_particle_cube(dimensions, spacing, start_pos, box, r_ball):   
+    nx,ny,nz = dimensions
+    start_x, start_y, start_z = start_pos
+    box_w, box_y, box_z = box
+
     x = start_x + np.arange(nx) * spacing
     y = start_y + np.arange(ny) * spacing
-    z = z_base + np.arange(nz) * spacing
-    
+    z = start_z + np.arange(nz) * spacing
+        
     xx, yy, zz = np.meshgrid(x, y, z, indexing='ij')
+    positions = np.column_stack((xx.ravel(), yy.ravel(), zz.ravel()))
     
-    return np.column_stack((xx.ravel(), yy.ravel(), zz.ravel()))
+    # --- SAFETY BOUNDS CHECK ---
+    # Define strict limits based on box dimensions minus particle radius buffer
+    min_x, max_x = r_ball, box_w - r_ball
+    min_y, max_y = r_ball, box_y - r_ball
+    min_z, max_z = r_ball, box_z - r_ball
+    
+    # Filter or clip positions to ensure zero boundary/wall overlap
+    # (Alternatively, assert that everything is safely inside)
+    valid_mask = (
+        (positions[:, 0] >= min_x) & (positions[:, 0] <= max_x) &
+        (positions[:, 1] >= min_y) & (positions[:, 1] <= max_y) &
+        (positions[:, 2] >= min_z) & (positions[:, 2] <= max_z)
+    )
+    
+    if not np.all(valid_mask):
+        print(f"Warning: {(~valid_mask).sum()} particles fell outside safe box boundaries and were clipped!")
+        positions = positions[valid_mask]
+        
+    return positions

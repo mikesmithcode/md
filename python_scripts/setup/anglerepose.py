@@ -12,7 +12,7 @@ matplotlib.use('qtAgg')
 
 from utils.file_io import get_config
 from utils.graphics import display
-from utils.particles_objects import create_rectangle, create_line, generate_molecules, generate_particle_cube
+from utils.particles_objects import create_rectangle, create_line, generate_dipoles, generate_spheres, generate_particle_cube
 
 config, particles_filepath, objects_filepath = get_config()
 
@@ -23,7 +23,7 @@ w = box[0]
 d = box[1]
 h = box[2]
 
-z = 0.0025
+z = 0.005
 rect = [(0.0, 0.0, z), (0.0, d, z), (w, d, z), (w, 0.0, z)]
 
 rect_df = create_rectangle(
@@ -34,11 +34,11 @@ rect_df = create_rectangle(
 #rect_df.write_parquet(objects_filepath)
 
 
-r_ball = 0.0025
+r_ball = 0.005
 dr_ball = 0.25 # variance in radius
 
 #Add an up_line
-up_line_vertices = [(0.0,d, -5*r_ball),(w,d, -5*r_ball)]
+up_line_vertices = [(0.0,d, -2.5*r_ball),(w,d, -5*r_ball)]
 
 
 line = create_line(up_line_vertices, thickness=0.002, colour=(0,255,0,255))
@@ -52,23 +52,28 @@ pos_template = [(r_ball + r_ball * 2 * i, d / 2, h - r_ball) for i in range(11)]
 
 spacing = 3.0*r_ball
 
+dimensions = (round(w/spacing),round(d/spacing), round((0.85*h)/spacing))
+start_pos = (spacing,spacing,0.15*h)
+
+base_dimensions = (round(w/spacing),round(d/spacing), 1)
+start_base_pos = (2.0*r_ball,2.0*r_ball,r_ball)
 #grid of static particles at the bottom
-static_particle_positions = generate_particle_cube(round(w/spacing), round(d/spacing), 1,spacing, z, w/2, d/2)
+static_particle_positions = generate_particle_cube(base_dimensions, spacing, start_base_pos,box, r_ball)
 #cube of particles to drop
-positions = generate_particle_cube(round(w/spacing), round(d/spacing), round((0.75*h)/spacing), 1.1*spacing, 0.15*h, w/2, d/2)
+positions = generate_particle_cube(dimensions,spacing,start_pos,box, r_ball)
 
 num_dynamic = positions.shape[0]
 num_static = static_particle_positions.shape[0]
 
 positions = np.append(static_particle_positions, positions, axis=0)
 
-
+print('positions', positions)
 
 
 rads = [r_ball - dr_ball * r_ball * np.random.uniform(1.0, 0.0) for _ in range(len(positions))]
 
-d_r = 0.5 # fractional position of charge
-q_mag = 0.5e-9   # Charge magnitude
+d_r = 0.0 # fractional position of charge
+q_mag = 0.0e-9   # Charge magnitude
 mixed = True   # Enable mixed positive/negative charge generation
 
 ptypes_static = [4]*num_static
@@ -90,7 +95,7 @@ ptype_colours = {
     5: (0.0, 255.0, 255.0, 255.0),    # Charges on static particles
 }
 
-molecules = list(generate_molecules(
+molecules = list(generate_dipoles(
     positions, 
     rad=rads, 
     ptype=ptypes,

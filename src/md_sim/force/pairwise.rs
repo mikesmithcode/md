@@ -10,7 +10,7 @@ use glam::DVec3;
 use std::f64::consts::PI;
 
 use crate::md_sim::SimulationSettings;
-use crate::md_sim::particle::{ParticleVec, SimulationModel};
+use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::utils::check_delta;
 use crate::md_sim::force::common::compute_contact_force_and_torque;
 
@@ -72,6 +72,7 @@ pub fn add_particle_particle_collision(
     particles: &ParticleVec, 
     mut force: DVec3, 
     mut torque: DVec3, 
+    model: CollisionParams,
     settings: &SimulationSettings
 ) -> (DVec3, DVec3) { 
     
@@ -107,14 +108,9 @@ pub fn add_particle_particle_collision(
 
         let m_eff = m_scale * m_i;
 
-        let (modulus, restitution, mu) = match &settings.model {
-            SimulationModel::Frictional(p) => (p.modulus, p.restitution, p.mu),
-            _ => panic!("Unsupported model for granular collision"),
-        };
-
         // 1/E* = (1-nu_i^2)/Yi + (1-nu_j^2)/Yj. Assume nu = 0.3 and Yi=Yj 
-        let e_star = modulus / 1.82;
-        let beta = -restitution.ln() / (std::f64::consts::PI.powi(2) + restitution.ln().powi(2)).sqrt();
+        let e_star = model.modulus / 1.82;
+        let beta = -model.restitution.ln() / (std::f64::consts::PI.powi(2) + model.restitution.ln().powi(2)).sqrt();
 
         // Hertzian contact, stiffness depends on radii
         let r_eff = (rad_i * rad_j) / combined_rad;
@@ -129,7 +125,7 @@ pub fn add_particle_particle_collision(
                             - (particles.velocity[j] + particles.omega[j].cross(r_j));
 
         let (contact_force, contact_torque) = compute_contact_force_and_torque(
-            overlap, normal, r_i, v_surface_rel, eff_stiffness, eff_damping, mu
+            overlap, normal, r_i, v_surface_rel, eff_stiffness, eff_damping, model.mu
         );
         
         force += contact_force;
@@ -137,6 +133,15 @@ pub fn add_particle_particle_collision(
     }
 
     (force, torque)
+}
+
+pub struct CollisionParams{
+    pub modulus: f64,
+    pub restitution: f64,
+    pub mu: f64,
+    pub plane_modulus: f64,
+    pub plane_restitution: f64,
+    pub plane_mu: f64,
 }
 
 /// Computes the electrostatic Coulomb force between two charged particles.
@@ -156,24 +161,32 @@ pub fn add_particle_particle_collision(
 /// * `j` - Index of the interacting neighbor particle.
 /// * `particles` - Reference to particle state buffers containing positions and charges.
 /// * `force` - Accumulated incoming force vector for particle `i`.
-/// * `_settings` - Global simulation parameters (unused in pure Coulomb calculations, preserved for interface uniformity).
+/// * `model` - Global simulation parameters (unused in pure Coulomb calculations, preserved for interface uniformity).
 ///
 /// # Returns
 ///
 /// * `DVec3` - The updated force vector including the electrostatic contribution.
-pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3,_settings: &SimulationSettings)-> DVec3{
-    const EPS0: f64 = 8.85418782e-12;
+pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3, model: CoulombParams)-> DVec3{
+    
 
     let r = particles.position[i] - particles.position[j];
-
     let r_mag_sq = r.length_squared();
-    let inv_r = 1.0 / r_mag_sq.sqrt(); // One square root
-    let inv_r_cubed = inv_r * inv_r * inv_r;
     
-    let df = (particles.charge[i] * particles.charge[j] / (4.0 * PI * EPS0)) * r * inv_r_cubed;
+    // Implement cutoff
+    if r_mag_sq <= model.cutoff.powi(2){
+        const EPS0: f64 = 8.85418782e-12;
+        let eps = EPS0 * model.eps_r;
+        let inv_r = 1.0 / r_mag_sq.sqrt(); // One square root
+        let inv_r_cubed = inv_r * inv_r * inv_r;
     
-    force+=(particles.charge[i] * particles.charge[j] / (4.0 * PI * EPS0)) * r * inv_r_cubed;
-    
+        force+=(particles.charge[i] * particles.charge[j] / (4.0 * PI * eps)) * r * inv_r_cubed;
+    }
     force
     
 }
+
+pub struct CoulombParams{
+    pub eps_r: f64,
+    pub cutoff: f64,
+}
+

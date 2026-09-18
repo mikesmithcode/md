@@ -95,6 +95,7 @@ impl CellGrid {
         particles: &mut ParticleVec,
         settings: &SimulationSettings,
     ) {
+        
         let threshold_sq = (settings.skin * 0.5).powi(2);
 
         let count_changed = particles.len() != self.last_particle_count;
@@ -111,7 +112,6 @@ impl CellGrid {
             if count_changed {
                 self.resize_buffers(particles.len());
             }
-            
             self.bin(particles);
             self.rebuild_verlet_table(particles);
             particles.ref_pos.copy_from_slice(&particles.position);
@@ -301,6 +301,7 @@ impl CellGrid {
         }
         
         let total_pairs = self.verlet_offsets[particles.position.len()];
+        
         self.verlet_particle_ids.resize(total_pairs, 0);
 
         // --- PASS 3: Fill ---

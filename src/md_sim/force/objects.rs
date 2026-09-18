@@ -1,8 +1,8 @@
 
 use glam::DVec3;
 
-use crate::md_sim::particle::SimulationModel;
-use crate::md_sim::{ObjectSpec, ParticleVec, SimulationSettings, SurfaceKinematics};
+use crate::md_sim::force::pairwise::CollisionParams;
+use crate::md_sim::{ObjectSpec, ParticleVec, SurfaceKinematics};
 use crate::md_sim::force::common::compute_contact_force_and_torque;
 
 
@@ -18,7 +18,8 @@ use crate::md_sim::force::common::compute_contact_force_and_torque;
 /// * `object_spec` - Specification of the geometric objects present in the simulation.
 /// * `force` - Accumulated incoming force vector for the particle.
 /// * `torque` - Accumulated incoming torque vector for the particle.
-/// * `settings` - Global simulation parameters containing material models (stiffness, damping, friction).
+/// * `model` - CollisionParams struct defined in particles.rs modulus, restitution, friction for particles and objects.
+/// * `collision_ptypes` - only particles which are a collision_ptype defined in settings.json undergo collisions.
 ///
 /// # Returns
 ///
@@ -29,20 +30,22 @@ pub fn add_particle_object_collision(
     object_spec: &ObjectSpec,
     mut force: DVec3,
     mut torque: DVec3,
-    settings: &SimulationSettings,
+    model: CollisionParams,
+    collision_ptypes: Vec<u8>
 ) -> (DVec3, DVec3) {
     match object_spec {
         ObjectSpec::Rectangle(rect) => {
-            (force, torque) = particle_contact_response(i, particles, rect, force, torque, settings);
+            (force, torque) = particle_contact_response(i, particles, rect, force, torque, model, collision_ptypes);
         }
         ObjectSpec::Triangle(tri) => {
-            (force, torque) = particle_contact_response(i, particles, tri, force, torque, settings);
+            (force, torque) = particle_contact_response(i, particles, tri, force, torque, model, collision_ptypes );
         }
         _ => {}
     }
 
     (force, torque)
 }
+
 
 /// Computes the linear force and rotational torque exerted on a particle
 /// colliding with a moving rigid surface (SurfaceKinematics).
@@ -69,10 +72,11 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
     surface: &S,
     mut force: DVec3,
     mut torque: DVec3,
-    settings: &SimulationSettings,
+    model: CollisionParams,
+    collision_ptypes: Vec<u8>, 
 ) -> (DVec3, DVec3) {
     // Ignore if not a collision ptype
-    if !settings.collision_ptypes.contains(&(particles.ptype[i] as u8)){
+    if !collision_ptypes.contains(&(particles.ptype[i] as u8)){
         return (force, torque);
     }
 
@@ -93,22 +97,16 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
         // Assume plane is of infinite mass.
         let m_eff = particles.mass[i];      
 
-        let (modulus, plane_modulus, plane_restitution, mu) = if let SimulationModel::Frictional(p) = &settings.model {
-            (p.modulus, p.plane_modulus, p.plane_restitution, p.plane_mu)
-        } else {
-            panic!("Unsupported model for granular collision");
-        };
-
         // 1/E* = (1-nu_i^2)/Yi + (1-nu_j^2)/Yj. Assume nu = 0.3
-        let y_p = modulus;
-        let y_w = plane_modulus;
+        let y_p = model.modulus;
+        let y_w = model.plane_modulus;
         let compliance = 0.91 * ((1.0 / y_p) + (1.0 / y_w));
         let e_star = 1.0 / compliance;
         let eff_stiffness = (4.0 / 3.0) * e_star * radius.sqrt();
         
-        let beta = -plane_restitution.ln() / (std::f64::consts::PI.powi(2) + plane_restitution.ln().powi(2)).sqrt();
+        let combined_restitution = (model.restitution * model.plane_restitution).sqrt();
+        let beta = -combined_restitution.ln() / (std::f64::consts::PI.powi(2) + combined_restitution.ln().powi(2)).sqrt();
         let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
-        //println!("plane stiffness {}, damping {}", eff_stiffness, eff_damping);
 
         let surface_vel = surface.velocity_at_point(closest_point);
         let r_particle = -normal * dist;
@@ -116,7 +114,7 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
         let rel_vel = particle_contact_vel - surface_vel;
 
         let (contact_force, contact_torque) = compute_contact_force_and_torque(
-            overlap, normal, r_particle, rel_vel, eff_stiffness, eff_damping, mu
+            overlap, normal, r_particle, rel_vel, eff_stiffness, eff_damping, model.mu
         );
 
         force += contact_force;
