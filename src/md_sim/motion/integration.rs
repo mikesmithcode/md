@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::md_sim::motion::change::enforce_boundary;
 use crate::md_sim::utils::check_delta;
 use crate::md_sim::{SimulationSettings, ParticleVec};
-use crate::md_sim::particle::{SimulationModel, calculate_molecule_com, MoleculeData};
+use crate::md_sim::particle::{calculate_molecule_com, MoleculeData};
 
 
 //-------------------------------------------------------------------------------------------------------
@@ -51,8 +51,7 @@ pub fn integrate_singleparticle_update(
     let sim_box_size = settings.sim_box_size;
     let periodic = settings.periodic;
 
-    let _is_rotating = matches!(settings.model, SimulationModel::Frictional(_));
-
+    
     for (pos, vel, &radius, &mass, &force) in izip!(
         &mut particles.position,
         &mut particles.velocity,

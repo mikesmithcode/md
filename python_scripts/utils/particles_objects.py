@@ -107,6 +107,7 @@ def generate_dipoles(
     ptype: Union[int, Sequence[int]] = 0,
     mixed: bool = False,
     ptype_colours: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
+    dim=2,
 ):
     """Yields a Polars DataFrame containing both the particle and its charge for each molecule.
 
@@ -135,7 +136,6 @@ def generate_dipoles(
             return param
         return [param] * n_molecules
 
-    #print('check', ptype)
     ws = parse_tuple(w)
     qs_mag = parse_scalar(q_mag)
     vels = parse_tuple(v)
@@ -144,7 +144,19 @@ def generate_dipoles(
     densities = parse_scalar(density)
     ptypes = parse_scalar(ptype)
 
-    phi = np.random.uniform(-np.pi, np.pi, size=n_molecules)
+    # Generate directional offsets based on dimensions (2D X-Z plane or full 3D sphere)
+    if dim == 3:
+        u = np.random.uniform(-1.0, 1.0, size=n_molecules)
+        phi = np.random.uniform(0.0, 2.0 * np.pi, size=n_molecules)
+        sin_theta = np.sqrt(1.0 - u ** 2)
+        dir_x = sin_theta * np.cos(phi)
+        dir_y = u
+        dir_z = sin_theta * np.sin(phi)
+    else:
+        phi = np.random.uniform(-np.pi, np.pi, size=n_molecules)
+        dir_x = np.cos(phi)
+        dir_y = np.zeros(n_molecules)
+        dir_z = np.sin(phi)
 
     # Determine signs per particle
     signs = np.zeros(n_molecules, dtype=int)
@@ -195,18 +207,21 @@ def generate_dipoles(
         particle_id += 1
 
         rel_pos = -r * dr
+        rx = rel_pos * dir_x[i]
+        ry = rel_pos * dir_y[i]
+        rz = rel_pos * dir_z[i]
 
         charge = {
             "t": 0.0,
             "id": int(particle_id),
             "molecule_id": int(mol_id),
             "ptype": int(charge_ptype),
-            "x": float(x + rel_pos * np.cos(phi[i])),
-            "y": float(y),
-            "z": float(z + rel_pos * np.sin(phi[i])),
-            "rel_x": float(rel_pos * np.cos(phi[i])),
-            "rel_y": 0.0,
-            "rel_z": float(rel_pos * np.sin(phi[i])),
+            "x": float(x + rx),
+            "y": float(y + ry),
+            "z": float(z + rz),
+            "rel_x": float(rx),
+            "rel_y": float(ry),
+            "rel_z": float(rz),
             "vx": float(vx), "vy": float(vy), "vz": float(vz),
             "wx": float(wx), "wy": float(wy), "wz": float(wz),
             "radius": float(0.2 * r),

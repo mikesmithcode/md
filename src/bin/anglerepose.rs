@@ -7,28 +7,30 @@
 use glam::DVec3;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
+use std::fs;
 
 // Import everything from your md_viz library
 
 
 // Imports from simulation library
-use md::md_sim::{Forces, Interactivity, Motion, ObjectSpec, ParticleVec, Simulation, SimulationSettings};
+use md::md_sim::{Forces, Interactivity, Motion, ObjectSpec, ParticleVec, SimulationSettings};
 use md::md_sim::force::{add_directional_weight, add_coulomb, CoulombParams, add_particle_particle_collision, CollisionParams};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
-use md::md_sim::utils::file_io::SimulationContext;
+use md::md_sim::utils::file_io::{SimulationContext, parse_simulation_args};
 use md::md_sim::particle::MoleculeData;
-use md::md_sim::particle::models::ForceModel;
 use md::md_viz::actions::UserAction;
 
 
 
-
+// Used for anything that needs to be used which might change state with simulation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Variables {
     pub up: DVec3,
     pub angle: f64,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+// ForceModel contains a struct associated with each force model used.
 pub struct ForceModel{
     pub coulomb: CoulombParams,
     pub collision: CollisionParams,
@@ -37,23 +39,27 @@ pub struct ForceModel{
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimUpdate {
     pub model: ForceModel,
-    pub variable: Variables,
+    #[serde(default)]
+    pub variable: Option<Variables>,
 }
 
 impl SimUpdate {
     pub fn new(ctx: &SimulationContext) -> Self {
-        let model_file_path = &ctx.paths.model_config; // or wherever your model.json path is stored
-        let file = fs::File::open(model_file_path)
-            .unwrap_or_else(|_| panic!("Failed to open {:?}", model_file_path));
-        
-        // Deserialize the fixed/static part from model.json
-        let model: ForceModel = serde_json::from_reader(file)
+        // 1. Always load the static model config
+        let model_file = fs::File::open(&ctx.paths.model_config)
+            .unwrap_or_else(|_| panic!("Failed to open {:?}", ctx.paths.model_config));
+        let model: ForceModel = serde_json::from_reader(model_file)
             .unwrap_or_else(|e| panic!("Failed to parse model.json: {}", e));
 
-        // Initialize your variables with defaults or supplementary data if needed
-        let variable = Variables {
-            up: DVec3::new(0.0, 1.0, 0.0),
-            angle: 0.0,
+        // 2. Conditionally load variables only if variables.json exists
+        let variable = if let Some(ref var_path) = ctx.paths.variables_config {
+            let var_file = fs::File::open(var_path)
+                .unwrap_or_else(|_| panic!("Failed to open {:?}", var_path));
+            let vars: Variables = serde_json::from_reader(var_file)
+                .unwrap_or_else(|e| panic!("Failed to parse variables.json: {}", e));
+            Some(vars)
+        } else {
+            None
         };
 
         Self { model, variable }
@@ -61,34 +67,6 @@ impl SimUpdate {
 }
 
 
-impl Interactivity for SimUpdate{
-
-    // Left and Right Arrow tilt the box around y axis.
-    fn handle_key(&mut self, key: UserAction) {
-        let vertical = glam::DVec3::Z; 
-        match key {
-                UserAction::Right => {
-                    // Decrease angle to rotate clockwise, and invert the Y-axis rotation for 'up'
-                    let angle_delta = -1.0_f64.to_radians();
-                    let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, angle_delta);
-                    self.up = rotation * self.up;    
-                    self.angle += angle_delta; // Accumulate signed angle
-                    println!("Rotated clockwise, angle: {} deg", self.angle.to_degrees());
-                }
-                UserAction::Left => {
-                    // Increase angle to rotate counterclockwise
-                    let angle_delta = 1.0_f64.to_radians();
-                    let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, angle_delta);
-                    self.up = rotation * self.up;
-                    self.angle += angle_delta; // Accumulate signed angle
-                    println!("Rotated counterclockwise, angle: {} deg", self.angle.to_degrees());
-                }
-                _ => {
-                    println!("Unhandled key: {:?}", key);
-                }
-            }
-        }
-    }
 
 impl Forces for SimUpdate{
     // Default implementation is true, set to false if not using
@@ -109,8 +87,9 @@ impl Forces for SimUpdate{
     fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
         // Only the main particle has weight
         if particles.ptype[i] == 0 || particles.ptype[i] == 2{
-            let up = self.up;
-            force = add_directional_weight(i, force, particles, up);
+            let var = self.variable.as_ref().expect("Variables are required for this simulation");
+            println!("gravity {:?}", var.up);
+            force = add_directional_weight(i, force, particles, var.up);
         }
         (force, _torque)
     }
@@ -120,7 +99,7 @@ impl Forces for SimUpdate{
         if particles.ptype[i] == 0 || particles.ptype[i] == 2{
             //Only main particles have granular collisions.
             //println!("possible collide i {}, j {}",particles.ptype[i],particles.ptype[j]); 
-            (force, torque)=add_particle_particle_collision(i, j, particles, force, torque, settings);
+            (force, torque)=add_particle_particle_collision(i, j, force, torque,particles, self.model.collision, settings);
         }
         //else if particles.ptype[i] == 1 || particles.ptype[i] == 3{
             //println!("possible coulomb i {}, j {}",particles.ptype[i],particles.ptype[j]);
@@ -141,43 +120,42 @@ impl Motion for SimUpdate{
     fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
         integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
     }
+}
 
 
-    fn update_objects(&self, object: &mut ObjectSpec, _particles: &mut ParticleVec, settings: &SimulationSettings, time: f64) {
-    
-        // Provides a line to indicate the slope.
-        match object {
-            ObjectSpec::Line(line) => {
-                //Rotate around midpoint according to angle to indicate tilt.
-                let vertex_vec = line.vertices[1] - line.vertices[0];
-                let half_len = vertex_vec.length() * 0.5;
-
-                let centre = (line.vertices[1] + line.vertices[0]) * 0.5;
-
-                // 2. Create a properly rotated displacement vector in the XZ plane
-                let displacement = DVec3::new(
-                    half_len * self.angle.cos(), 
-                    0.0, 
-                    half_len * self.angle.sin()
-                );
-
-                // 3. Compute endpoints maintaining the exact original length and rotation
-                let first_vertex = centre + displacement;
-                let second_vertex = centre - displacement;
-
-                // 4. Update the line endpoints in place
-                line.update_endpoints([first_vertex, second_vertex]);
-            },
-            _ => {}   
+impl Interactivity for SimUpdate {
+    fn handle_key(&mut self, key: UserAction) {
+        let var = self.variable.as_mut().expect("Variables are required for this simulation");
+        println!("key press");
+        match key {
+            UserAction::Right => {
+                let angle_delta = -1.0_f64.to_radians();
+                let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, angle_delta);
+                var.up = rotation * var.up;    
+                var.angle += angle_delta;
+                
+                // Print both to verify changes live in memory
+                println!("Right pressed -> Angle: {:.2}°, Up vector: {:?}", var.angle.to_degrees(), var.up);
+            }
+            UserAction::Left => {
+                let angle_delta = 1.0_f64.to_radians();
+                let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, angle_delta);
+                var.up = rotation * var.up;
+                var.angle += angle_delta;
+                
+                println!("Left pressed -> Angle: {:.2}°, Up vector: {:?}", var.angle.to_degrees(), var.up);
+            }
+            _ => {}
         }
     }
-
 }
+
+
 
 
 
 
 pub fn main() {    
     let ctx = parse_simulation_args();
-    md::run_simulation(SimUpdate::new(ctx), ctx);
+    md::run_simulation(SimUpdate::new(&ctx), ctx);
 }

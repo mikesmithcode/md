@@ -21,7 +21,7 @@ use glam::{DVec3, DQuat};
 use three_d::core::Srgba;
 use itertools::izip;
 
-use crate::md_sim::{LineSpec, ObjectSpec, Particle, ParticleVec, RectSpec, Simulation, SimulationSettings, TriSpec};
+use crate::md_sim::{LineSpec, ObjectSpec, Particle, ParticleVec, RectSpec, SimulationSettings, TriSpec};
 use crate::md_viz::SceneSettings;
 
 
@@ -66,6 +66,7 @@ pub struct SimulationPaths {
     pub sim_config: PathBuf,
     pub scene_config: PathBuf,
     pub model_config: PathBuf,
+    pub variables_config: Option<PathBuf>,
     pub object: PathBuf,
     pub particle: PathBuf,
     pub video: PathBuf,
@@ -125,6 +126,14 @@ pub fn parse_simulation_args() -> SimulationContext {
     let scene_config = config_path.join("scene_settings.json");
     let model_config = config_path.join("model.json");
 
+    // Check if an optional variables.json exists in the input directory
+    let potential_vars_path = config_path.join("variables.json");
+    let variables_config = if potential_vars_path.exists() {
+        Some(potential_vars_path)
+    } else {
+        None
+    };
+
     let particle = output_path.join("particles");
     let _ = validate_simulation_inputs(&particle, &["particles_0000000000.parquet"]);
 
@@ -150,6 +159,7 @@ pub fn parse_simulation_args() -> SimulationContext {
             sim_config,
             scene_config,
             model_config,
+            variables_config,
             object,
             particle,
             video,
@@ -208,8 +218,20 @@ pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &Simulati
     let json = serde_json::to_string_pretty(sim_settings)
         .expect("Error serializing metadata");
     fs::write(full_sim_filename, json)?;
+
+    //Copies the model file to output directory
     fs::copy(input_model_filename, &output_model_filename)
     .expect("Failed to copy model.json to output config directory");
+
+    //Copies the variables file to the output directory.
+    if let Some(input_variables_filepath) = &sim_paths.variables_config {
+        let output_variables_filename = Path::new(&sim_paths.output)
+            .join("config")
+            .join(input_variables_filepath.file_name().expect("Invalid variables file path"));
+            
+        fs::copy(input_variables_filepath, &output_variables_filename)
+            .expect("Failed to copy variables.json to output config directory");
+    }
     Ok(())
 }
 

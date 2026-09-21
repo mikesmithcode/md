@@ -112,7 +112,6 @@ impl LineTemplate {
         let mid = linespec.centre;
         let line_vec = end - start;
         let length = line_vec.length();
-        let i = linespec.id;
 
         if length < 1e-12 {
             return;

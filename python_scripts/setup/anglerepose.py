@@ -55,10 +55,11 @@ spacing = 3.0*r_ball
 dimensions = (round(w/spacing),round(d/spacing), round((0.85*h)/spacing))
 start_pos = (spacing,spacing,0.15*h)
 
-base_dimensions = (round(w/spacing),round(d/spacing), 1)
-start_base_pos = (2.0*r_ball,2.0*r_ball,r_ball)
+base_spacing = 2.2*r_ball
+base_dimensions = (round(w/base_spacing),round(d/base_spacing), 1)
+start_base_pos = (1.5*r_ball,1.5*r_ball,r_ball)
 #grid of static particles at the bottom
-static_particle_positions = generate_particle_cube(base_dimensions, spacing, start_base_pos,box, r_ball)
+static_particle_positions = generate_particle_cube(base_dimensions, base_spacing, start_base_pos,box, r_ball)
 #cube of particles to drop
 positions = generate_particle_cube(dimensions,spacing,start_pos,box, r_ball)
 
@@ -103,6 +104,7 @@ molecules = list(generate_dipoles(
     q_mag=q_mag, 
     mixed=mixed,
     ptype_colours=ptype_colours,
+    dim=3
 ))
 
 df = pl.concat(molecules)

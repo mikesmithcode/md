@@ -1,5 +1,5 @@
 {
-  "dt": 10e-6,
+  "dt": 5e-6,
   "sim_box_size": [0.06, 0.04, 0.12],
   "periodic": [true,true,false],
   "dimensions": "XYZ",

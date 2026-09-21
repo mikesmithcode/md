@@ -23,8 +23,9 @@ pub mod md_sim;
 /// of balls from above into it and watch everything slosh around.
 
 use crate::md_sim::{Forces, Motion, Interactivity, Simulation, SimulationSettings};
-use crate::md_sim::utils::{SimulationContext, save_particles, save_objects, load_latest_particles, load_latest_objects};
+use crate::md_sim::utils::{save_particles, save_objects, load_latest_particles, load_latest_objects};
 use crate::md_viz::{init_scene, actions::UserAction};
+use crate::md_sim::utils::file_io::SimulationContext;
 
 
 pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, ctx: SimulationContext) {

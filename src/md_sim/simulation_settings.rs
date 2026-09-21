@@ -28,7 +28,6 @@
 use glam::DVec3;
 use serde::{Serialize, Deserialize};
 
-use crate::md_sim::particle::{SimulationModel, FrictionParams};
 use crate::md_sim::utils::SimulationPaths;
 use crate::md_sim::utils::file_io::load_sim_settings;
 
@@ -57,8 +56,7 @@ pub struct SimulationSettings {
     pub num_steps: usize,
     pub dump: usize,
     pub interaction_ptypes: Vec<(usize,usize,f64)>,
-    pub collision_ptypes: Vec<u8>,
-    pub model: SimulationModel,  
+    pub collision_ptypes: Vec<u8>
 }
 
 impl SimulationSettings {
@@ -81,8 +79,7 @@ impl Default for SimulationSettings {
             num_steps: 15,
             dump: 1000,
             interaction_ptypes: vec![(0, 0, 10.0)],
-            collision_ptypes: vec![0],
-            model: SimulationModel::Frictional(FrictionParams::default()),
+            collision_ptypes: vec![0]
         }
     }
 }

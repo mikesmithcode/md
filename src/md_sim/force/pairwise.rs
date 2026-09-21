@@ -8,11 +8,13 @@
 
 use glam::DVec3;
 use std::f64::consts::PI;
+use serde::{Serialize,Deserialize};
 
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::utils::check_delta;
 use crate::md_sim::force::common::compute_contact_force_and_torque;
+
 
 
 /// Calculates contact forces and torques between two particles using a Linear Spring-Dashpot (LSD) model.
@@ -69,9 +71,9 @@ use crate::md_sim::force::common::compute_contact_force_and_torque;
 pub fn add_particle_particle_collision(
     i: usize, 
     j: usize, 
-    particles: &ParticleVec, 
     mut force: DVec3, 
     mut torque: DVec3, 
+    particles: &ParticleVec, 
     model: CollisionParams,
     settings: &SimulationSettings
 ) -> (DVec3, DVec3) { 
@@ -135,6 +137,7 @@ pub fn add_particle_particle_collision(
     (force, torque)
 }
 
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct CollisionParams{
     pub modulus: f64,
     pub restitution: f64,
@@ -185,6 +188,7 @@ pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3
     
 }
 
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct CoulombParams{
     pub eps_r: f64,
     pub cutoff: f64,
