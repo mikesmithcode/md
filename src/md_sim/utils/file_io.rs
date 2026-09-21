@@ -228,7 +228,7 @@ pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &Simulati
         let output_variables_filename = Path::new(&sim_paths.output)
             .join("config")
             .join(input_variables_filepath.file_name().expect("Invalid variables file path"));
-            
+        println!("output variables {:?}", output_variables_filename);
         fs::copy(input_variables_filepath, &output_variables_filename)
             .expect("Failed to copy variables.json to output config directory");
     }

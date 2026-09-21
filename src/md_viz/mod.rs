@@ -67,18 +67,20 @@ pub fn init_scene(
     particles: &ParticleVec,
     objects: Option<&[ObjectSpec]>,
     start_step: usize,
-) -> Option<(EventLoop<()>, Scene)> {
+) -> Option<Scene> { // 1. Return type changes from a tuple to just Option<Scene>
     if headless && !record_video {
         return None;
     }
 
     let event_loop = EventLoop::new();
     let scene_settings = SceneSettings::new(sim_filepaths, sim_settings);
-    let mut scene = Scene::new(&event_loop, particles, objects, scene_settings);
+    
+    // 2. Pass event_loop by value (ownership transfer) instead of by reference (&event_loop)
+    let mut scene = Scene::new(event_loop, particles, objects, scene_settings);
 
     if record_video {
         let _ = scene.start_recording(sim_filepaths, start_step);
     }
 
-    Some((event_loop, scene))
+    Some(scene) // 3. Return scene directly
 }

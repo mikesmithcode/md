@@ -41,7 +41,8 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
 
     let mut sim = Simulation::new(particles, objects, sim_update, sim_settings.clone(), time);
 
-    let mut scene_tuple = init_scene(
+    // init_scene now returns Option<Scene> directly because Scene owns its EventLoop
+    let mut scene_opt = init_scene(
         headless,
         record,
         &sim_filepaths,
@@ -59,12 +60,11 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
         sim.update();
         final_step = step;
 
-        if step % sim.settings.dump == 0 {
-            println!("step {}", step);
 
-            if let Some((ref mut event_loop, ref mut scene)) = scene_tuple.as_mut() {
-                if !headless {
-                    let (close_requested, action) = scene.poll_events(event_loop);
+            // 1. Poll window events and render graphics on EVERY step (keeps keyboard responsive)
+            if let Some(ref mut scene) = scene_opt {
+                if !headless & (step%scene.scene_settings.display_steps == 0){
+                    let (close_requested, action) = scene.poll_events(); // No event_loop argument needed!
                     if close_requested {
                         break;
                     }
@@ -79,11 +79,13 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
                 }
 
                 if record {
-                    let _ = scene.save_frame(sim.get_particles(), None);
+                    let _ = scene.save_frame(sim.get_particles(), sim.get_objects());
                 }
-            }
+            }       
 
-            // Conditional periodic interval saves based on OutputSettings
+        // 2. Disk dumps remain sparse (e.g. every 1000 steps)
+        if step % sim.settings.dump == 0 {
+            println!("step {}", step);
             if output_settings.save_particles {
                 save_particles(&sim_filepaths, step, sim.get_particles(), sim.time).expect("Error saving particles");
             }
@@ -99,7 +101,7 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
     save_particles(&sim_filepaths, final_step, sim.get_particles(), sim.time).expect("Error saving final particles");
     save_objects(&sim_filepaths, final_step, sim.get_objects(), sim.time).expect("Error saving final objects");
 
-    if let Some((_, mut scene)) = scene_tuple {
+    if let Some(mut scene) = scene_opt {
         scene.close();
     }
 

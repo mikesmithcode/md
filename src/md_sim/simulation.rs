@@ -205,7 +205,7 @@ impl<S> Simulation<S>
     }
 
     pub fn handle_key(&mut self, key: UserAction){
-        self.sim_update.handle_key(key);
+        self.sim_update.handle_key(key, &mut self.particles, &mut self.objects);
     }
 
     /// Returns an immutable reference to the particle collection.

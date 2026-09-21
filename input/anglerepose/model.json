@@ -4,8 +4,8 @@
     "cutoff": 0.05
   },
  "collision": {
-    "modulus": 1.0e6,
-    "restitution": 0.7,
+    "modulus": 5.0e7,
+    "restitution": 0.1,
     "mu": 0.5,
     "plane_modulus": 1.0e6,
     "plane_restitution": 0.7,

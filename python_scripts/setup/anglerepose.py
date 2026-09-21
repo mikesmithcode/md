@@ -18,7 +18,6 @@ config, particles_filepath, objects_filepath = get_config()
 
 box = config["sim_box_size"]
 
-# Sinusoidally vibrating rectangle surface
 w = box[0]
 d = box[1]
 h = box[2]
@@ -38,11 +37,12 @@ r_ball = 0.005
 dr_ball = 0.25 # variance in radius
 
 #Add an up_line
-up_line_vertices = [(0.0,d, -2.5*r_ball),(w,d, -5*r_ball)]
+line_vertices = [(0.0,d, -5.0*r_ball),(w,d, -5.0*r_ball)]
 
 
-line = create_line(up_line_vertices, thickness=0.002, colour=(0,255,0,255))
+line = create_line(line_vertices, thickness=0.002, colour=(0,255,0,255))
 line.write_parquet(objects_filepath)
+print("line",line)
 
 
 

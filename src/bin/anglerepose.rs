@@ -57,7 +57,9 @@ impl SimUpdate {
                 .unwrap_or_else(|_| panic!("Failed to open {:?}", var_path));
             let vars: Variables = serde_json::from_reader(var_file)
                 .unwrap_or_else(|e| panic!("Failed to parse variables.json: {}", e));
+            
             Some(vars)
+            
         } else {
             None
         };
@@ -88,7 +90,6 @@ impl Forces for SimUpdate{
         // Only the main particle has weight
         if particles.ptype[i] == 0 || particles.ptype[i] == 2{
             let var = self.variable.as_ref().expect("Variables are required for this simulation");
-            println!("gravity {:?}", var.up);
             force = add_directional_weight(i, force, particles, var.up);
         }
         (force, _torque)
@@ -101,10 +102,10 @@ impl Forces for SimUpdate{
             //println!("possible collide i {}, j {}",particles.ptype[i],particles.ptype[j]); 
             (force, torque)=add_particle_particle_collision(i, j, force, torque,particles, self.model.collision, settings);
         }
-        //else if particles.ptype[i] == 1 || particles.ptype[i] == 3{
+        else if particles.ptype[i] == 1 || particles.ptype[i] == 3{
             //println!("possible coulomb i {}, j {}",particles.ptype[i],particles.ptype[j]);
-        //    force = add_coulomb(i, j, particles, force, settings);
-        //}
+            force = add_coulomb(i, j, particles, force, self.model.coulomb);
+        }
 
     
         (force, torque)
@@ -120,30 +121,52 @@ impl Motion for SimUpdate{
     fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
         integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
     }
+
+    fn update_objects(&mut self, _object: &mut ObjectSpec, _particles: &mut ParticleVec,_settings: &SimulationSettings, _time: f64) {
+            //update_line(angle: f64, objects: &mut Option<Vec<ObjectSpec>>);   
+    }
 }
 
+fn update_line(angle: f64, objects: &mut Option<Vec<ObjectSpec>>) {
+    if let Some(objs) = objects {
+        for obj in objs.iter_mut() {
+            if let ObjectSpec::Line(linespec) = obj {
+                if linespec.id == 0 {
+                    // Create a rotation around the Y axis matching the current variable angle
+                    let new_orientation = glam::DQuat::from_axis_angle(glam::DVec3::Y,std::f64::consts::PI/2.0 -angle);
+                    
+                    // Keep its existing centre, but update its orientation
+                    linespec.set(linespec.centre, new_orientation);
+                }
+            }
+        }
+    }
+}
+
+fn change_angle(var: &mut Variables, angle_delta: f64, objects:&mut Option<Vec<ObjectSpec>>){
+    
+    let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, angle_delta);
+    var.up = rotation * var.up;    
+    var.angle += angle_delta;
+    
+    update_line(var.angle, objects);
+    // Print both to verify changes live in memory
+    println!("Angle: {:.2}°, Up vector: {:?}", var.angle.to_degrees(), var.up);
+}
 
 impl Interactivity for SimUpdate {
-    fn handle_key(&mut self, key: UserAction) {
+    fn handle_key(&mut self, key: UserAction, particles: &mut ParticleVec, objects: &mut Option<Vec<ObjectSpec>>) {
+        
         let var = self.variable.as_mut().expect("Variables are required for this simulation");
-        println!("key press");
+
         match key {
             UserAction::Right => {
                 let angle_delta = -1.0_f64.to_radians();
-                let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, angle_delta);
-                var.up = rotation * var.up;    
-                var.angle += angle_delta;
-                
-                // Print both to verify changes live in memory
-                println!("Right pressed -> Angle: {:.2}°, Up vector: {:?}", var.angle.to_degrees(), var.up);
+                change_angle(var, angle_delta, objects);                
             }
             UserAction::Left => {
                 let angle_delta = 1.0_f64.to_radians();
-                let rotation = glam::DQuat::from_axis_angle(glam::DVec3::Y, angle_delta);
-                var.up = rotation * var.up;
-                var.angle += angle_delta;
-                
-                println!("Left pressed -> Angle: {:.2}°, Up vector: {:?}", var.angle.to_degrees(), var.up);
+                change_angle(var, angle_delta, objects);
             }
             _ => {}
         }

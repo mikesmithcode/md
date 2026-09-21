@@ -25,9 +25,12 @@ use crate::md_viz::actions::UserAction;
 
 /// Manages the rendering context, live window, camera controls, GPU resources, and video export pipelines.
 pub struct Scene {
-    scene_settings: SceneSettings,
+    pub scene_settings: SceneSettings,
     pub camera: Camera,
     pub camera_control: CameraControl,
+
+    // Store the event loop directly inside Scene
+    event_loop: EventLoop<()>,
 
     // Unified Graphics State
     context: Context,
@@ -48,21 +51,20 @@ impl Scene {
     
     /// Initializes a new `Scene` instance, loading scene configurations from file, setting up the camera, 
     /// window context, and allocating necessary GPU rendering resources.
-    pub fn new(event_loop: &EventLoop<()>, particles: &ParticleVec, objects: Option<&[ObjectSpec]>, scene_settings: SceneSettings) -> Self {
-        
-        
-        
+    pub fn new(event_loop: EventLoop<()>, particles: &ParticleVec, objects: Option<&[ObjectSpec]>, scene_settings: SceneSettings) -> Self {
         let (w, h) = scene_settings.window_size;
         let viewport = Viewport::new_at_origo(w, h);
         let camera = create_camera(viewport, scene_settings.clone());
         let camera_control = CameraControl::new(&camera, Vector3::new(0.0, 0.0, 0.0));
 
-        let (winit_window, windowed_context, context, resources, frame_input_generator) = Scene::init_window(event_loop, &scene_settings, particles, objects);
+        // Pass event_loop by reference or take ownership
+        let (winit_window, windowed_context, context, resources, frame_input_generator) = Scene::init_window(&event_loop, &scene_settings, particles, objects);
 
         Self {
             scene_settings,
             camera,
             camera_control,
+            event_loop, // Store it here!
             context,
             windowed_context,
             resources,
@@ -71,7 +73,6 @@ impl Scene {
             video_exporter: None,
         }
     }
-
 
     // Sets up the live winit window, three-d context, and GPU resources.
     fn init_window(event_loop: &EventLoop<()>, scene_settings: &SceneSettings, particles: &ParticleVec, objects: Option<&[ObjectSpec]>) -> (winit::window::Window, WindowedContext, Context, GpuResources, FrameInputGenerator) {
@@ -398,30 +399,33 @@ impl Scene {
     
     /// Polls incoming window events, updates camera controls, and returns a boolean indicating whether a close was requested.
     /// Polls incoming window events, updates camera controls, and returns a boolean indicating whether a close was requested.
-    pub fn poll_events(&mut self, event_loop: &mut EventLoop<()>) -> (bool, UserAction) {
+    pub fn poll_events(&mut self) -> (bool, UserAction) {
         let mut close_requested = false;
         let mut action = UserAction::None;
 
-        // Use explicit ref to avoid borrow-checker conflicts inside the closure
         let windowed_context = &mut self.windowed_context;
         let frame_input_generator = &mut self.frame_input_generator;
         let camera_control = &mut self.camera_control;
         let winit_window_id = self.winit_window.id();
 
-        event_loop.run_return(|event, _, control_flow| {
+        // Use a flag so we exit the closure immediately after dispatching pending events
+        let mut handled_batch = false;
+
+        self.event_loop.run_return(|event, _, control_flow| {
+            if handled_batch {
+                *control_flow = winit::event_loop::ControlFlow::Exit;
+                return;
+            }
+
             *control_flow = winit::event_loop::ControlFlow::Poll;
 
             match event {
                 WinitEvent::WindowEvent { event, window_id } if window_id == winit_window_id => {
-                    // Pass event to three-d frame input generator
                     frame_input_generator.handle_winit_window_event(&event);
-
-                    // Pass event to camera controller
                     camera_control.handle_event(&event);
 
                     match event {
                         WindowEvent::Resized(physical_size) => {
-                            // Crucial step: Resize the underlying graphics context
                             windowed_context.resize(physical_size);
                         }
                         WindowEvent::CloseRequested => {
@@ -448,7 +452,10 @@ impl Scene {
                         _ => {}
                     }
                 }
-                WinitEvent::MainEventsCleared => { 
+                WinitEvent::MainEventsCleared => {
+                    // Once we've cleared the current batch of events, exit this run_return call 
+                    // so control returns to the simulation loop, but DO NOT destroy the window/loop!
+                    handled_batch = true;
                     *control_flow = winit::event_loop::ControlFlow::Exit;
                 }
                 _ => {}

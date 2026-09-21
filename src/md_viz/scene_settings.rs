@@ -22,6 +22,7 @@ pub struct SceneSettings {
     pub camera: MyCamera,
     pub window_size: (u32, u32),
     pub window_visible: bool,
+    pub display_steps: usize,
     pub vid_fps: u32,
     #[serde(default)]
     pub sim_box: BoxSpec,
@@ -45,6 +46,7 @@ impl Default for SceneSettings {
             camera: MyCamera::default(),
             window_size: (1280, 960),
             window_visible: true,
+            display_steps: 1000,
             vid_fps: 30,
             sim_box: BoxSpec::default(), // The sim_box_size will be overwritten with values from the Simulation config.
         }

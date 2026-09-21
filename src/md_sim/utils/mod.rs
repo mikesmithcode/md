@@ -6,7 +6,7 @@ use glam::DVec3;
 
 pub use file_io::{parse_simulation_args, save_sim_settings, load_sim_settings, save_particles, load_latest_particles, load_objects, load_particles, load_scene_settings, load_latest_objects, save_objects, SimulationPaths};
 pub use test_utils::{assert_dvec3_near,create_molecule_vec, create_single_molecule, create_particle_vec, setup_single_molecule_data, create_grid_and_settings};
-pub use crate::md_sim::{SimulationSettings, Forces, Motion};
+pub use crate::md_sim::{SimulationSettings, Forces, Motion, ObjectSpec, ParticleVec};
 use crate::md_viz::actions::UserAction;
 
 
@@ -20,7 +20,6 @@ use crate::md_viz::actions::UserAction;
 
 /// Impl this trait on SimUpdate struct whenever you need to create user interaction through keyboard etc.
 /// md_viz::actions::UserAction is an enum that provides indication of which key has been pressed. Expand if you
-/// need additional keys.
 /// 
 /// '''rust
 /// 
@@ -43,7 +42,7 @@ use crate::md_viz::actions::UserAction;
 /// '''
 /// 
 pub trait Interactivity{
-    fn handle_key(&mut self, key: UserAction) {
+    fn handle_key(&mut self, key: UserAction, particles: &mut  ParticleVec, objects: &mut Option<Vec<ObjectSpec>>) {
         println!("No keys implemented: You pressed {:?}", key);
     }
 }
