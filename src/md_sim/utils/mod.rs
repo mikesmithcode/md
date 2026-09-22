@@ -73,6 +73,7 @@ pub trait Interactivity{
 ///   handling in periodic systems.
 /// * It assumes the initial displacement was calculated using coordinates 
 ///   already mapped (or "wrapped") within the primary simulation box.
+#[inline]
 pub fn check_delta(delta: &mut DVec3, sim_box_size: DVec3,periodic:[bool;3]) {
     // Check X-axis wrapping
     if periodic[0]{

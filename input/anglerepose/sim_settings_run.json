@@ -1,10 +1,10 @@
 {
-  "dt": 1.0e-5,
-  "sim_box_size": [0.02, 0.02, 0.1],
+  "dt": 1.0e-6,
+  "sim_box_size": [0.006, 0.006, 0.01],
   "periodic": [true,true,false],
   "dimensions": "XYZ",
   "parallel":true,
-  "skin": 0.008,
+  "skin": 0.003,
   "start": 0,
   "num_steps": 2000000,
   "dump": 1000,

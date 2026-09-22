@@ -29,6 +29,7 @@ use crate::md_sim::particle::ParticleVec;
 ///
 /// This function will panic if the index `i` is out of bounds for either `forces` 
 /// or `particles.mass`.
+#[inline]
 pub fn add_weight(i: usize, mut force: DVec3, particles: &ParticleVec)-> DVec3 {
     let gravity = -9.81;
     let mass = particles.mass[i];
@@ -38,6 +39,7 @@ pub fn add_weight(i: usize, mut force: DVec3, particles: &ParticleVec)-> DVec3 {
     force
 }
 
+#[inline]
 pub fn add_directional_weight(i: usize, mut force: DVec3, particles: &ParticleVec, up: DVec3)-> DVec3 {
     let gravity = -9.81 * up;
     let mass = particles.mass[i];
@@ -71,6 +73,7 @@ pub fn add_directional_weight(i: usize, mut force: DVec3, particles: &ParticleVe
 ///
 /// This function will panic if the index `i` is out of bounds for `forces`, 
 /// `particles.velocity`, or `particles.radius`.
+#[inline]
 pub fn add_viscous_drag(i: usize, particles: &ParticleVec, mut force: DVec3, viscosity: f64) -> DVec3{
     let vel = particles.velocity[i];
     let rad = particles.radius[i];

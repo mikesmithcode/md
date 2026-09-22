@@ -1,6 +1,5 @@
 use glam::DVec3;
 
-#[inline(always)]
 pub (crate) fn compute_contact_force_and_torque(
     overlap: f64,
     normal: DVec3,

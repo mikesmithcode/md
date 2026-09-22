@@ -85,7 +85,6 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
 
         // 2. Disk dumps remain sparse (e.g. every 1000 steps)
         if step % sim.settings.dump == 0 {
-            println!("step {}", step);
             if output_settings.save_particles {
                 save_particles(&sim_filepaths, step, sim.get_particles(), sim.time).expect("Error saving particles");
             }

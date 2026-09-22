@@ -26,7 +26,7 @@ use crate::md_sim::{SimulationSettings, particle::ParticleVec};
 /// 2. **Non-Periodic Boundaries (`false`):** Implements perfectly elastic reflection off the box walls:
 ///    * If the particle crosses the lower boundary ($< 0.0$), position is reflected inward and velocity is inverted ($v_i = -v_i$).
 ///    * If the particle crosses the upper boundary ($\ge \text{sim\_box\_size}$), position is bounced back relative to the wall and velocity is inverted.
-#[inline(always)]
+#[inline]
 pub fn enforce_boundary(pos: &mut DVec3, vel: &mut DVec3, sim_box_size: DVec3, periodic: [bool; 3], radius: f64) {
     for i in 0..3 {
         if periodic[i] {
@@ -67,6 +67,7 @@ pub fn enforce_boundary(pos: &mut DVec3, vel: &mut DVec3, sim_box_size: DVec3, p
 ///   If your simulation physics depends on `mass`, you may need to 
 ///   recalculate it after calling this function to maintain a constant density.
 /// * **Growth Rate:** The current multiplier is $1.00001$ ($0.001\%$) per call.
+#[inline]
 pub fn change_rad(particles: &mut ParticleVec, ptype: usize) {
     for (radius, &p) in izip!(&mut particles.radius, &particles.ptype) {
         if p == ptype {

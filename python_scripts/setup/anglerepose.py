@@ -22,7 +22,7 @@ w = box[0]
 d = box[1]
 h = box[2]
 
-z = 0.005
+z = 0.001
 rect = [(0.0, 0.0, z), (0.0, d, z), (w, d, z), (w, 0.0, z)]
 
 rect_df = create_rectangle(
@@ -33,7 +33,7 @@ rect_df = create_rectangle(
 #rect_df.write_parquet(objects_filepath)
 
 
-r_ball = 0.005
+r_ball = 0.001
 dr_ball = 0.25 # variance in radius
 
 #Add an up_line

@@ -61,13 +61,6 @@ use crate::md_sim::force::common::compute_contact_force_and_torque;
 /// * Minimum Image Convention: Automatically handles periodic wrapping via check_delta
 /// to ensure interactions occur over the shortest path across boundaries. check_delta handles
 /// whether a boundary is periodic or not and changes behavior accordingly.
-/// 
-/// # Performance
-/// 
-/// Marked #[inline(always)] to facilitate compiler optimisations within the spatial
-/// search loops. For models without friction, the tangential and torque logic is
-/// bypassed to maintain high execution speeds.
-#[inline(always)]
 pub fn add_particle_particle_collision(
     i: usize, 
     j: usize, 

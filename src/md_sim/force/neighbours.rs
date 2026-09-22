@@ -257,6 +257,7 @@ impl CellGrid {
         self.get_1d_idx(coords[0] as usize, coords[1] as usize, coords[2] as usize)
     }
 
+    
     fn resize_buffers(&mut self, particle_count: usize) {
         self.counts.resize(particle_count, 0);
         self.verlet_offsets.resize(particle_count + 1, 0);
@@ -328,7 +329,7 @@ impl CellGrid {
         }
     }
 
-    #[inline(always)]
+    #[inline]
     pub(super) fn add_to_verlet(&self, i: usize, j: usize, p: &ParticleVec) -> bool {
         if p.molecule_id[i] == p.molecule_id[j] { return false; }
 

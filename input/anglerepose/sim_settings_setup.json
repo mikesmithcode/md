@@ -1,0 +1,13 @@
+{
+  "dt": 1.0e-6,
+  "sim_box_size": [0.006, 0.006, 0.1],
+  "periodic": [true,true,false],
+  "dimensions": "XYZ",
+  "parallel":true,
+  "skin": 0.003,
+  "start": 0,
+  "num_steps": 2000000,
+  "dump": 10000,
+  "interaction_ptypes": [[0,0,0.01],[0,2,0.01],[2,0,0.01],[2,2,0.01],[0,4,0.01],[2,4,0.01]],
+  "collision_ptypes":[0,2,4]
+}
