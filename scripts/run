@@ -2,13 +2,14 @@
 set -e
 
 show_help() {
-    echo "Usage: scripts/run [-b] [-d] [-r] [-x] [-n] [-v] [-s] [-o] [-h] <input_name>"
-    echo "  Note: The flags -b, -d, -r, and -x are mutually exclusive (you can only use one)."
+    echo "Usage: scripts/run [-b] [-d] [-f] [-r] [-x] [-n] [-v] [-s] [-o] [-h] <input_name>"
+    echo "  Note: The flags -b, -d, -f, -r, and -x are mutually exclusive (you can only use one)."
     echo "  Note: You cannot use -s and -o together."
-    echo "  -b    Build Only: Compiles and exits."
+    echo "  -b    Flamegraph Mode: Profiles max-perf simulation performance using samply."
     echo "  -d    Debug Mode: Compiles and runs in debug mode."
+    echo "  -f    Max-Perf Mode: Compiles and runs using the ultra-optimized max-perf profile."
     echo "  -r    Release Mode: Compiles and runs in release mode (default)."
-    echo "  -x    Execute Only: Runs pre-existing binary without rebuilding."
+    echo "  -x    Execute Only: Skips cargo build/run check and runs existing binary."
     echo "  -n    Headless Mode: Runs without launching a live graphical window."
     echo "  -v    Video Recording: Enables video output rendering."
     echo "  -s    Skip Particle Saving: Disables periodic particle data dumping."
@@ -17,8 +18,9 @@ show_help() {
     exit 0
 }
 
-RELEASE_FLAG="--release"  # Release mode is default
-BUILD_ONLY=false
+PROFILE_FLAG="--release"  # Release mode is default
+PROFILE_DIR="release"     # Default build directory
+FLAMEGRAPH_MODE=false
 EXECUTE_ONLY=false
 HEADLESS=false            # Graphics enabled by default
 RECORD_VIDEO=false
@@ -30,18 +32,27 @@ MODE_COUNT=0
 EXPLICIT_S=false
 EXPLICIT_O=false
 
-while getopts "bdrnxvsoh" opt; do
+while getopts "bdfnxvsoh" opt; do
   case $opt in
     d) 
-      RELEASE_FLAG="" 
+      PROFILE_FLAG="" 
+      PROFILE_DIR="debug"
+      MODE_COUNT=$((MODE_COUNT + 1))
+      ;;
+    f) 
+      PROFILE_FLAG="--profile max-perf" 
+      PROFILE_DIR="max-perf"
       MODE_COUNT=$((MODE_COUNT + 1))
       ;;
     r) 
-      RELEASE_FLAG="--release" 
+      PROFILE_FLAG="--release" 
+      PROFILE_DIR="release"
       MODE_COUNT=$((MODE_COUNT + 1))
       ;;
     b) 
-      BUILD_ONLY=true 
+      FLAMEGRAPH_MODE=true 
+      PROFILE_FLAG="--profile max-perf"
+      PROFILE_DIR="max-perf"
       MODE_COUNT=$((MODE_COUNT + 1))
       ;;
     x) 
@@ -63,9 +74,9 @@ while getopts "bdrnxvsoh" opt; do
   esac
 done
 
-# Check for conflicting mode flags (-b, -d, -r, -x)
+# Check for conflicting mode flags (-b, -d, -f, -r, -x)
 if [ "$MODE_COUNT" -gt 1 ]; then
-    echo "Error: Conflicting flags detected. You can only use one of [-b, -d, -r, -x]." >&2
+    echo "Error: Conflicting flags detected. You can only use one of [-b, -d, -f, -r, -x]." >&2
     echo "Run 'scripts/run -h' for help." >&2
     exit 1
 fi
@@ -96,8 +107,15 @@ else
     SIM_ARG="$INPUT_NAME"
 fi
 
-PROFILE_DIR=$([ "$RELEASE_FLAG" == "--release" ] && echo "release" || echo "debug")
 BINARY="./target/$PROFILE_DIR/$TARGET_NAME"
+
+echo "--- Launching Simulation [Profile: $PROFILE_DIR] (Headless: $HEADLESS, Video: $RECORD_VIDEO, Save Particles: $SAVE_PARTICLES, Save Objects: $SAVE_OBJECTS) ---"
+
+# Execute based on the selected mode
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    export GDK_BACKEND=x11
+    export QT_QPA_PLATFORM=xcb
+fi
 
 if [ "$EXECUTE_ONLY" = true ]; then
     if [ ! -f "$BINARY" ]; then
@@ -105,19 +123,10 @@ if [ "$EXECUTE_ONLY" = true ]; then
         exit 1
     fi
     echo "--- Using existing binary (-x) in [$PROFILE_DIR mode] ---"
-else
-    echo "--- Compiling $TARGET_NAME ${RELEASE_FLAG:+'(release mode)'} ${RELEASE_FLAG:-'(debug mode)'} ---"
-    cargo build $RELEASE_FLAG --bin "$TARGET_NAME"
-fi
-
-if [ "$BUILD_ONLY" = true ]; then
-    echo "--- Build complete ---"
-    exit 0
-fi
-
-echo "--- Launching Simulation (Headless: $HEADLESS, Video: $RECORD_VIDEO, Save Particles: $SAVE_PARTICLES, Save Objects: $SAVE_OBJECTS) ---"
-if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
-else
     "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
+elif [ "$FLAMEGRAPH_MODE" = true ]; then
+    echo "--- Launching Samply Profiler (Max-Perf Mode) ---"
+    samply record cargo run $PROFILE_FLAG --bin "$TARGET_NAME" -- "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
+else
+    cargo run $PROFILE_FLAG --bin "$TARGET_NAME" -- "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
 fi

@@ -14,14 +14,8 @@
 //!   "start": 0,
 //!   "num_steps": 50000,
 //!   "dump": 100,
-//!   "interaction_ptypes": [[0, 0]], // [i,j] means i feels interactions due to j.
+//!   "interaction_ptypes": [[0, 0, 0.01]], // [i,j, cutoff] means i feels interactions due to j. Cutoff determines size of grid used to look for neighbours
 //!   "collision_ptypes" : [0], // These are particles that respond to a collision
-//!   "model": {
-//!     "type": "SolidFriction",
-//!     "stiffness": 6650.0,
-//!     "damping": 2.97,
-//!     "mu": 0.4
-//!   }
 //! }
 //! ```
 
@@ -51,35 +45,61 @@ pub struct SimulationSettings {
     pub periodic: [bool; 3],
     pub dimensions: Dimensions,
     pub parallel: bool,
+    pub threads: usize,
     pub skin: f64,
     pub start: usize,
     pub num_steps: usize,
     pub dump: usize,
     pub interaction_ptypes: Vec<(usize,usize,f64)>,
-    pub collision_ptypes: Vec<u8>
+    pub collision_ptypes: Vec<u8>,
+    // Automatically populated array mask (skipped in JSON)
+    #[serde(default, skip_serializing)]
+    pub collision_mask: [bool; 16],
 }
+
 
 impl SimulationSettings {
     /// Loads simulation configuration from a JSON file path, providing a formatted error message if unreadable.
     pub fn new(sim_paths: &SimulationPaths, start_step: usize) -> Result<SimulationSettings, Box<dyn std::error::Error>> {
-        load_sim_settings(sim_paths, start_step)
+        let mut settings = load_sim_settings(sim_paths, start_step)?;
+        
+        settings.init();
+        
+        Ok(settings)
+    }
+
+    pub fn init(&mut self) {
+        self.collision_mask = [false; 16];
+        for &ptype in &self.collision_ptypes {
+            self.collision_mask[ptype as usize] = true;
+        }
     }
 }
 
 impl Default for SimulationSettings {
     fn default() -> Self {
+        let collision_ptypes = vec![0];
+        
+        // Build the mask to match the default collision_ptypes
+        let mut collision_mask = [false; 16]; // Match your mask size (16 or 256)
+        for &ptype in &collision_ptypes {
+            collision_mask[ptype as usize] = true;
+        }
+
         Self {
-            dt: 0.1,
+            dt: 1.0e-5,
             sim_box_size: DVec3::new(10.0, 0.1, 10.0),
             periodic: [true; 3],
             parallel: true,
+            threads: 0,
             dimensions: Dimensions::XZ,
             skin: 0.2,
             start: 0,
             num_steps: 15,
             dump: 1000,
             interaction_ptypes: vec![(0, 0, 10.0)],
-            collision_ptypes: vec![0]
+            collision_ptypes,
+            collision_mask,
         }
     }
 }

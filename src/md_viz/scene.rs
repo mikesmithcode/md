@@ -466,6 +466,7 @@ impl Scene {
             let current_target = self.camera.target();
             self.camera_control.update_camera(&mut self.camera, current_target);
             self.camera_control.update = false;
+            println!("\n=====================\nScene updated: {:?}\n=====================\n", self.scene_settings);
         }
 
         (close_requested, action)

@@ -42,7 +42,7 @@ use crate::md_viz::actions::UserAction;
 /// '''
 /// 
 pub trait Interactivity{
-    fn handle_key(&mut self, key: UserAction, particles: &mut  ParticleVec, objects: &mut Option<Vec<ObjectSpec>>) {
+    fn handle_key(&mut self, key: UserAction, _particles: &mut  ParticleVec, _objects: &mut Option<Vec<ObjectSpec>>) {
         println!("No keys implemented: You pressed {:?}", key);
     }
 }

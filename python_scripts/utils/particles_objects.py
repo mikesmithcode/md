@@ -1,15 +1,8 @@
-import numpy as np
-import polars as pl
-from typing import Union, Sequence, Tuple
 
-
-from typing import Sequence, Tuple, Union
-import numpy as np
 import polars as pl
-
-from typing import Dict, Optional, Sequence, Tuple, Union
 import numpy as np
-import polars as pl
+
+from typing import Sequence, Tuple, Union, Optional, Dict, Any, cast,  Iterator
 
 # Default colour mapping matching previous values:
 # 0: Main sphere (+q) -> White alpha=150
@@ -23,6 +16,7 @@ DEFAULT_PTYPE_COLOURS: Dict[int, Tuple[float, float, float, float]] = {
     3: (0.0, 255.0, 255.0, 255.0),
 }
 
+
 def generate_spheres(
     positions: Sequence[Tuple[float, float, float]],
     w: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0),
@@ -31,7 +25,7 @@ def generate_spheres(
     density: Union[float, Sequence[float]] = 1200,
     ptype: Union[int, Sequence[int]] = 0,
     ptype_colours: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
-):
+) -> Iterator[pl.DataFrame]:
     """Yields a Polars DataFrame containing a single sphere particle for each position."""
     n_particles = len(positions)
 
@@ -95,7 +89,7 @@ def generate_spheres(
         )
 
         yield df
-
+        
 def generate_dipoles(
     positions: Sequence[Tuple[float, float, float]],
     w: Union[Tuple[float, float, float], Sequence[Tuple[float, float, float]]] = (0.0, 0.0, 0.0),

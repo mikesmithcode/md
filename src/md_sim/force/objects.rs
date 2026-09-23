@@ -4,12 +4,13 @@ use glam::DVec3;
 use crate::md_sim::force::pairwise::CollisionParams;
 use crate::md_sim::{ObjectSpec, ParticleVec, SurfaceKinematics};
 use crate::md_sim::force::common::compute_contact_force_and_torque;
+use crate::md_sim::SimulationSettings;
 
 
 /// Computes contact forces and torques arising from collisions between a particle and simulation objects.
 ///
 /// This acts as a dispatcher function that inspects the object specification variant 
-/// (e.g., rectangles, triangles) and delegates to generic surface collision solver.
+/// (e.g., rectangles, triangles) and delegates to the generic surface collision solver.
 ///
 /// # Arguments
 ///
@@ -18,8 +19,8 @@ use crate::md_sim::force::common::compute_contact_force_and_torque;
 /// * `object_spec` - Specification of the geometric objects present in the simulation.
 /// * `force` - Accumulated incoming force vector for the particle.
 /// * `torque` - Accumulated incoming torque vector for the particle.
-/// * `model` - CollisionParams struct defined in particles.rs modulus, restitution, friction for particles and objects.
-/// * `collision_ptypes` - only particles which are a collision_ptype defined in settings.json undergo collisions.
+/// * `model` - Collision parameters containing precomputed material properties and friction coefficients.
+/// * `settings` - Simulation settings containing the O(1) collision mask and global configuration parameters.
 ///
 /// # Returns
 ///
@@ -30,53 +31,84 @@ pub fn add_particle_object_collision(
     object_spec: &ObjectSpec,
     mut force: DVec3,
     mut torque: DVec3,
-    model: CollisionParams,
-    collision_ptypes: Vec<u8>
+    model: &CollisionParams,
+    settings: &SimulationSettings,
 ) -> (DVec3, DVec3) {
     match object_spec {
         ObjectSpec::Rectangle(rect) => {
-            (force, torque) = particle_contact_response(i, particles, rect, force, torque, model, collision_ptypes);
+            (force, torque) = particle_contact_response(
+                i, particles, rect, force, torque, model, settings
+            );
         }
         ObjectSpec::Triangle(tri) => {
-            (force, torque) = particle_contact_response(i, particles, tri, force, torque, model, collision_ptypes );
+            (force, torque) = particle_contact_response(
+                i, particles, tri, force, torque, model, settings
+            );
         }
         _ => {}
     }
 
     (force, torque)
 }
-
-
 /// Computes the linear force and rotational torque exerted on a particle
 /// colliding with a moving rigid surface (SurfaceKinematics).
+/// 
 /// This function uses a viscoelastic spring-dashpot contact model in the normal
 /// direction and a viscous-damping Coulomb friction model in the tangential direction.
+/// 
 /// # Mathematical Model
 /// 
 /// 1. Overlap & Geometry:
-///     - $\mathbf{\delta} = \mathbf{p}_{\text{particle}} - \mathbf{p}_{\text{closest}}$ (vector from surface closest point to particle center)
-///     - $\text{dist} = \Vert{}\mathbf{\delta}\Vert{}$, $\text{overlap} = R - \text{dist}$
-///     - $\mathbf{n} = \frac{\mathbf{\delta}}{\text{dist}}$ (unit vector pointing strictly outward from the surface toward the particle)
+///    - $\mathbf{\delta} = \mathbf{p}_{\text{particle}} - \mathbf{p}_{\text{closest}}$ (vector from surface closest point to particle center)
+///    - $\text{dist} = \Vert{}\mathbf{\delta}\Vert{}$, $\text{overlap} = R - \text{dist}$
+///    - $\mathbf{n} = \frac{\mathbf{\delta}}{\text{dist}}$ (unit vector pointing strictly outward from the surface toward the particle)
+/// 
 /// 2. Relative Velocity:
-///     - Contact point offset: $\mathbf{r}_{\text{particle}} = -\mathbf{n} \cdot \text{dist}$ (vector from particle center of mass to the contact point)
-///     - Surface velocity at contact: $\mathbf{v}_{\text{surface}} = \text{surface.velocity\_at\_point}(\mathbf{p}_{\text{closest}})$
-///     - Particle contact point velocity: $\mathbf{v}_{\text{particle\_contact}} = \mathbf{v}_{\text{particle}} + \boldsymbol{\omega}_{\text{particle}} \times \mathbf{r}_{\text{particle}}$
-///     - Relative velocity: $\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{particle\_contact}} - \mathbf{v}_{\text{surface}}$
-///     - Normal velocity component: $v_n = \mathbf{v}_{\text{rel}} \cdot \mathbf{n}$ (negative during compression, positive during separation)
+///    - Contact point offset: $\mathbf{r}_{\text{particle}} = -\mathbf{n} \cdot \text{dist}$ (vector from particle center of mass to the contact point)
+///    - Surface velocity at contact: $\mathbf{v}_{\text{surface}} = \text{surface.velocity\_at\_point}(\mathbf{p}_{\text{closest}})$
+///    - Particle contact point velocity: $\mathbf{v}_{\text{particle\_contact}} = \mathbf{v}_{\text{particle}} + \boldsymbol{\omega}_{\text{particle}} \times \mathbf{r}_{\text{particle}}$
+///    - Relative velocity: $\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{particle\_contact}} - \mathbf{v}_{\text{surface}}$
+///    - Normal velocity component: $v_n = \mathbf{v}_{\text{rel}} \cdot \mathbf{n}$ (negative during compression, positive during separation)
+/// 
 /// 3. Normal Force ($\mathbf{F}_n$):
-///     - Elastic component: $F_{\text{elastic}} = k_n \cdot \text{overlap}$
-///     - Viscous damping component: $F_{\text{damping}} = \gamma_n \cdot v_n$///    - Clamped magnitude: $F_{n,\text{mag}} = \max\left(0, F_{\text{elastic}} - F_{\text{damping}}\right)$///    - Vector normal force: $\mathbf{F}_n = F_{n,\text{mag}} \mathbf{n}$ (pointing outward from the surface)////// 4. Tangential Friction Force ($\mathbf{F}_t$):///    - Tangential relative velocity: $\mathbf{v}_{\text{tang}} = \mathbf{v}_{\text{rel}} - v_n \mathbf{n}$///    - Ideal viscous friction: $\mathbf{F}_{t,\text{ideal}} = -\gamma_n \mathbf{v}_{\text{tang}}$///    - Coulomb friction limit: $F_{\text{limit}} = \mu F_{n,\text{mag}}$///    - Clamped friction vector: $\mathbf{F}_t = \min\left(1, \frac{F_{\text{limit}}}{\Vert{}\mathbf{F}_{t,\text{ideal}}\Vert{}}\right) \mathbf{F}_{t,\text{ideal}}$////// 5. Induced Torque ($\boldsymbol{\tau}$):///$$\boldsymbol{\tau} = \mathbf{r}_{\text{particle}} \times \mathbf{F}_t$$////// # Arguments////// * i - Index of the active particle within the ParticleVec container./// * particles - Read-only reference to particle storage vectors (positions, velocities, radii, etc.)./// * surface - Reference to any geometry implementing [SurfaceKinematics]./// * force - Accumulator for total force applied to particle i. Modified and returned./// * torque - Accumulator for total torque applied to particle i. Modified and returned./// * settings - Simulation parameters containing contact stiffness, damping, and friction coefficients.////// # Returns////// * (DVec3, DVec3) - Updated (force, torque) tuple for particle i.////// # Panics////// Panics if settings.model is not variant [SimulationModel::Frictional].
-pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
+///    - Elastic component: $F_{\text{elastic}} = k_n \cdot \text{overlap}$
+///    - Viscous damping component: $F_{\text{damping}} = \gamma_n \cdot v_n$
+///    - Clamped magnitude: $F_{n,\text{mag}} = \max\left(0, F_{\text{elastic}} - F_{\text{damping}}\right)$
+///    - Vector normal force: $\mathbf{F}_n = F_{n,\text{mag}} \mathbf{n}$ (pointing outward from the surface)
+/// 
+/// 4. Tangential Friction Force ($\mathbf{F}_t$):
+///    - Tangential relative velocity: $\mathbf{v}_{\text{tang}} = \mathbf{v}_{\text{rel}} - v_n \mathbf{n}$
+///    - Ideal viscous friction: $\mathbf{F}_{t,\text{ideal}} = -\gamma_n \mathbf{v}_{\text{tang}}$
+///    - Coulomb friction limit: $F_{\text{limit}} = \mu F_{n,\text{mag}}$
+///    - Clamped friction vector: $\mathbf{F}_t = \min\left(1, \frac{F_{\text{limit}}}{\Vert{}\mathbf{F}_{t,\text{ideal}}\Vert{}}\right) \mathbf{F}_{t,\text{ideal}}$
+/// 
+/// 5. Induced Torque ($\boldsymbol{\tau}$):
+///    $$\boldsymbol{\tau} = \mathbf{r}_{\text{particle}} \times \mathbf{F}_t$$
+/// 
+/// # Arguments
+/// 
+/// * `i` - Index of the active particle within the `ParticleVec` container.
+/// * `particles` - Read-only reference to particle storage vectors (positions, velocities, radii, etc.).
+/// * `surface` - Reference to any geometry implementing `[SurfaceKinematics]`.
+/// * `force` - Accumulator for total force applied to particle `i`. Modified and returned.
+/// * `torque` - Accumulator for total torque applied to particle `i`. Modified and returned.
+/// * `model` - Collision parameters containing precomputed material properties and friction coefficients.
+/// * `settings` - Simulation settings containing the $O(1)$ collision mask.
+/// 
+/// # Returns
+/// 
+/// * `(DVec3, DVec3)` - Updated (force, torque) tuple for particle `i`.
+pub(crate) fn particle_contact_response<S: SurfaceKinematics>(
     i: usize,
     particles: &ParticleVec,
     surface: &S,
     mut force: DVec3,
     mut torque: DVec3,
-    model: CollisionParams,
-    collision_ptypes: Vec<u8>, 
-) -> (DVec3, DVec3) {
-    // Ignore if not a collision ptype
-    if !collision_ptypes.contains(&(particles.ptype[i] as u8)){
+    model: &CollisionParams,
+    settings: &SimulationSettings, // Pass settings directly instead of raw pieces
+) -> (DVec3, DVec3) { 
+    // O(1) type check using settings mask
+    if !settings.collision_mask[particles.ptype[i]] {
         return (force, torque);
     }
 
@@ -94,19 +126,11 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
         let overlap = radius - dist;
         let normal = delta / dist; 
 
-        // Assume plane is of infinite mass.
         let m_eff = particles.mass[i];      
 
-        // 1/E* = (1-nu_i^2)/Yi + (1-nu_j^2)/Yj. Assume nu = 0.3
-        let y_p = model.modulus;
-        let y_w = model.plane_modulus;
-        let compliance = 0.91 * ((1.0 / y_p) + (1.0 / y_w));
-        let e_star = 1.0 / compliance;
-        let eff_stiffness = (4.0 / 3.0) * e_star * radius.sqrt();
-        
-        let combined_restitution = (model.restitution * model.plane_restitution).sqrt();
-        let beta = -combined_restitution.ln() / (std::f64::consts::PI.powi(2) + combined_restitution.ln().powi(2)).sqrt();
-        let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
+        // Using precomputed invariant terms directly from model
+        let eff_stiffness = (4.0 / 3.0) * model.plane_e_star * radius.sqrt();
+        let eff_damping = 2.0 * model.plane_beta * (m_eff * eff_stiffness).sqrt();
 
         let surface_vel = surface.velocity_at_point(closest_point);
         let r_particle = -normal * dist;
@@ -114,9 +138,9 @@ pub (crate) fn particle_contact_response<S: SurfaceKinematics>(
         let rel_vel = particle_contact_vel - surface_vel;
 
         let (contact_force, contact_torque) = compute_contact_force_and_torque(
-            overlap, normal, r_particle, rel_vel, eff_stiffness, eff_damping, model.mu
+            overlap, normal, r_particle, rel_vel, eff_stiffness, eff_damping, model.plane_mu
         );
-
+        
         force += contact_force;
         torque += contact_torque;
     }

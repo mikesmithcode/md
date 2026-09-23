@@ -1,10 +1,18 @@
 [build]
-#rustflags = ["-C", "target-cpu=native"]
+rustflags = ["-C", "target-cpu=native"]
 
 [profile.release]
-lto = false
-codegen-units = 16
+opt-level = 3
+lto = "thin"
+codegen-units = 8
 panic = "abort"
+debug = true
+
+# Your custom ultra-optimized profile for benchmarks/production
+[profile.max-perf]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
 
 [profile.test]
 incremental = false
@@ -12,8 +20,8 @@ incremental = false
 # Linux (Ubuntu) lld linker configuration
 [target.x86_64-unknown-linux-gnu]
 linker = "clang"
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+rustflags = ["-C", "target-cpu=native", "-C", "link-arg=-fuse-ld=lld"]
 
 # Windows (MSVC toolchain) lld linker configuration
 [target.x86_64-pc-windows-msvc]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+rustflags = ["-C", "target-cpu=native"]

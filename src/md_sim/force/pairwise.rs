@@ -67,12 +67,12 @@ pub fn add_particle_particle_collision(
     mut force: DVec3, 
     mut torque: DVec3, 
     particles: &ParticleVec, 
-    model: CollisionParams,
+    model: &CollisionParams, 
     settings: &SimulationSettings
 ) -> (DVec3, DVec3) { 
     
-    let is_i_coll = settings.collision_ptypes.contains(&(particles.ptype[i] as u8));
-    if !is_i_coll {
+    // O(1) array lookup using the mask inside settings
+    if !settings.collision_mask[particles.ptype[i]] {
         return (force, torque);
     }
 
@@ -89,29 +89,23 @@ pub fn add_particle_particle_collision(
         let normal = delta / dist; 
         let overlap = combined_rad - dist; 
 
-        let is_j_coll = settings.collision_ptypes.contains(&(particles.ptype[j] as u8));      
+        let is_j_coll = settings.collision_mask[particles.ptype[j]];      
         
-        //If we make a particle static or move with fixed rules behaves like particle
-        // of infinite mass so mass in collision just particle i's mass.
         let m_i = particles.mass[i];
-        let m_scale = if !is_j_coll {
-            1.0
-        } else {
+        let m_eff = if is_j_coll {
             let m_j = particles.mass[j];
-            m_j / (m_i + m_j)
+            (m_i * m_j) / (m_i + m_j)
+        } else {
+            m_i
         };
 
-        let m_eff = m_scale * m_i;
+            // Using precomputed values from model
+            let e_star = model.particle_e_star;
+            let beta = model.particle_beta;
 
-        // 1/E* = (1-nu_i^2)/Yi + (1-nu_j^2)/Yj. Assume nu = 0.3 and Yi=Yj 
-        let e_star = model.modulus / 1.82;
-        let beta = -model.restitution.ln() / (std::f64::consts::PI.powi(2) + model.restitution.ln().powi(2)).sqrt();
-
-        // Hertzian contact, stiffness depends on radii
-        let r_eff = (rad_i * rad_j) / combined_rad;
-        let eff_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
-        let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
-        //println!("particle stiffness {}, damping {}", eff_stiffness, eff_damping);
+            let r_eff = (rad_i * rad_j) / combined_rad;
+            let eff_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
+            let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
 
         let r_i = normal * (-rad_i + overlap * rad_j / combined_rad);
         let r_j = normal * (rad_j - overlap * rad_i / combined_rad);
@@ -130,14 +124,60 @@ pub fn add_particle_particle_collision(
     (force, torque)
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct CollisionParams{
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(from = "RawCollisionParams")] // Tells Serde to parse via the raw struct first
+pub struct CollisionParams {
     pub modulus: f64,
     pub restitution: f64,
     pub mu: f64,
     pub plane_modulus: f64,
     pub plane_restitution: f64,
     pub plane_mu: f64,
+    
+    pub particle_e_star: f64,
+    pub particle_beta: f64,
+    pub plane_e_star: f64,
+    pub plane_beta: f64,
+}
+
+// 1. Temporary raw struct matching your JSON fields
+#[derive(Deserialize)]
+struct RawCollisionParams {
+    pub modulus: f64,
+    pub restitution: f64,
+    pub mu: f64,
+    pub plane_modulus: f64,
+    pub plane_restitution: f64,
+    pub plane_mu: f64,
+}
+
+// 2. Automatically compute precalculated values when converting from raw to CollisionParams
+impl From<RawCollisionParams> for CollisionParams {
+    fn from(raw: RawCollisionParams) -> Self {
+        let particle_e_star = raw.modulus / 1.82;
+        let particle_beta = -raw.restitution.ln() 
+            / (std::f64::consts::PI.powi(2) + raw.restitution.ln().powi(2)).sqrt();
+
+        let compliance = 0.91 * ((1.0 / raw.modulus) + (1.0 / raw.plane_modulus));
+        let plane_e_star = 1.0 / compliance;
+
+        let combined_restitution = (raw.restitution * raw.plane_restitution).sqrt();
+        let plane_beta = -combined_restitution.ln() 
+            / (std::f64::consts::PI.powi(2) + combined_restitution.ln().powi(2)).sqrt();
+
+        Self {
+            modulus: raw.modulus,
+            restitution: raw.restitution,
+            mu: raw.mu,
+            plane_modulus: raw.plane_modulus,
+            plane_restitution: raw.plane_restitution,
+            plane_mu: raw.plane_mu,
+            particle_e_star,
+            particle_beta,
+            plane_e_star,
+            plane_beta,
+        }
+    }
 }
 
 /// Computes the electrostatic Coulomb force between two charged particles.

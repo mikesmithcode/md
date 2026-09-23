@@ -1,5 +1,7 @@
 use glam::DVec3;
+use std::sync::Arc;
 use rayon::prelude::*;
+use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
@@ -31,6 +33,8 @@ pub struct CellGrid {
 
     // Precomputed interaction rules & matrix
     pub int_context: InteractionContext,
+    // Thread pool dedicated to grid/force operations
+    pub thread_pool: Option<Arc<ThreadPool>>,
 }
 
 impl CellGrid {
@@ -60,6 +64,25 @@ impl CellGrid {
         let verlet_offsets = vec![0; particle_count + 1];  
         let verlet_particle_ids = Vec::with_capacity(12 * particle_count);
 
+        // Configure thread pool using settings.parallel and settings.threads
+        let thread_pool = if settings.parallel {
+            let mut builder = ThreadPoolBuilder::new();
+            
+            // If threads > 0, set explicit thread count.
+            // If threads == 0, omit num_threads to let Rayon use its default (all logical cores).
+            if settings.threads > 0 {
+                builder = builder.num_threads(settings.threads);
+            }
+
+            let pool = builder
+                .build()
+                .expect("Failed to create Rayon thread pool for CellGrid");
+
+            Some(Arc::new(pool))
+        } else {
+            None
+        };
+
         let mut grid = Self {
             num_cells: [nx, ny, nz],
             cell_size,
@@ -76,6 +99,7 @@ impl CellGrid {
             skin,
             last_particle_count: particle_count, 
             int_context,
+            thread_pool,
         };
 
         grid.build_neighbour_table();
@@ -148,16 +172,32 @@ impl CellGrid {
             *t_out += local_torque;
         };
 
-        if settings.parallel {
-            f_buf.par_iter_mut()
-                .zip(t_buf.par_iter_mut())
-                .enumerate()
-                .for_each(process_particle);
+        if let Some(pool) = &self.thread_pool {
+            pool.install(|| {
+                f_buf.par_iter_mut()
+                    .zip(t_buf.par_iter_mut())
+                    .enumerate()
+                    .for_each(process_particle);
+            });
         } else {
-            f_buf.iter_mut()
-                .zip(t_buf.iter_mut())
-                .enumerate()
-                .for_each(process_particle);
+            for i in 0..f_buf.len() {
+                let mut local_force = DVec3::ZERO;
+                let mut local_torque = DVec3::ZERO;
+
+                let start = self.verlet_offsets[i];
+                let end = self.verlet_offsets[i + 1];
+
+                for &j in &self.verlet_particle_ids[start..end] {
+                    let (f, t) = user_impl.update_pair_forces(
+                        i, j, DVec3::ZERO, DVec3::ZERO, particles, settings
+                    );
+                    local_force += f;
+                    local_torque += t;
+                }
+
+                f_buf[i] += local_force;
+                t_buf[i] += local_torque;
+            }
         }
     }
 
@@ -331,13 +371,13 @@ impl CellGrid {
 
     #[inline]
     pub(super) fn add_to_verlet(&self, i: usize, j: usize, p: &ParticleVec) -> bool {
-        if p.molecule_id[i] == p.molecule_id[j] { return false; }
-
-        let ptype_i = p.ptype[i] as usize;
-        let ptype_j = p.ptype[j] as usize;
+        let ptype_i = p.ptype[i];
+        let ptype_j = p.ptype[j];
 
         let search_radius_sq = self.int_context.search_radius_sq_matrix[ptype_i][ptype_j];
         if search_radius_sq == 0.0 { return false; }
+
+        if p.molecule_id[i] == p.molecule_id[j] { return false; }
 
         let mut delta = p.position[i] - p.position[j];
         check_delta(&mut delta, self.int_context.sim_box_size, self.int_context.periodic);

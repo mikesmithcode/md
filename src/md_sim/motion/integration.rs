@@ -150,25 +150,16 @@ pub fn integrate_rigid_bodies(
     let sim_box_size = settings.sim_box_size;
     let periodic = settings.periodic;
 
-    for (_mol_id, mol) in molecule_map {   
+    for (_mol_id, mol) in molecule_map { 
         let lead_idx = mol.pids[0];    
         
-        // Calculate current COM etc
-        let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, &particles);
-    
-        // Calculate aggregate forces and torques
-        let mut total_force = DVec3::ZERO;
-        let mut total_torque = DVec3::ZERO;
-        for &idx in &mol.pids {
-            total_force += forces[idx];
-            let mut delta_r = particles.position[idx] - com_pos;
-            check_delta(&mut delta_r, sim_box_size, periodic);
-            total_torque += torques[idx] + delta_r.cross(forces[idx]);
-        }
+        // Calculate current COM and aggregate forces/torques via shared helper
+        let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, particles);
+        let (total_force, total_torque) = compute_molecule_forces_and_torques(
+            &mol.pids, forces, torques, particles, com_pos, sim_box_size, periodic
+        );
 
-
-
-        // Update COM Velocity and Angular Velocity
+        // Update COM Velocity and Angular Velocity (Half-step predictor)
         let acc = total_force / total_mass;
         let new_com_vel = com_vel + (acc * half_dt);
         
@@ -179,27 +170,27 @@ pub fn integrate_rigid_bodies(
         let alpha = i_global.inverse() * (total_torque - gyroscopic);
         let new_omega = omega + (alpha * half_dt);
 
-        // Update Orientation and COM Position
+        // Update Orientation and COM Position (Full step)
         let new_com_pos = com_pos + (new_com_vel * dt);
         let delta_q = DQuat::from_scaled_axis(new_omega * dt);
         let new_orientation = (delta_q * particles.orientation[lead_idx]).normalize();
         
-        
-        // Update every particle's state
+        // Update every constituent particle's state
         let rot_mat_new = DMat3::from_quat(new_orientation);
         for &idx in &mol.pids {
-            // Update individual velocity: v_i = v_com + (omega x r_global)
             let r_global = rot_mat_new * particles.rel_pos[idx];
             particles.velocity[idx] = new_com_vel + new_omega.cross(r_global);
-            
-            // Update individual position
             particles.position[idx] = new_com_pos + r_global;
-            
-            // Sync orientation and omega (if stored per-particle)
             particles.orientation[idx] = new_orientation;
             particles.omega[idx] = new_omega;
 
-            enforce_boundary(&mut particles.position[idx], &mut particles.velocity[idx], settings.sim_box_size, settings.periodic, particles.radius[idx]);
+            enforce_boundary(
+                &mut particles.position[idx], 
+                &mut particles.velocity[idx], 
+                sim_box_size, 
+                periodic, 
+                particles.radius[idx]
+            );
         }
     }
 }
@@ -242,33 +233,23 @@ pub fn integrate_rigid_bodies_correct(
     for (_m_id, mol) in molecule_map {
         let lead_idx = mol.pids[0];
         
-        // Calculate new Force/Torque at the new position
         let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, particles);
-        let mut total_force = DVec3::ZERO;
-        let mut total_torque = DVec3::ZERO;
-        for &idx in &mol.pids {
-            total_force += forces[idx];
-            let mut delta_r = particles.position[idx] - com_pos;
-            check_delta(&mut delta_r, sim_box_size, periodic);
-            total_torque += torques[idx] + delta_r.cross(forces[idx]);
-        }
+        let (total_force, total_torque) = compute_molecule_forces_and_torques(
+            &mol.pids, forces, torques, particles, com_pos, sim_box_size, periodic
+        );
 
-        // Calculate COM velocity (v_new = v_half + a_new * dt/2)
         let acc = total_force / total_mass;
         let new_com_vel = com_vel + (acc * half_dt);
 
-        // Finalise angular velocity (w_new = w_half + alpha_new * dt/2)
         let rot_mat = DMat3::from_quat(particles.orientation[lead_idx]);
         let i_global = rot_mat * mol.inertia * rot_mat.transpose();
-        let i_inv = i_global.inverse();
         let omega = particles.omega[lead_idx];
         let gyroscopic = omega.cross(i_global * omega);
-        let alpha = i_inv * (total_torque - gyroscopic);
+        let alpha = i_global.inverse() * (total_torque - gyroscopic);
         let new_omega = omega + (alpha * half_dt);
 
         for &idx in &mol.pids {
             particles.omega[idx] = new_omega;
-            // Re-sync all particles with the new COM velocity and new Omega
             let r_global = particles.position[idx] - com_pos;
             particles.velocity[idx] = new_com_vel + new_omega.cross(r_global);
         }
@@ -277,3 +258,25 @@ pub fn integrate_rigid_bodies_correct(
 
 
 
+/// Helper to aggregate total force and torque for a molecule relative to its COM.
+fn compute_molecule_forces_and_torques(
+    pids: &[usize],
+    forces: &[DVec3],
+    torques: &[DVec3],
+    particles: &ParticleVec,
+    com_pos: DVec3,
+    sim_box_size: DVec3,
+    periodic: [bool; 3],
+) -> (DVec3, DVec3) {
+    let mut total_force = DVec3::ZERO;
+    let mut total_torque = DVec3::ZERO;
+
+    for &idx in pids {
+        total_force += forces[idx];
+        let mut delta_r = particles.position[idx] - com_pos;
+        check_delta(&mut delta_r, sim_box_size, periodic);
+        total_torque += torques[idx] + delta_r.cross(forces[idx]);
+    }
+
+    (total_force, total_torque)
+}

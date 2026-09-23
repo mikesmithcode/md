@@ -40,9 +40,9 @@ dr_ball = 0.25 # variance in radius
 line_vertices = [(0.0,d, -5.0*r_ball),(w,d, -5.0*r_ball)]
 
 
-line = create_line(line_vertices, thickness=0.002, colour=(0,255,0,255))
-line.write_parquet(objects_filepath)
-print("line",line)
+#line = create_line(line_vertices, thickness=0.002, colour=(0,255,0,255))
+#line.write_parquet(objects_filepath)
+# print("line",line)
 
 
 
@@ -50,14 +50,14 @@ print("line",line)
 
 pos_template = [(r_ball + r_ball * 2 * i, d / 2, h - r_ball) for i in range(11)]
 
-spacing = 3.0*r_ball
+spacing = 2.1*r_ball
 
 dimensions = (round(w/spacing),round(d/spacing), round((0.85*h)/spacing))
 start_pos = (spacing,spacing,0.15*h)
 
-base_spacing = 2.2*r_ball
+base_spacing = 3.0*r_ball
 base_dimensions = (round(w/base_spacing),round(d/base_spacing), 1)
-start_base_pos = (1.5*r_ball,1.5*r_ball,r_ball)
+start_base_pos = (2.0*r_ball,2.0*r_ball,r_ball)
 #grid of static particles at the bottom
 static_particle_positions = generate_particle_cube(base_dimensions, base_spacing, start_base_pos,box, r_ball)
 #cube of particles to drop
