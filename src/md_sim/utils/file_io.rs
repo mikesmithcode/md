@@ -25,7 +25,54 @@ use crate::md_sim::{LineSpec, ObjectSpec, Particle, ParticleVec, RectSpec, Simul
 use crate::md_viz::SceneSettings;
 
 
+use regex::Regex;
+use regex;
 
+
+
+/// Given a directory, prefix, and extension, scans for files matching `<prefix>_<number>.<extension>`,
+/// identifies the file with the largest step number, and returns `Some(path)`
+/// or `None` if no matching files exist.
+pub fn get_latest_file(
+    output_path: &Path,
+    prefix: &str,
+    extension: &str,
+) -> Option<PathBuf> {
+    if !output_path.exists() {
+        return None;
+    }
+
+    let pattern_str = format!(r"^{}_(\d+)\.{}$", regex::escape(prefix), regex::escape(extension));
+    let re = Regex::new(&pattern_str).ok()?;
+
+    let mut latest_path: Option<PathBuf> = None;
+    let mut max_step: u64 = u64::MIN;
+
+    // Convert read_dir Result to Option using .ok()?
+    let entries = fs::read_dir(output_path).ok()?;
+
+    for entry in entries {
+        let entry = entry.ok()?;
+        let path = entry.path();
+
+        if path.is_file() {
+            if let Some(file_name_str) = path.file_name().and_then(|n| n.to_str()) {
+                if let Some(caps) = re.captures(file_name_str) {
+                    if let Some(step_match) = caps.get(1) {
+                        if let Ok(step_num) = step_match.as_str().parse::<u64>() {
+                            if step_num >= max_step {
+                                max_step = step_num;
+                                latest_path = Some(path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    latest_path
+}
 
 /// Validates that a target directory exists and contains a specified list of required files.
 ///
@@ -115,6 +162,8 @@ pub fn parse_simulation_args() -> SimulationContext {
         .map(|val| val.parse::<bool>().unwrap_or(false))
         .unwrap_or(false); // Default: false
 
+
+
     const INPUT_PATH: &'static str = "input";
     
     let config_path = Path::new(INPUT_PATH).join(target_name);
@@ -125,17 +174,11 @@ pub fn parse_simulation_args() -> SimulationContext {
     let sim_config = config_path.join("sim_settings.json"); 
     let scene_config = config_path.join("scene_settings.json");
     let model_config = config_path.join("model.json");
-
-    // Check if an optional variables.json exists in the input directory
-    let potential_vars_path = config_path.join("variables.json");
-    let variables_config = if potential_vars_path.exists() {
-        Some(potential_vars_path)
-    } else {
-        None
-    };
-
     let particle = output_path.join("particles");
     let _ = validate_simulation_inputs(&particle, &["particles_0000000000.parquet"]);
+    // Check if an optional variables.json exists in the output directory
+    let variables_config = get_latest_file(&output_path, "variables",".json");
+  
 
     let object = output_path.join("objects");
     if let Err(_e) = fs::create_dir_all(&object) {
@@ -172,6 +215,10 @@ pub fn parse_simulation_args() -> SimulationContext {
         },
     }
 }
+
+
+
+
 //-------------------------------------------------------------
 // Config of simulation
 //-------------------------------------------------------------
@@ -223,15 +270,6 @@ pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &Simulati
     fs::copy(input_model_filename, &output_model_filename)
     .expect("Failed to copy model.json to output config directory");
 
-    //Copies the variables file to the output directory.
-    if let Some(input_variables_filepath) = &sim_paths.variables_config {
-        let output_variables_filename = Path::new(&sim_paths.output)
-            .join("config")
-            .join(input_variables_filepath.file_name().expect("Invalid variables file path"));
-        println!("output variables {:?}", output_variables_filename);
-        fs::copy(input_variables_filepath, &output_variables_filename)
-            .expect("Failed to copy variables.json to output config directory");
-    }
     Ok(())
 }
 

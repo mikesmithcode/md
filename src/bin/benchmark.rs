@@ -43,13 +43,13 @@ pub struct SimUpdate {
 
 impl SimUpdate {
     pub fn new(ctx: &SimulationContext) -> Self {
-        // 1. Always load the static model config
+        // Always load the static model config
         let model_file = fs::File::open(&ctx.paths.model_config)
             .unwrap_or_else(|_| panic!("Failed to open {:?}", ctx.paths.model_config));
         let model: ForceModel = serde_json::from_reader(model_file)
             .unwrap_or_else(|e| panic!("Failed to parse model.json: {}", e));
 
-        // 2. Conditionally load variables only if variables.json exists
+        // Conditionally load variables only if variables.json exists
         let variable = if let Some(ref var_path) = ctx.paths.variables_config {
             let var_file = fs::File::open(var_path)
                 .unwrap_or_else(|_| panic!("Failed to open {:?}", var_path));

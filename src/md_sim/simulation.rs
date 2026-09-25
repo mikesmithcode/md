@@ -97,7 +97,8 @@ impl<S> Simulation<S>
     /// 3. Resets and accumulates single-particle, object-interaction, and pairwise forces.
     /// 4. Corrects velocities via [`Motion::correct_motion`] based on the newly computed forces.
     /// 5. Increments the simulation clock by the time step size (`dt`).
-    pub fn update(&mut self) {
+    pub fn update(&mut self, step: usize) {
+        self.current_step = step;
         //----------------------------------------------------------------------------
         // Initial position and velocity updates
         //----------------------------------------------------------------------------
@@ -205,7 +206,8 @@ impl<S> Simulation<S>
     }
 
     pub fn handle_key(&mut self, key: UserAction){
-        self.sim_update.handle_key(key, &mut self.particles, &mut self.objects);
+        let step = self.current_step;
+        self.sim_update.handle_key(key, &mut self.particles, &mut self.objects, step);
     }
 
     /// Returns an immutable reference to the particle collection.

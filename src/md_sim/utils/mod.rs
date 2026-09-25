@@ -41,8 +41,20 @@ use crate::md_viz::actions::UserAction;
 /// impl<T: Forces + Motion> Interactivity for T {}
 /// '''
 /// 
-pub trait Interactivity{
-    fn handle_key(&mut self, key: UserAction, _particles: &mut  ParticleVec, _objects: &mut Option<Vec<ObjectSpec>>) {
+pub trait Interactivity {
+    // Default implementation does nothing for types that don't track variables
+    fn save_variables(&self, _step: usize) {}
+
+    fn handle_key(
+        &mut self, 
+        key: UserAction, 
+        _particles: &mut ParticleVec, 
+        _objects: &mut Option<Vec<ObjectSpec>>, 
+        step: usize
+    ) {
+        // Call the trait method; SimUpdate will override this to do the actual save
+        self.save_variables(step);
+
         println!("No keys implemented: You pressed {:?}", key);
     }
 }

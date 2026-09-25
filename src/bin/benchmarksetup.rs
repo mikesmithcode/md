@@ -6,7 +6,9 @@
 use glam::DVec3;
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
-use std::fs;
+use std::io::{BufReader, BufWriter};
+use std::fs::File;
+use std::path::{Path, PathBuf};
 
 // Import everything from your md_viz library
 
@@ -15,22 +17,70 @@ use std::fs;
 use md::md_sim::{Forces, Interactivity, Motion, ParticleVec, SimulationSettings};
 use md::md_sim::force::{add_directional_weight, add_particle_particle_collision, CollisionParams};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
-use md::md_sim::utils::file_io::{SimulationContext, parse_simulation_args};
+use md::md_sim::utils::file_io::{SimulationContext, parse_simulation_args, get_latest_file};
 use md::md_sim::particle::MoleculeData;
 
 
-
-// Used for anything that needs to be used which might change state with simulation.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Variables {
     pub up: DVec3,
     pub angle: f64,
+
+    #[serde(skip)]
+    pub source_path: Option<PathBuf>,
+}
+
+impl Variables {
+    /// Create a brand-new instance manually without a source file
+    pub fn new(up: DVec3, angle: f64) -> Self {
+        Self {
+            up,
+            angle,
+            source_path: None,
+        }
+    }
+
+    /// Scans the directory for the latest variables file, loads it, 
+    /// and records its path. Returns `Some(Variables)` or `None`.
+    pub fn load_latest(dir_path: &Path) -> Option<Self> {
+        let path = get_latest_file(dir_path, "variables", "json")?;
+        
+        let file = File::open(&path).ok()?;
+        let reader = BufReader::new(file);
+        
+        let mut vars: Variables = serde_json::from_reader(reader).ok()?;
+        vars.source_path = Some(path);
+        Some(vars)
+    }
+
+    /// Saves variables to a 10-digit zero-padded step file if a source path exists.
+    /// Returns `Some(())` on success, or `None` if it skipped or failed.
+    pub fn save_at_step(&self, step: usize) -> Option<()> {
+        let source_path = self.source_path.as_ref()?;
+
+        let parent_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
+        let target_path = parent_dir.join(format!("variables_{:010}.json", step));
+
+        let file = File::create(target_path).ok()?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer_pretty(writer, self).ok()?;
+        
+        Some(())
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-// ForceModel contains a struct associated with each force model used.
-pub struct ForceModel{
+pub struct ForceModel {
     pub collision: CollisionParams,
+}
+
+impl ForceModel {
+    /// Load force model parameters from a JSON file path (panics cleanly if missing/invalid)
+    pub fn load<P: AsRef<Path>>(path: P) -> Self {
+        let file = File::open(path).expect("Failed to open model config file");
+        let reader = BufReader::new(file);
+        serde_json::from_reader(reader).expect("Failed to parse model config JSON")
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -42,24 +92,12 @@ pub struct SimUpdate {
 
 impl SimUpdate {
     pub fn new(ctx: &SimulationContext) -> Self {
-        // 1. Always load the static model config
-        let model_file = fs::File::open(&ctx.paths.model_config)
-            .unwrap_or_else(|_| panic!("Failed to open {:?}", ctx.paths.model_config));
-        let model: ForceModel = serde_json::from_reader(model_file)
-            .unwrap_or_else(|e| panic!("Failed to parse model.json: {}", e));
+        // Load the mandatory static model config
+        let model = ForceModel::load(&ctx.paths.model_config);
 
-        // 2. Conditionally load variables only if variables.json exists
-        let variable = if let Some(ref var_path) = ctx.paths.variables_config {
-            let var_file = fs::File::open(var_path)
-                .unwrap_or_else(|_| panic!("Failed to open {:?}", var_path));
-            let vars: Variables = serde_json::from_reader(var_file)
-                .unwrap_or_else(|e| panic!("Failed to parse variables.json: {}", e));
-            
-            Some(vars)
-            
-        } else {
-            None
-        };
+        // Automatically scan the output directory for the latest variables_<10-digits>.json file.
+        // Returns Some(Variables) if a restart file exists, or None if starting fresh.
+        let variable = Variables::load_latest(&ctx.paths.output.join("config"));
 
         Self { model, variable }
     }
@@ -116,7 +154,14 @@ impl Motion for SimUpdate{
 }
 
 
-impl Interactivity for SimUpdate {}
+// In SimUpdate (where Variables is fully in scope):
+impl Interactivity for SimUpdate {
+    fn save_variables(&self, step: usize) {
+        if let Some(ref vars) = self.variable {
+            let _ = vars.save_at_step(step);
+        }
+    }
+}
 
 
 

@@ -57,11 +57,10 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
     let mut final_step = start_step;
 
     for step in start_step..=(start_step + sim.settings.num_steps) {
-        sim.update();
+        sim.update(step);
         final_step = step;
 
-
-            // 1. Poll window events and render graphics on EVERY step (keeps keyboard responsive)
+            //Poll window events and render graphics on EVERY step (keeps keyboard responsive)
             if let Some(ref mut scene) = scene_opt {
                 if !headless & (step%scene.scene_settings.display_steps == 0){
                     let (close_requested, action) = scene.poll_events(); // No event_loop argument needed!
@@ -83,7 +82,7 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
                 }
             }       
 
-        // 2. Disk dumps remain sparse (e.g. every 1000 steps)
+        // Write particles and / or objects to parquet files
         if step % sim.settings.dump == 0 {
             if output_settings.save_particles {
                 save_particles(&sim_filepaths, step, sim.get_particles(), sim.time).expect("Error saving particles");
