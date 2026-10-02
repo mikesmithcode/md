@@ -70,12 +70,12 @@ ptypes.extend( ptypes_dynamic)
 
 # Define colour dictionary mapping ptype to (R, G, B, A)
 ptype_colours = {
-    0: (255.0, 255.0, 255.0, 150.0), # Positive main particle (White alpha=150)
-    1: (255.0, 0.0, 255.0, 255.0),   # Positive charge (Magenta)
+    0: (255.0, 255.0, 255.0, 250.0), # Positive main particle (White alpha=150)
+    1: (255.0, 0.0, 255.0, 250.0),   # Positive charge (Magenta)
     2: (255.0, 255.0, 255.0, 150.0), # Negative main particle (White alpha=150)
-    3: (0.0, 255.0, 255.0, 255.0),   # Negative charge (Cyan)
+    3: (0.0, 255.0, 255.0, 250.0),   # Negative charge (Cyan)
     4: (0.0, 255.0, 0.0, 150.0),    # Static particles
-    5: (0.0, 255.0, 255.0, 255.0),    # Charges on static particles
+    5: (0.0, 255.0, 255.0, 250.0),    # Charges on static particles
 }
 
 #========================================================================

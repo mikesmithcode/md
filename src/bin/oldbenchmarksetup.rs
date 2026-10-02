@@ -15,8 +15,7 @@ use std::path::{Path, PathBuf};
 
 // Imports from simulation library
 use md::md_sim::{Forces, Interactivity, Motion, ParticleVec, SimulationSettings};
-use md::md_sim::force::{add_directional_weight, check_particle_contact, CollisionParams};
-use md::md_sim::force::{normal_linear, friction_viscous_tangential, ContactManager, normal_hertzian, friction_cundall_strack};
+use md::md_sim::force::{add_directional_weight, add_particle_particle_collision, CollisionParams};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::utils::file_io::{SimulationContext, parse_simulation_args, get_latest_file};
 use md::md_sim::particle::MoleculeData;
@@ -84,13 +83,11 @@ impl ForceModel {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SimUpdate {
     pub model: ForceModel,
     #[serde(default)]
     pub variable: Option<Variables>,
-    #[serde(skip)]
-    pub contact_manager: ContactManager,
 }
 
 impl SimUpdate {
@@ -102,9 +99,7 @@ impl SimUpdate {
         // Returns Some(Variables) if a restart file exists, or None if starting fresh.
         let variable = Variables::load_latest(&ctx.paths.output.join("config"));
 
-        let contact_manager = ContactManager::new();
-
-        Self { model, variable, contact_manager }
+        Self { model, variable }
     }
 }
 
@@ -124,10 +119,6 @@ impl Forces for SimUpdate{
         false
     }
 
-    fn cleanup_contacts(&self) {
-        self.contact_manager.remove_old_contacts();
-    }
-
 
     //Forces which apply to every particle individually
     fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
@@ -141,28 +132,11 @@ impl Forces for SimUpdate{
 
     // forces that operate between pairs of particles
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
-        
-        //Only main particles have granular collisions.
         if particles.ptype[i] == 0{
-            // Calculate geometry and params of contact
-            if let Some(contact)=check_particle_contact(i, j, particles, &self.model.collision, settings){
-                //Normal and tangential forces
-                //at the end of every timestep we set all ContactState.is_active to false
-                self.contact_manager.get_or_create(i,j);
-                let fn_vec=normal_linear(&contact);
-                //let ft_vec = friction_viscous_tangential(fn_vec.length(), &contact);
-                let ft_vec = friction_cundall_strack(fn_vec, &contact, self.contact_state, settings.dt);
-
-                //Add to accumulators
-                force += fn_vec;
-                force += ft_vec;
-                torque += contact.r_contact.cross(ft_vec);
-
-
-            }
+            //Only main particles have granular collisions.
+            //println!("possible collide i {}, j {}",particles.ptype[i],particles.ptype[j]); 
+            (force, torque)=add_particle_particle_collision(i, j, force, torque,particles, &self.model.collision, settings);
         }
-
-        
     
         (force, torque)
     }

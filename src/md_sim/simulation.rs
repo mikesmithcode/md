@@ -117,6 +117,8 @@ impl<S> Simulation<S>
         // Calculate all the forces
         //----------------------------------------------------------------------------
         self.reset_forces();
+        // --- CLEAN UP EXPIRED CONTACTS ONCE PER STEP ---
+        self.sim_update.cleanup_contacts();
 
         if self.sim_update.has_single_forces() {
             let (mut force, mut torque);

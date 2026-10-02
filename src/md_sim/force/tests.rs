@@ -3,8 +3,9 @@
 use glam::{DQuat, DVec2, DVec3};
 use three_d::Srgba;
 
-use crate::md_sim::SimulationSettings;
-use crate::md_sim::particle::{Particle, RectSpec, TriSpec, SimulationModel, FrictionParams, ParticleVec, SurfaceKinematics};
+use crate::md_sim::force::CollisionParams;
+use crate::md_sim::{SimulationSettings, Dimensions};
+use crate::md_sim::particle::{Particle, RectSpec, TriSpec, ParticleVec, SurfaceKinematics};
 use super::objects::particle_contact_response;
 use crate::md_sim::utils::{create_particle_vec,create_molecule_vec, create_grid_and_settings, assert_dvec3_near};
 use crate::md_sim::utils::InteractionContext;
@@ -62,20 +63,23 @@ fn test_add_drag() {
 // -----------------------------------------------------------------
 // Test pair particle forces
 // -----------------------------------------------------------------
-
-/// **What:** Tests viscoelastic contact mechanics and energy dissipation during particle collisions.  
-/// **How:** Evaluates interaction forces under relative compression (moving together) versus restitution (moving apart).  
-/// **Why:** Confirms that damping increases total force magnitude strictly during compression to correctly model collision energy loss.  
-#[test]
-fn test_particle_particle_collision() {
-    let particles = create_particle_vec();
+fn collision_helper()->(CollisionParams, SimulationSettings){
+    
     
     // Bundle params into the specific Enum variant
-    let model = SimulationModel::Frictional(FrictionParams {
-        stiffness: 1000.0,
-        damping: 50.0,
-        ..Default::default()
-    });
+    let model = CollisionParams {
+        modulus: 1.0e5,
+        restitution: 0.7,
+        mu: 0.4,
+        plane_modulus: 1.0e5,
+        plane_restitution: 0.7,
+        plane_mu: 0.4,
+    
+        particle_e_star: 1.0,
+        particle_beta: 1.0,
+        plane_e_star: 1.0,
+        plane_beta: 1.0,
+    };
 
     // Initialise the full SimulationSettings struct
     let settings = SimulationSettings {
@@ -83,14 +87,60 @@ fn test_particle_particle_collision() {
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
         periodic: [true;3],
         parallel: true,
-        cutoff: 2.0,           // Ensure this is large enough for the overlap
+        threads: 0,
+        dimensions: Dimensions::XZ,
         skin:0.2,
         start: 0,
         num_steps: 100,
         dump: 10,
-        interaction_ptypes:vec![[0 as u8,0 as u8]],
-        model,                 
+        interaction_ptypes:vec![(0,0, 0.03)],
+        collision_ptypes: vec![0 as u8],
+        collision_mask: [false;16],
     };
+
+    settings.collision_mask[0] = true;
+
+    (model, settings)
+}
+
+fn coulomb_helper()->(CoulombParams, SimulationSettings){
+    
+    
+    // Bundle params into the specific Enum variant
+    let model = CoulombParams{
+        eps_r: 8.854E-12,
+        cutoff: 0.3,
+}
+
+    // Initialise the full SimulationSettings struct
+    let settings = SimulationSettings {
+        dt: 0.001,             
+        sim_box_size: DVec3::new(10.0, 10.0, 10.0),
+        periodic: [true;3],
+        parallel: true,
+        threads: 0,
+        dimensions: Dimensions::XZ,
+        skin:0.2,
+        start: 0,
+        num_steps: 100,
+        dump: 10,
+        interaction_ptypes:vec![(0,0, 0.03)],
+        collision_ptypes: vec![0 as u8],
+        collision_mask: [false;16],
+    };
+
+    settings.collision_mask[0] = true;
+
+    (model, settings)
+}
+
+/// **What:** Tests viscoelastic contact mechanics and energy dissipation during particle collisions.  
+/// **How:** Evaluates interaction forces under relative compression (moving together) versus restitution (moving apart).  
+/// **Why:** Confirms that damping increases total force magnitude strictly during compression to correctly model collision energy loss.  
+#[test]
+fn test_particle_particle_collision() {
+    let particles = create_particle_vec();
+    let (model, settings) = helper();
 
     let mut force = DVec3::ZERO;
 
@@ -103,7 +153,7 @@ fn test_particle_particle_collision() {
     particles.velocity[0] = DVec3::new(1.0, 0.0, 0.0);
     particles.velocity[1] = DVec3::new(-1.0, 0.0, 0.0);
 
-    (force, _) = add_particle_particle_collision(0, 1, &particles, force, DVec3::ZERO, &settings);
+    (force, _) = add_particle_particle_collision(0, 1, force, DVec3::ZERO, &particles, &model, &settings);
 
     assert!(force.x < 0.0, "Force should be repulsive for particle 0");
     let force_with_damping = force.length();
@@ -113,7 +163,7 @@ fn test_particle_particle_collision() {
     particles.velocity[0] = DVec3::new(-1.0, 0.0, 0.0);
     particles.velocity[1] = DVec3::new(1.0, 0.0, 0.0);
 
-    (force, _ )=add_particle_particle_collision(0, 1, &particles, force,DVec3::ZERO, &settings);
+    (force, _ )=add_particle_particle_collision(0, 1,  force,DVec3::ZERO, &particles, &model, &settings);
     let force_no_damping = force.length();
 
     // force_with_damping (Compression) should be > force_no_damping (Restitution).
@@ -131,31 +181,11 @@ fn test_coulomb() {
     particles.charge[0] = 1.0;
     particles.charge[1] = -1.0;
 
-    // Bundle params into the specific Enum variant
-    let model = SimulationModel::Frictional(FrictionParams {
-        stiffness: 1000.0,
-        damping: 50.0,
-        ..Default::default()
-    });
-
-    // Initialise the full SimulationSettings struct
-    let settings = SimulationSettings {
-        dt: 0.001,             
-        sim_box_size: DVec3::new(10.0, 10.0, 10.0),
-        periodic: [true;3],
-        parallel: true,
-        cutoff: 2.0,           // Ensure this is large enough for the overlap
-        skin:0.2,
-        start: 0,
-        num_steps: 100,
-        dump: 10,
-        interaction_ptypes:vec![[0 as u8,0 as u8]],
-        model,                 
-    };
+    let (model, settings) =helper();
 
     let mut force = DVec3::ZERO;
 
-    force = add_coulomb(0, 1, &particles, force, &settings);
+    force = add_coulomb(0, 1, &particles, force, &model);
 
     const EPS0: f64 = 8.85418782e-12;
     let separation = particles.position[0]-particles.position[1];

@@ -1,115 +1,89 @@
 
-use glam::DVec3;
-
 use crate::md_sim::force::pairwise::CollisionParams;
 use crate::md_sim::{ObjectSpec, ParticleVec, SurfaceKinematics};
-use crate::md_sim::force::contact::{Contact,compute_contact_force_and_torque};
+use crate::md_sim::force::contact::{Contact};
 use crate::md_sim::SimulationSettings;
 
 
-/// Computes contact forces and torques arising from collisions between a particle and simulation objects.
-///
-/// This acts as a dispatcher function that inspects the object specification variant 
-/// (e.g., rectangles, triangles) and delegates to the generic surface collision solver.
+/// Dispatches collision checks between a particle and simulation objects 
+/// (e.g., rectangles, triangles), returning a `Contact` struct if a collision occurs.
 ///
 /// # Arguments
 ///
 /// * `i` - Index of the particle being tested for collisions.
 /// * `particles` - Reference to the particle state buffers (positions, velocities, radii, etc.).
 /// * `object_spec` - Specification of the geometric objects present in the simulation.
-/// * `force` - Accumulated incoming force vector for the particle.
-/// * `torque` - Accumulated incoming torque vector for the particle.
 /// * `model` - Collision parameters containing precomputed material properties and friction coefficients.
-/// * `settings` - Simulation settings containing the O(1) collision mask and global configuration parameters.
+/// * `settings` - Simulation settings containing the $O(1)$ collision mask and global configuration parameters.
 ///
 /// # Returns
 ///
-/// * `(DVec3, DVec3)` - The updated force and torque vectors including object interaction contributions.
-pub fn add_particle_object_collision(
+/// * `Some(Contact)` containing resolved collision geometry and relative kinematics if overlapping.
+/// * `None` otherwise.
+pub fn check_surface_contact(
     i: usize,
     particles: &ParticleVec,
     object_spec: &ObjectSpec,
-    mut force: DVec3,
-    mut torque: DVec3,
     model: &CollisionParams,
     settings: &SimulationSettings,
-) -> (DVec3, DVec3) {
+) -> Option<Contact> {
     match object_spec {
         ObjectSpec::Rectangle(rect) => {
-            (force, torque) = particle_contact_response(
-                i, particles, rect, force, torque, model, settings
-            );
+            surface_contact(
+                i, particles, rect, model, settings
+            )
         }
         ObjectSpec::Triangle(tri) => {
-            (force, torque) = particle_contact_response(
-                i, particles, tri, force, torque, model, settings
-            );
+            surface_contact(
+                i, particles, tri, model, settings
+            )
         }
-        _ => {}
+        _ => None
     }
-
-    (force, torque)
 }
-/// Computes the linear force and rotational torque exerted on a particle
-/// colliding with a moving rigid surface (SurfaceKinematics).
+/// Computes collision geometry, relative kinematics, and effective contact properties 
+/// for a particle colliding with a moving rigid surface (`SurfaceKinematics`).
 /// 
-/// This function uses a viscoelastic spring-dashpot contact model in the normal
-/// direction and a viscous-damping Coulomb friction model in the tangential direction.
+/// # Mathematical Model & Processing Steps
 /// 
-/// # Mathematical Model
-/// 
-/// 1. Overlap & Geometry:
-///    - $\mathbf{\delta} = \mathbf{p}_{\text{particle}} - \mathbf{p}_{\text{closest}}$ (vector from surface closest point to particle center)
-///    - $\text{dist} = \Vert{}\mathbf{\delta}\Vert{}$, $\text{overlap} = R - \text{dist}$
-///    - $\mathbf{n} = \frac{\mathbf{\delta}}{\text{dist}}$ (unit vector pointing strictly outward from the surface toward the particle)
-/// 
-/// 2. Relative Velocity:
-///    - Contact point offset: $\mathbf{r}_{\text{particle}} = -\mathbf{n} \cdot \text{dist}$ (vector from particle center of mass to the contact point)
-///    - Surface velocity at contact: $\mathbf{v}_{\text{surface}} = \text{surface.velocity\_at\_point}(\mathbf{p}_{\text{closest}})$
-///    - Particle contact point velocity: $\mathbf{v}_{\text{particle\_contact}} = \mathbf{v}_{\text{particle}} + \boldsymbol{\omega}_{\text{particle}} \times \mathbf{r}_{\text{particle}}$
-///    - Relative velocity: $\mathbf{v}_{\text{rel}} = \mathbf{v}_{\text{particle\_contact}} - \mathbf{v}_{\text{surface}}$
-///    - Normal velocity component: $v_n = \mathbf{v}_{\text{rel}} \cdot \mathbf{n}$ (negative during compression, positive during separation)
-/// 
-/// 3. Normal Force ($\mathbf{F}_n$):
-///    - Elastic component: $F_{\text{elastic}} = k_n \cdot \text{overlap}$
-///    - Viscous damping component: $F_{\text{damping}} = \gamma_n \cdot v_n$
-///    - Clamped magnitude: $F_{n,\text{mag}} = \max\left(0, F_{\text{elastic}} - F_{\text{damping}}\right)$
-///    - Vector normal force: $\mathbf{F}_n = F_{n,\text{mag}} \mathbf{n}$ (pointing outward from the surface)
-/// 
-/// 4. Tangential Friction Force ($\mathbf{F}_t$):
-///    - Tangential relative velocity: $\mathbf{v}_{\text{tang}} = \mathbf{v}_{\text{rel}} - v_n \mathbf{n}$
-///    - Ideal viscous friction: $\mathbf{F}_{t,\text{ideal}} = -\gamma_n \mathbf{v}_{\text{tang}}$
-///    - Coulomb friction limit: $F_{\text{limit}} = \mu F_{n,\text{mag}}$
-///    - Clamped friction vector: $\mathbf{F}_t = \min\left(1, \frac{F_{\text{limit}}}{\Vert{}\mathbf{F}_{t,\text{ideal}}\Vert{}}\right) \mathbf{F}_{t,\text{ideal}}$
-/// 
-/// 5. Induced Torque ($\boldsymbol{\tau}$):
-///    $$\boldsymbol{\tau} = \mathbf{r}_{\text{particle}} \times \mathbf{F}_t$$
+/// 1. **Collision Mask Filtering**:
+///    - Exits early if particle $i$'s type is excluded by `settings.collision_mask`.
+/// 2. **Geometry & Overlap**:
+///    - Closest point on surface: $\mathbf{p}_{\text{closest}} = \text{surface.closest\_point}(\mathbf{p}_i)$
+///    - Position delta: $\boldsymbol{\delta} = \mathbf{p}_i - \mathbf{p}_{\text{closest}}$ (pointing from surface to particle)
+///    - Center-to-center distance: $\text{dist} = \Vert{}\boldsymbol{\delta}\Vert{}$
+///    - Overlap: $\text{overlap} = R_i - \text{dist}$
+///    - Unit normal vector: $\mathbf{n} = \frac{\boldsymbol{\delta}}{\text{dist}}$
+/// 3. **Effective Properties & Hertzian Contact Parameters**:
+///    - Reduced mass: $m_{\text{eff}} = m_i$
+///    - Contact stiffness ($k_n$): $k_n = \frac{4}{3} E^*_{\text{plane}} \sqrt{R_i}$
+///    - Damping coefficient ($\gamma_n$): $\gamma_n = 2 \beta_{\text{plane}} \sqrt{m_{\text{eff}} k_n}$
+/// 4. **Kinematics & Contact Points**:
+///    - Contact offset vector: $\mathbf{r}_{\text{particle}} = -\mathbf{n} \cdot \text{dist}$
+///    - Relative velocity at contact: $\mathbf{v}_{\text{rel}} = (\mathbf{v}_i + \boldsymbol{\omega}_i \times \mathbf{r}_{\text{particle}}) - \mathbf{v}_{\text{surface}}$
 /// 
 /// # Arguments
 /// 
 /// * `i` - Index of the active particle within the `ParticleVec` container.
-/// * `particles` - Read-only reference to particle storage vectors (positions, velocities, radii, etc.).
-/// * `surface` - Reference to any geometry implementing `[SurfaceKinematics]`.
-/// * `force` - Accumulator for total force applied to particle `i`. Modified and returned.
-/// * `torque` - Accumulator for total torque applied to particle `i`. Modified and returned.
-/// * `model` - Collision parameters containing precomputed material properties and friction coefficients.
+/// * `particles` - Read-only reference to particle storage vectors.
+/// * `surface` - Reference to any geometry implementing `SurfaceKinematics`.
+/// * `model` - Collision parameters containing plane elasticity, damping, and friction coefficients.
 /// * `settings` - Simulation settings containing the $O(1)$ collision mask.
 /// 
 /// # Returns
 /// 
-/// * `(DVec3, DVec3)` - Updated (force, torque) tuple for particle `i`.
-pub(crate) fn particle_contact_response<S: SurfaceKinematics>(
+/// * `Some(Contact)` containing the resolved geometry, kinematics, and material properties if overlapping.
+/// * `None` if separated or filtered out by collision masks.
+pub(crate) fn surface_contact<S: SurfaceKinematics>(
     i: usize,
     particles: &ParticleVec,
     surface: &S,
-    mut force: DVec3,
-    mut torque: DVec3,
     model: &CollisionParams,
     settings: &SimulationSettings, // Pass settings directly instead of raw pieces
-) -> (DVec3, DVec3) { 
+) -> Option<Contact> { 
     // O(1) type check using settings mask
     if !settings.collision_mask[particles.ptype[i]] {
-        return (force, torque);
+        return None;
     }
 
     let particle_pos = particles.position[i];
@@ -138,12 +112,10 @@ pub(crate) fn particle_contact_response<S: SurfaceKinematics>(
         let rel_vel = particle_contact_vel - surface_vel;
 
         let contact = Contact{overlap,normal,r_contact: r_particle,rel_vel, eff_stiffness, eff_damping, mu: model.plane_mu};
-
-        let (contact_force, contact_torque) = compute_contact_force_and_torque(&contact);
+        Some(contact)
         
-        force += contact_force;
-        torque += contact_torque;
     }
-
-    (force, torque)
+    else{
+        None
+    }
 }

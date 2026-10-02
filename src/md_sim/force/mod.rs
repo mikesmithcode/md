@@ -9,9 +9,10 @@ mod contact;
 // Re-export the traits and key functions for easier access
 // This allows you to call forces::Force instead of forces::force::Force
 pub use single::{add_weight, add_directional_weight, add_viscous_drag};
-pub use objects::{add_particle_object_collision};
-pub use pairwise::{add_particle_particle_collision, CollisionParams, add_coulomb, CoulombParams};
+pub use objects::{check_surface_contact};
+pub use pairwise::{check_particle_contact, CollisionParams, add_coulomb, CoulombParams};
 pub use neighbours::CellGrid;
+pub use contact::{normal_linear, normal_hertzian, friction_viscous_tangential, friction_cundall_strack, ContactManager};
 //pub use bonds::*;
 
 
@@ -151,4 +152,6 @@ pub trait Forces {
     ) {
         // Optional: No internal forces by default.
     }
+
+    fn cleanup_contacts(&self) {}
 }

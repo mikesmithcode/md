@@ -13,69 +13,59 @@ use serde::{Serialize,Deserialize};
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::utils::check_delta;
-use crate::md_sim::force::contact::{Contact,compute_contact_force_and_torque};
+use crate::md_sim::force::contact::{Contact};
 
 
 
 
 
-/// Calculates contact forces and torques between two particles using a Linear Spring-Dashpot (LSD) model.
-/// This function handles both central repulsion (normal force) and optional surface friction
-/// (tangential force). It accounts for rotational dynamics by calculating relative velocity
-/// at the contact point and applying resulting torques.
-/// N.B because each particle is stored in each others Verlet list (ie i knows about j and j knows about i)
-/// when an interaction is possible we don't apply Newton's third law (ie $F_ij = -F_ji$). This is done
-/// by running this function for both i, j and j,i.
+/// Calculates collision geometry, relative kinematics, and effective contact properties 
+/// between two particles. 
 /// 
-/// # Physical Model
+/// N.B. Because each particle is stored in each other's Verlet list (i.e., $i$ knows about $j$ 
+/// and $j$ knows about $i$), Newton's third law ($\mathbf{F}_{ij} = -\mathbf{F}_{ji}$) is handled 
+/// by evaluating this function symmetrically for both $(i, j)$ and $(j, i)$ pairs.
 /// 
-/// 1. Geometry & Overlap:
-///     - $\mathbf{\delta} = \mathbf{p}_i - \mathbf{p}_j$ (vector from particle $j$ center to particle $i$ center)
-///     - $\text{dist} = \Vert{}\mathbf{\delta}\Vert{}$, $\text{overlap} = (R_i + R_j) - \text{dist}$
-///     - $\mathbf{n} = \frac{\mathbf{\delta}}{\text{dist}}$ (unit vector pointing from $j$ to $i$)
-/// 2. Effective Properties:
-///     - Reduced mass: $m_{\text{eff}} = \frac{m_i m_j}{m_i + m_j}$ (or $m_i$ if $j$ is a non-collision boundary)
-///     - Effective radius: $r_{\text{eff}} = \frac{R_i R_j}{R_i + R_j}$
-///     - Contact stiffness ($k_n$) & damping ($\gamma_n$) derived via Hertzian-linear approximation.
-/// 3. Normal Force ($\mathbf{F}_n$):
-///     - Relative normal velocity: $v_n = (\mathbf{v}_i - \mathbf{v}_j) \cdot \mathbf{n}$ (negative during compression, positive during separation)
-///     - Clamped magnitude: $F_{n,\text{mag}} = \max\left(0, k_n \cdot \text{overlap} - \gamma_n v_n\right)$
-///     - Vector normal force: $\mathbf{F}_n = F_{n,\text{mag}} \mathbf{n}$ (pointing from $j$ to $i$)
-/// 4. Tangential Friction Force ($\mathbf{F}_t$):
-///     - Contact points offset: $\mathbf{r}_i = \mathbf{n} \left(-R_i + \frac{\text{overlap} \cdot R_j}{R_i + R_j}\right)$, $\mathbf{r}_j = \mathbf{n} \left(R_j - \frac{\text{overlap} \cdot R_i}{R_i + R_j}\right)$
-///     - Surface relative velocity: $\mathbf{v}_{\text{surface\_rel}} = (\mathbf{v}_i + \boldsymbol{\omega}_i \times \mathbf{r}_i) - (\mathbf{v}_j + \boldsymbol{\omega}_j \times \mathbf{r}_j)$
-///     - Tangential velocity: $\mathbf{v}_{\text{tang}} = \mathbf{v}_{\text{surface\_rel}} - (\mathbf{v}_{\text{surface\_rel}} \cdot \mathbf{n})\mathbf{n}$
-///     - Ideal viscous friction: $\mathbf{F}_{t,\text{ideal}} = -\gamma_n \mathbf{v}_{\text{tang}}$
-///     - Coulomb friction limit: $F_{\text{limit}} = \mu F_{n,\text{mag}}$
-///     - Clamped friction vector: $\mathbf{F}_t = \min\left(1, \frac{F_{\text{limit}}}{\Vert{}\mathbf{F}_{t,\text{ideal}}\Vert{}}\right) \mathbf{F}_{t,\text{ideal}}$
-/// 5. Induced Torque ($\boldsymbol{\tau}$):$$\boldsymbol{\tau} = \mathbf{r}_i \times \mathbf{F}_t$$
+/// # Physical Model & Processing Steps
+/// 
+/// 1. **Collision Mask Filtering**:
+///    - Exits early if particle $i$'s type is excluded by `settings.collision_mask`.
+/// 2. **Geometry & Overlap**:
+///    - Position delta with periodic boundary handling: $\boldsymbol{\delta} = \mathbf{p}_i - \mathbf{p}_j$
+///    - Center-to-center distance: $\text{dist} = \Vert{}\boldsymbol{\delta}\Vert{}$
+///    - Overlap: $\text{overlap} = (R_i + R_j) - \text{dist}$
+///    - Unit normal vector (pointing from $j$ to $i$): $\mathbf{n} = \frac{\boldsymbol{\delta}}{\text{dist}}$
+/// 3. **Effective Properties & Hertzian Contact Parameters**:
+///    - Reduced mass: $m_{\text{eff}} = \begin{cases} \frac{m_i m_j}{m_i + m_j} & \text{if } j \text{ is a collision object} \\ m_i & \text{otherwise} \end{cases}$
+///    - Effective radius: $r_{\text{eff}} = \frac{R_i R_j}{R_i + R_j}$
+///    - Contact stiffness ($k_n$): $k_n = \frac{4}{3} E^* \sqrt{r_{\text{eff}}}$
+///    - Damping coefficient ($\gamma_n$): $\gamma_n = 2 \beta \sqrt{m_{\text{eff}} k_n}$
+/// 4. **Kinematics & Contact Points**:
+///    - Contact offset vectors: $\mathbf{r}_i = \mathbf{n} \left(-R_i + \frac{\text{overlap} \cdot R_j}{R_i + R_j}\right)$, $\mathbf{r}_j = \mathbf{n} \left(R_j - \frac{\text{overlap} \cdot R_i}{R_i + R_j}\right)$
+///    - Relative surface velocity: $\mathbf{v}_{\text{rel}} = (\mathbf{v}_i + \boldsymbol{\omega}_i \times \mathbf{r}_i) - (\mathbf{v}_j + \boldsymbol{\omega}_j \times \mathbf{r}_j)$
 /// 
 /// # Arguments
 /// 
-/// * i, j - Indices of the interacting particles.
-/// * particles - Reference to the particle data structure (includes position, velocity, and omega).
-/// * force - Accumulator for linear forces. Modified and returned.
-/// * torque - Accumulator for angular torques. Modified and returned.
-/// * settings - Global simulation config, including the SimulationModel for parameter dispatch.
+/// * `i`, `j` - Indices of the interacting particles.
+/// * `particles` - Reference to the particle data structure (position, velocity, omega, radius, mass, type).
+/// * `model` - Collision parameter set (`CollisionParams`) containing elastic modulus, damping factors, and friction coefficients.
+/// * `settings` - Global simulation configuration (`SimulationSettings`) for box size and periodicity.
 /// 
-/// # Periodic Boundaries
+/// # Returns
 /// 
-/// * Minimum Image Convention: Automatically handles periodic wrapping via check_delta
-/// to ensure interactions occur over the shortest path across boundaries. check_delta handles
-/// whether a boundary is periodic or not and changes behavior accordingly.
-pub fn add_particle_particle_collision(
+/// * `Some(Contact)` containing the resolved geometry, kinematics, and material properties if overlapping.
+/// * `None` if particles are separated or filtered out by collision masks.
+pub fn check_particle_contact(
     i: usize, 
     j: usize, 
-    mut force: DVec3, 
-    mut torque: DVec3, 
     particles: &ParticleVec, 
     model: &CollisionParams, 
     settings: &SimulationSettings
-) -> (DVec3, DVec3) { 
+) -> Option<Contact>{ 
     
     // exit if not a collision type
     if !settings.collision_mask[particles.ptype[i]] {
-        return (force, torque);
+        return None;
     }
 
     let mut delta = particles.position[i] - particles.position[j];
@@ -117,15 +107,14 @@ pub fn add_particle_particle_collision(
         let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
 
         let contact = Contact{overlap,normal,r_contact: r_i,rel_vel, eff_stiffness, eff_damping, mu: model.mu};
-
-        let (contact_force, contact_torque) = compute_contact_force_and_torque(&contact);
         
-        force += contact_force;
-        torque += contact_torque;
+        Some(contact)
+    }else{
+        None
     }
 
-    (force, torque)
 }
+
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(from = "RawCollisionParams")] // Tells Serde to parse via the raw struct first
