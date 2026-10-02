@@ -3,7 +3,7 @@ use glam::DVec3;
 
 use crate::md_sim::force::pairwise::CollisionParams;
 use crate::md_sim::{ObjectSpec, ParticleVec, SurfaceKinematics};
-use crate::md_sim::force::common::compute_contact_force_and_torque;
+use crate::md_sim::force::contact::{Contact,compute_contact_force_and_torque};
 use crate::md_sim::SimulationSettings;
 
 
@@ -137,9 +137,9 @@ pub(crate) fn particle_contact_response<S: SurfaceKinematics>(
         let particle_contact_vel = particle_vel + particle_omega.cross(r_particle);
         let rel_vel = particle_contact_vel - surface_vel;
 
-        let (contact_force, contact_torque) = compute_contact_force_and_torque(
-            overlap, normal, r_particle, rel_vel, eff_stiffness, eff_damping, model.plane_mu
-        );
+        let contact = Contact{overlap,normal,r_contact: r_particle,rel_vel, eff_stiffness, eff_damping, mu: model.plane_mu};
+
+        let (contact_force, contact_torque) = compute_contact_force_and_torque(&contact);
         
         force += contact_force;
         torque += contact_torque;

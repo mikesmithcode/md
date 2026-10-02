@@ -13,7 +13,9 @@ use serde::{Serialize,Deserialize};
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::utils::check_delta;
-use crate::md_sim::force::common::compute_contact_force_and_torque;
+use crate::md_sim::force::contact::{Contact,compute_contact_force_and_torque};
+
+
 
 
 
@@ -71,7 +73,7 @@ pub fn add_particle_particle_collision(
     settings: &SimulationSettings
 ) -> (DVec3, DVec3) { 
     
-    // O(1) array lookup using the mask inside settings
+    // exit if not a collision type
     if !settings.collision_mask[particles.ptype[i]] {
         return (force, torque);
     }
@@ -99,23 +101,24 @@ pub fn add_particle_particle_collision(
             m_i
         };
 
-            // Using precomputed values from model
-            let e_star = model.particle_e_star;
-            let beta = model.particle_beta;
-
-            let r_eff = (rad_i * rad_j) / combined_rad;
-            let eff_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
-            let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
+        let r_eff = (rad_i * rad_j) / combined_rad;
 
         let r_i = normal * (-rad_i + overlap * rad_j / combined_rad);
         let r_j = normal * (rad_j - overlap * rad_i / combined_rad);
 
-        let v_surface_rel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
+        let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
                             - (particles.velocity[j] + particles.omega[j].cross(r_j));
 
-        let (contact_force, contact_torque) = compute_contact_force_and_torque(
-            overlap, normal, r_i, v_surface_rel, eff_stiffness, eff_damping, model.mu
-        );
+        // Using precomputed values from model
+        let e_star = model.particle_e_star;
+        let beta = model.particle_beta;
+
+        let eff_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
+        let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
+
+        let contact = Contact{overlap,normal,r_contact: r_i,rel_vel, eff_stiffness, eff_damping, mu: model.mu};
+
+        let (contact_force, contact_torque) = compute_contact_force_and_torque(&contact);
         
         force += contact_force;
         torque += contact_torque;
