@@ -11,9 +11,14 @@ pub struct Contact{
     pub mu: f64,
 }
 
+pub struct ContactState {
+    pub tangential_disp: DVec3,
+    pub is_active: bool, // Tracks whether it was touched this step
+}
+
 pub struct ContactManager {
     // (i, j) -> accumulated tangential displacement (xi)
-    pub states: HashMap<(usize, usize), DVec3>,
+    pub states: HashMap<(usize, usize), ContactState>,
 }
 
 impl ContactManager {
@@ -24,11 +29,18 @@ impl ContactManager {
     }
 
     pub fn check_or_add(pair: (usize,usize), displacement: DVec3){
+        //If new add a ContactState with 0 tangential displacement and is_active = true.
+        // If already present calculate new tangential displacement set is_active = true
 
     }
 
-    pub fn remove_old_contacts(&mut self, active_pairs: &HashSet<(usize,usize)>) {
-        self.states.retain(|pair, _| active_pairs.contains(pair));
+    pub fn remove_old_contacts(&mut self) {
+        // removes anything not active. resets is_active bool to false.   
+        self.states.retain(|_, state|{
+            let active = state.is_active;
+            state.is_active = false;
+            active
+        } );
     }
 }
 
