@@ -9,7 +9,21 @@ use crate::md_sim::particle::{Particle, ParticleVec, MoleculeData};
 /// Generates a test collection of individual particles with diverse types, positions, and velocities.
 pub fn create_particle_vec() -> ParticleVec {
     let mut particles = ParticleVec::new();
+
+    let mut p0 = Particle::default();    
+    let mut p1 = Particle::default();
+    
+    p0.position=DVec3::new(1.0,2.0,3.4);
+    p0.velocity=DVec3::new(1.0, 1.0, 1.0);
+    p0.omega=DVec3::new(0.0, 1.0, 0.0),
+    
+    p1.id=1;
+
+
     particles.push(
+        
+
+
         Particle {
             id: 0,
             molecule_id: 0,
@@ -18,7 +32,7 @@ pub fn create_particle_vec() -> ParticleVec {
             rel_pos: DVec3::ZERO,
             velocity: DVec3::new(1.0, 1.0, 1.0),
             orientation: DQuat::IDENTITY,
-            omega: DVec3::new(0.0, 1.0, 0.0),
+            omega: 
             radius: 0.5,
             mass: 1.0,
             charge: 0.0,
@@ -164,6 +178,13 @@ pub fn create_molecule_vec() -> ParticleVec {
     let mut particles = ParticleVec::new();
     
     let com1 = DVec3::new(1.0, 2.0, 3.25);
+
+    let mut p0 = Particle::default();
+    p0.position = com1 + DVec3::new(0.0, 0.0, 0.5);
+    p0.rel_pos = DVec3::new(0.0, 0.0, 0.25);
+    p0.omega = DVec3::new(0.0, 1.0, 0.0);
+
+
     particles.push(Particle {
         id: 0,
         molecule_id: 0,

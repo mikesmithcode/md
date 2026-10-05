@@ -66,12 +66,14 @@ impl Particle {
     /// * `position` - Initial coordinates in the simulation box.
     /// * `rel_pos` - This is the position relative to COM of particle.
     /// * `velocity` - Initial velocity vector.
-    /// * `orientation` - Initial orientation, set to 0,0,0 if not needed.
+    /// * `orientation` - Initial orientation, set to 1.0,0.0,0.0,0.0 if not needed.
     /// * `omega` - Initial angular velocity, set to 0,0,0 if not needed.
     /// * `radius` - The physical radius of the spherical particle.
     /// * `density` - The mass per unit volume.
     /// * `charge` - charge
     /// * `colour` - The Colour enum used for rendering. Determines whether hidden, transparent or Opaque and holds the Srgba colour.
+    /// * `visible` - whether the particle should be rendered
+    /// * `ref_pos` - used by the CellGrid verlet list building algorithm to track how far each particle has been displaced since the last rebuild
     ///
     pub fn new(
         id: usize,
@@ -114,3 +116,22 @@ impl Particle {
 }
 
 
+impl Default for Particle{
+    fn default()-> Self{
+        Self { 
+            id:0, 
+            molecule_id: 0, 
+            ptype: 0, 
+            position: DVec3::new(1.0,1.0,1.0), 
+            rel_pos: DVec3::ZERO,
+            velocity: DVec3::new(1.0,0.0,0.0), 
+            orientation: DQuat::IDENTITY, //(w,x,y,z) = (1.0,0.0,0.0,0.0)
+            omega: DVec3::ZERO, 
+            radius: 0.5, 
+            mass: 2.0, 
+            charge: 0.0, 
+            colour: Srgba { r: 255, g: 255, b: 255, a: 200 }, 
+            visible: true, 
+            ref_pos: DVec3::ZERO }
+    }
+}

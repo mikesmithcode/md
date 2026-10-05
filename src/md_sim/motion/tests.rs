@@ -203,7 +203,7 @@ fn test_enforce_boundary() {
     // 1. Test Periodic Wrapping
     let mut pos = DVec3::new(12.0, -2.0, 5.0);
     let mut vel = DVec3::new(1.0, 1.0, 1.0);
-    enforce_boundary(&mut pos, &mut vel, sim_box, [true, true, true]);
+    enforce_boundary(&mut pos, &mut vel, sim_box, [true, true, true], 0.0);
     
     assert!((pos.x - 2.0).abs() < 1e-9);
     assert!((pos.y - 8.0).abs() < 1e-9);
@@ -212,7 +212,7 @@ fn test_enforce_boundary() {
     // 2. Test Elastic Lower Bound Reflection
     let mut pos = DVec3::new(-1.0, 5.0, 5.0);
     let mut vel = DVec3::new(-1.0, 0.0, 0.0);
-    enforce_boundary(&mut pos, &mut vel, sim_box, [false, false, false]);
+    enforce_boundary(&mut pos, &mut vel, sim_box, [false, false, false], 0.0);
     
     assert!((pos.x - 1.0).abs() < 1e-9); 
     assert!((vel.x - 1.0).abs() < 1e-9); 
@@ -220,7 +220,7 @@ fn test_enforce_boundary() {
     // 3. Test Elastic Upper Bound Reflection
     let mut pos = DVec3::new(11.0, 5.0, 5.0);
     let mut vel = DVec3::new(1.0, 0.0, 0.0);
-    enforce_boundary(&mut pos, &mut vel, sim_box, [false, false, false]);
+    enforce_boundary(&mut pos, &mut vel, sim_box, [false, false, false], 0.0);
     
     assert!((pos.x - 9.0).abs() < 1e-9); 
     assert!((vel.x - -1.0).abs() < 1e-9); 

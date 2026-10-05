@@ -1,90 +1,97 @@
 use glam::DVec3;
-use dashmap::DashMap;
-use dashmap::mapref::one::RefMut;
-use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::default::Default;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Contact{
     pub overlap: f64,
     pub normal: DVec3,
-    pub r_contact: DVec3,
+    pub r_contact: DVec3, //radial vector from centre of particle to the contact point, used for calculating torque
     pub rel_vel: DVec3,
     pub eff_stiffness: f64,
     pub eff_damping: f64,
     pub mu: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+impl Default for Contact{
+    fn default()-> Self{
+        Self { overlap: 1e-5, normal: DVec3::new(0.0,0.0,1.0), r_contact: DVec3::new(0.0,0.0,0.005), rel_vel: DVec3::new(0.0,0.0,0.0), eff_stiffness: (), eff_damping: , mu: 0.5 }
+    }
+}
+
 pub struct ContactState {
     pub tangential_disp: DVec3,
     pub is_active: bool, // Tracks whether it was touched this step
 }
 
-#[derive(Clone, Debug)]
+impl Default for ContactState{
+    fn default()->Self{
+        Self { tangential_disp: DVec3::new(1e-5, 0.0,0.0), is_active: true }
+    }
+}
+
 pub struct ContactManager {
     // (i, j) -> accumulated tangential displacement (xi)
-    pub states: DashMap<(usize, usize), ContactState>,
+    pub states: HashMap<(usize, usize), ContactState>,
 }
 
 impl ContactManager {
     pub fn new()->Self{
         Self{
-           states: DashMap::new(), 
+           states: HashMap::new(), 
         }
     }
 
-    pub fn get_or_create(&self, i: usize, j: usize) -> RefMut<'_, (usize, usize), ContactState> {
-        let mut state = self.states.entry((i,j)).or_insert(ContactState {
-            tangential_disp: DVec3::ZERO,
-            is_active: true,
-        });
-        state.is_active = true;
-        state
+    pub fn check_or_add(pair: (usize,usize), displacement: DVec3){
+        //If new add a ContactState with 0 tangential displacement and is_active = true.
+        // If already present calculate new tangential displacement set is_active = true
+
     }
 
-    // Change &mut self to &self here too:
-    pub fn remove_old_contacts(&self) {
-        // DashMap's retain method takes &self because of interior mutability!
-        self.states.retain(|_, state| {
-            if state.is_active {
-                state.is_active = false; // Reset for the next step
-                true                     // Keep contact
-            } else {
-                false                    // Remove expired contact
-            }
-        });
+    pub fn remove_old_contacts(&mut self) {
+        // removes anything not active. resets is_active bool to false.   
+        self.states.retain(|_, state|{
+            let active = state.is_active;
+            state.is_active = false;
+            active
+        } );
     }
 }
 
-impl Default for ContactManager {
-    fn default() -> Self {
-        Self::new()
+impl Default for ContactManager{
+    fn default()-> Self{
+        let mut states = HashMap::new();
+        states.insert((0,1), ContactState::default());
+
+        Self { states }
     }
 }
+
+
+
 
 #[inline]
-pub fn normal_hertzian(contact: &Contact)-> DVec3{
+pub fn normal_hertzian(contact: &Contact)-> (f64, DVec3){
 // Elastic and viscous damping normal forces
     let f_elastic = contact.eff_stiffness * contact.overlap.powf(1.5);
     let f_damping = contact.eff_damping * contact.rel_vel.dot(contact.normal);
     let f_normal_mag = (f_elastic - f_damping).max(0.0);
     
     //f_normal_vec
-    contact.normal * f_normal_mag
+    (f_normal_mag, contact.normal * f_normal_mag)
 }
 
 #[inline]
-pub fn normal_linear(contact: &Contact)-> DVec3{
+pub fn normal_linear(contact: &Contact)-> (f64, DVec3){
     // Elastic and viscous damping normal forces
     let f_elastic = contact.eff_stiffness * contact.overlap;
     let f_damping = contact.eff_damping * contact.rel_vel.dot(contact.normal);
     let f_normal_mag = (f_elastic - f_damping).max(0.0);
     
     //f_normal_vec
-    contact.normal * f_normal_mag
+    (f_normal_mag, contact.normal * f_normal_mag)
 }
 
-pub fn friction_viscous_tangential(f_normal_mag: f64, contact: &Contact)-> DVec3{
+pub fn viscous_tangential_damping_coulomb_limit(f_normal_mag: f64, contact: &Contact)-> DVec3{
     // Tangential friction force
     let v_tang = contact.rel_vel - contact.rel_vel.dot(contact.normal) * contact.normal;
     //let mut f_friction_vec = DVec3::ZERO;
@@ -101,21 +108,4 @@ pub fn friction_viscous_tangential(f_normal_mag: f64, contact: &Contact)-> DVec3
         }
     }
     else{DVec3::ZERO}
-}
-
-pub fn friction_cundall_strack(f_normal_vec: DVec3, contact: &Contact, contact_state: &mut ContactState, dt: f64){
-    
-    let f_coulomb = contact.mu*f_normal_vec.length();
-
-    let normal_vel_mag = contact.rel_vel.dot(contact.normal);
-    let v_tangential = contact.rel_vel - contact.normal * normal_vel_mag;
-
-    contact_state.tangential_disp += v_tangential * dt;
-
-    let mut ft = contact_state.tangential_disp * contact.frictional_stiffness;
-    if ft.length() > f_coulomb{
-        ft = f_coulomb * ft/ft.length();
-    }
-
-    ft
 }

@@ -6,6 +6,7 @@
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
 
+use std::default::Default;
 use glam::DVec3;
 use std::f64::consts::PI;
 use serde::{Serialize,Deserialize};
@@ -14,6 +15,7 @@ use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::utils::check_delta;
 use crate::md_sim::force::contact::{Contact};
+
 
 
 
@@ -132,7 +134,24 @@ pub struct CollisionParams {
     pub plane_beta: f64,
 }
 
-// 1. Temporary raw struct matching your JSON fields
+impl Default for CollisionParams {
+    fn default() -> Self {
+        // Define standard default values for your raw parameters
+        let raw = RawCollisionParams {
+            modulus: 1.0E6,       
+            restitution: 0.8,     
+            mu: 0.5,              
+            plane_modulus: 1.0E6, 
+            plane_restitution: 0.8,
+            plane_mu: 0.5,
+        };
+
+        // Automatically compute the derived fields using your existing From implementation
+        Self::from(raw)
+    }
+}
+
+// Temporary raw struct matching JSON input
 #[derive(Deserialize)]
 struct RawCollisionParams {
     pub modulus: f64,
@@ -143,7 +162,7 @@ struct RawCollisionParams {
     pub plane_mu: f64,
 }
 
-// 2. Automatically compute precalculated values when converting from raw to CollisionParams
+// Automatically compute precalculated values when converting from raw to CollisionParams
 impl From<RawCollisionParams> for CollisionParams {
     fn from(raw: RawCollisionParams) -> Self {
         let particle_e_star = raw.modulus / 1.82;
@@ -217,5 +236,14 @@ pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3
 pub struct CoulombParams{
     pub eps_r: f64,
     pub cutoff: f64,
+}
+
+impl Default for CoulombParams{
+    fn default()->Self{
+        Self{
+            eps_r: 8.854E-12,
+            cutoff: 0.3,
+        }
+    }
 }
 

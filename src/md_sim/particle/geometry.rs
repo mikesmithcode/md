@@ -1,4 +1,5 @@
 use glam::{DVec3,DMat3};
+use crate::md_sim::particle::Particle;
 
 use super::ParticleVec;
 /// Stores structural and inertial properties for a rigid multi-particle molecule.
@@ -28,6 +29,20 @@ impl MoleculeData {
         Self { pids, inertia }
     }
 }
+
+/*impl Default for MoleculeData{
+    fn default()-> Self{
+        let mut p1 = Particle::default();
+        let mut p2 = Particle::default();
+        p2.id = 1;
+        p2.position=DVec3::new(2.0,1.0,1.0);
+        let pids = vec![0,1];
+        let particles = vec![p1,p2];
+
+        let inertia= calculate_molecule_inertia(&pids, &particles);
+        Self { pids: vec![0,1], inertia }
+    }
+}*/
 
 /// Calculates the total mass, center of mass position, and linear velocity of a molecule.
 ///

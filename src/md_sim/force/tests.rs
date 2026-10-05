@@ -6,11 +6,10 @@ use three_d::Srgba;
 use crate::md_sim::force::CollisionParams;
 use crate::md_sim::{SimulationSettings, Dimensions};
 use crate::md_sim::particle::{Particle, RectSpec, TriSpec, ParticleVec, SurfaceKinematics};
-use super::objects::particle_contact_response;
 use crate::md_sim::utils::{create_particle_vec,create_molecule_vec, create_grid_and_settings, assert_dvec3_near};
 use crate::md_sim::utils::InteractionContext;
 
-use super::{add_weight,add_viscous_drag, add_particle_particle_collision, add_coulomb};
+use super::{add_weight,add_viscous_drag, add_coulomb, CoulombParams};
 use super::neighbours::CellGrid;
 use std::f64::consts::PI;
 
@@ -82,7 +81,7 @@ fn collision_helper()->(CollisionParams, SimulationSettings){
     };
 
     // Initialise the full SimulationSettings struct
-    let settings = SimulationSettings {
+    let mut settings = SimulationSettings {
         dt: 0.001,             
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
         periodic: [true;3],
@@ -110,10 +109,10 @@ fn coulomb_helper()->(CoulombParams, SimulationSettings){
     let model = CoulombParams{
         eps_r: 8.854E-12,
         cutoff: 0.3,
-}
+    };
 
     // Initialise the full SimulationSettings struct
-    let settings = SimulationSettings {
+    let mut settings = SimulationSettings {
         dt: 0.001,             
         sim_box_size: DVec3::new(10.0, 10.0, 10.0),
         periodic: [true;3],
@@ -140,7 +139,7 @@ fn coulomb_helper()->(CoulombParams, SimulationSettings){
 #[test]
 fn test_particle_particle_collision() {
     let particles = create_particle_vec();
-    let (model, settings) = helper();
+    let (model, settings) = collision_helper();
 
     let mut force = DVec3::ZERO;
 
@@ -181,11 +180,11 @@ fn test_coulomb() {
     particles.charge[0] = 1.0;
     particles.charge[1] = -1.0;
 
-    let (model, settings) =helper();
+    let (model, settings) =coulomb_helper();
 
     let mut force = DVec3::ZERO;
 
-    force = add_coulomb(0, 1, &particles, force, &model);
+    force = add_coulomb(0, 1, &particles, force, model);
 
     const EPS0: f64 = 8.85418782e-12;
     let separation = particles.position[0]-particles.position[1];
@@ -311,7 +310,7 @@ fn test_first_frame_rebuild() {
     particles.position[0] = DVec3::new(1.0,1.0,1.0);
     particles.ref_pos[0] = DVec3::new(5.0,5.0,5.0);
 
-    grid.init(&mut particles, &settings);
+    grid.init(&mut particles);
 
     assert_eq!(particles.ref_pos[0], particles.position[0]);
     // Verify index 0 and 2 are neighbours (based on create_molecule_vec layout)
@@ -328,7 +327,7 @@ fn test_skin_displacement_trigger() {
     let mut particles = create_molecule_vec();
     
     //pos and ref_pos should be the same
-    grid.init(&mut particles, &settings);
+    grid.init(&mut particles);
 
     // Move 0.09 (less than skin/2 = 0.1), shouldn't rebuild
     particles.position[0] += DVec3::new(0.09, 0.0, 0.0);
@@ -357,8 +356,7 @@ fn test_molecular_exclusion() {
     let ctx = InteractionContext{
         sim_box_size: settings.sim_box_size,
         periodic: settings.periodic,
-        interaction_ptypes: &settings.interaction_ptypes,
-        search_radius_sq: (settings.cutoff + settings.skin).powi(2),
+
     };
 
     let pids_b4 = grid.verlet_particle_ids.clone();

@@ -17,7 +17,9 @@ use crate::md_sim::{SimulationSettings, particle::ParticleVec};
 /// * `vel` - Mutable reference to the velocity vector of the particle.
 /// * `sim_box_size` - The 3D dimensions of the simulation box.
 /// * `periodic` - Boolean array `[bool; 3]` specifying whether each dimension $(x, y, z)$ is periodic (`true`) or bounded (`false`).
-///
+/// * `radius` - used so that particles can reflect when they hit edge.
+/// 
+/// ///
 /// # Notes
 /// 
 /// Each spatial dimension is treated independently:

@@ -9,6 +9,9 @@ pub use test_utils::{assert_dvec3_near,create_molecule_vec, create_single_molecu
 pub use crate::md_sim::{SimulationSettings, Forces, Motion, ObjectSpec, ParticleVec};
 use crate::md_viz::actions::UserAction;
 
+#[cfg(test)]
+mod tests;
+
 
 // -------------------------------------------------------------------------------------------------
 // -------------------------------------------------------------------------------------------------
