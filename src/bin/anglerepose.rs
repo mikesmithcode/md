@@ -1,7 +1,3 @@
-/// Explanation of simulation
-/// 
-/// Silo consists of a 2D hopper with diagonal walls and a flat bottom. We then drop a square lattice
-/// of balls from above into it and watch everything slosh around.
 
 
 use glam::DVec3;

@@ -30,25 +30,27 @@ use crate::md_sim::particle::ParticleVec;
 /// This function will panic if the index `i` is out of bounds for either `forces` 
 /// or `particles.mass`.
 #[inline]
-pub fn add_weight(i: usize, mut force: DVec3, particles: &ParticleVec)-> DVec3 {
-    let gravity = -9.81;
+pub fn add_gravity(i: usize, mut force: DVec3, particles: &ParticleVec, gravity: &Gravity)-> DVec3 {
+    let g = gravity.g * gravity.up;
     let mass = particles.mass[i];
-
-    let weight = gravity * mass;
-    force.z += weight;
-    force
-}
-
-#[inline]
-pub fn add_directional_weight(i: usize, mut force: DVec3, particles: &ParticleVec, up: DVec3)-> DVec3 {
-    let gravity = -9.81 * up;
-    let mass = particles.mass[i];
-
-    let weight = gravity * mass;
+    let weight =  mass * g;
     force += weight;
     force
 }
 
+pub struct Gravity{
+    pub g: f64,
+    pub up: DVec3,
+}
+
+impl Default for Gravity{
+    fn default() -> Self {
+        Self { 
+            g: -9.81,
+            up: DVec3::Z,
+        }
+    }
+}
 
 /// Calculates and adds the viscous drag force (Stokes' Law) to a specific particle.
 ///
@@ -74,15 +76,25 @@ pub fn add_directional_weight(i: usize, mut force: DVec3, particles: &ParticleVe
 /// This function will panic if the index `i` is out of bounds for `forces`, 
 /// `particles.velocity`, or `particles.radius`.
 #[inline]
-pub fn add_viscous_drag(i: usize, particles: &ParticleVec, mut force: DVec3, viscosity: f64) -> DVec3{
+pub fn add_viscous_drag(i: usize, particles: &ParticleVec, mut force: DVec3, viscous_drag: &ViscousDrag) -> DVec3{
     let vel = particles.velocity[i];
     let rad = particles.radius[i];
     
     // Stokes' Law: F = -6 * pi * eta * r * v
-    let drag = -6.0 * PI * viscosity * rad * vel;
+    let drag = -6.0 * PI * viscous_drag.viscosity * rad * vel;
     
     force += drag;
     force
+}
+
+pub struct ViscousDrag{
+    pub viscosity: f64,
+}
+
+impl Default for ViscousDrag{
+    fn default()-> Self{        
+        Self { viscosity: 1.0 }
+    }
 }
 
 

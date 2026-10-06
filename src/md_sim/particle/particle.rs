@@ -128,7 +128,7 @@ impl Default for Particle{
             orientation: DQuat::IDENTITY, //(w,x,y,z) = (1.0,0.0,0.0,0.0)
             omega: DVec3::ZERO, 
             radius: 0.5, 
-            mass: 2.0, 
+            mass: 1.0, 
             charge: 0.0, 
             colour: Srgba { r: 255, g: 255, b: 255, a: 200 }, 
             visible: true, 

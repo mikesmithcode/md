@@ -4,6 +4,7 @@ import math
 import numpy as np
 import sys
 import re
+import shutil
 
     
 def get_latest_file(src_dir, prefix="particles", extension="parquet"):
@@ -58,23 +59,27 @@ def get_config(*args, **kwargs):
     particles_dir.mkdir(parents=True, exist_ok=True)
     particles_filepath = particles_dir / "particles_0000000000.parquet"
     
+    output_config_dir = Path("output") / target_name / input_name / "config"
+    output_config_dir.mkdir(parents=True, exist_ok=True)
+    
     objects_dir = Path("output") / target_name / input_name / "objects"
     objects_dir.mkdir(parents=True, exist_ok=True)
     objects_filepath = objects_dir / "objects_0000000000.parquet"
     
     video_dir = Path("output") / target_name / input_name / "video"
-    video_dir.mkdir(parents=True, exist_ok=True)
-    
-    variables_dir = Path("output") / target_name / input_name / "config"
-    variables_dir.mkdir(parents=True, exist_ok=True)
-    variables_filepath = variables_dir / "variables_0000000000.json"
-    
+    video_dir.mkdir(parents=True, exist_ok=True)  
     
     
     # Define file paths (loads config based on the target name, e.g., 'silo.')
-    config_dir = Path("input") / target_name 
+    config_dir = Path("input") / target_name
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / "sim_settings.json"
+    
+    print(particles_filepath)
+    
+    print(config_dir)
+    
+    shutil.copy(str(config_dir / 'model.json'), str(output_config_dir / 'model_0000000000.json'))
     
     
     
@@ -82,4 +87,4 @@ def get_config(*args, **kwargs):
     with open(config_path, "r", encoding="utf-8") as f:
         config = json.load(f)
         
-    return config, particles_filepath, objects_filepath, variables_filepath
+    return config, particles_filepath, objects_filepath

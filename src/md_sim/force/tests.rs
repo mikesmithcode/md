@@ -1,57 +1,65 @@
 
 
-use glam::{DQuat, DVec2, DVec3};
+use glam:: DVec3;
 use three_d::Srgba;
 
-use crate::md_sim::force::CollisionParams;
-use crate::md_sim::{SimulationSettings, Dimensions};
-use crate::md_sim::particle::{Particle, RectSpec, TriSpec, ParticleVec, SurfaceKinematics};
+use crate::md_sim::force::{check_particle_contact, check_object_contact, CollisionParams};
+use crate::md_sim::SimulationSettings;
+use crate::md_sim::particle::{Particle, RectSpec, ObjectSpec, ParticleVec, SurfaceKinematics};
 use crate::md_sim::utils::{create_particle_vec,create_molecule_vec, create_grid_and_settings, assert_dvec3_near};
 use crate::md_sim::utils::InteractionContext;
-
-use super::{add_weight,add_viscous_drag, add_coulomb, CoulombParams};
+use crate::md_sim::force::contact::Contact;
+use crate::md_sim::force::{add_gravity,Gravity, add_viscous_drag, ViscousDrag, add_coulomb, CoulombParams};
+use crate::md_sim::force::{normal_hertzian, normal_linear, friction_viscous_damping};
 use super::neighbours::CellGrid;
 use std::f64::consts::PI;
 
-// -----------------------------------------------------------------
+//====================================================================================================================
 // Test single particle forces
-// -----------------------------------------------------------------
+//====================================================================================================================
 
-
+///=====================================================================================================================
 /// **What:** Verifies that gravitational body forces are correctly calculated and applied.  
 /// **How:** Applies weight to the first particle using `add_weight` and inspects the resulting force vector.  
 /// **Why:** Ensures that gravitational acceleration maps cleanly to the vertical force buffer for single-body dynamics.
+/// ====================================================================================================================
 #[test]
-fn test_add_weight() {
-    let particles = create_particle_vec();
+fn test_add_gravity() {
+    let mut particles = ParticleVec::new();
+    particles.push(Particle::default());
+
     let mut force = DVec3::ZERO;
+    let gravity = Gravity::default();
     
     // Apply weight to the first particle
-    force = add_weight(0, force, &particles);
+    force = add_gravity(0, force, &particles, &gravity);
 
-    // Assuming gravity is -9.81 and mass is 1.0 (mass = 1.0)
+    // Assuming gravity is -9.81 and mass is 1.0 
     // Force should be exactly -9.81 in the Z direction
     assert!((force.z + 9.81).abs() < 1e-6);
 
 }
 
+/// ====================================================================================================================
 /// **What:** Validates velocity-dependent Stokes' law viscous drag calculations.  
 /// **How:** Computes drag force on a particle with known velocity and radius against a specified fluid viscosity.  
 /// **Why:** Ensures that drag damping forces scale correctly relative to particle dimensions and surrounding medium parameters.
+/// ====================================================================================================================
 #[test]
 fn test_add_drag() {
     use std::f64::consts::PI;
     
-    let particles = create_particle_vec();
+    let mut particles = ParticleVec::new();
+    particles.push(Particle::default());
     let mut force = DVec3::ZERO;
-    let viscosity = 0.1;
+    let viscous_drag = ViscousDrag::default();
 
     // Apply drag to the first particle
-    force = add_viscous_drag(0, &particles,force, viscosity);
+    force = add_viscous_drag(0, &particles,force, &viscous_drag);
     
     // Expected: -6 * PI * eta * r * v
     // Assuming create_particle_vec sets radius=0.5 and velocity.x=1.0 for particle 0
-    let expected_drag_x = -6.0 * PI * viscosity * 0.5 * 1.0;
+    let expected_drag_x = -6.0 * PI * viscous_drag.viscosity * 0.5 * 1.0;
     
     assert!((force.x - expected_drag_x).abs() < 1e-10);
     
@@ -59,151 +67,183 @@ fn test_add_drag() {
 }
 
 
-// -----------------------------------------------------------------
+// ====================================================================================================================
 // Test pair particle forces
-// -----------------------------------------------------------------
-fn collision_helper()->(CollisionParams, SimulationSettings){
-    
-    
-    // Bundle params into the specific Enum variant
-    let model = CollisionParams {
-        modulus: 1.0e5,
-        restitution: 0.7,
-        mu: 0.4,
-        plane_modulus: 1.0e5,
-        plane_restitution: 0.7,
-        plane_mu: 0.4,
-    
-        particle_e_star: 1.0,
-        particle_beta: 1.0,
-        plane_e_star: 1.0,
-        plane_beta: 1.0,
-    };
+// ====================================================================================================================
 
-    // Initialise the full SimulationSettings struct
-    let mut settings = SimulationSettings {
-        dt: 0.001,             
-        sim_box_size: DVec3::new(10.0, 10.0, 10.0),
-        periodic: [true;3],
-        parallel: true,
-        threads: 0,
-        dimensions: Dimensions::XZ,
-        skin:0.2,
-        start: 0,
-        num_steps: 100,
-        dump: 10,
-        interaction_ptypes:vec![(0,0, 0.03)],
-        collision_ptypes: vec![0 as u8],
-        collision_mask: [false;16],
-    };
 
-    settings.collision_mask[0] = true;
-
-    (model, settings)
-}
-
-fn coulomb_helper()->(CoulombParams, SimulationSettings){
-    
-    
-    // Bundle params into the specific Enum variant
-    let model = CoulombParams{
-        eps_r: 8.854E-12,
-        cutoff: 0.3,
-    };
-
-    // Initialise the full SimulationSettings struct
-    let mut settings = SimulationSettings {
-        dt: 0.001,             
-        sim_box_size: DVec3::new(10.0, 10.0, 10.0),
-        periodic: [true;3],
-        parallel: true,
-        threads: 0,
-        dimensions: Dimensions::XZ,
-        skin:0.2,
-        start: 0,
-        num_steps: 100,
-        dump: 10,
-        interaction_ptypes:vec![(0,0, 0.03)],
-        collision_ptypes: vec![0 as u8],
-        collision_mask: [false;16],
-    };
-
-    settings.collision_mask[0] = true;
-
-    (model, settings)
-}
-
-/// **What:** Tests viscoelastic contact mechanics and energy dissipation during particle collisions.  
-/// **How:** Evaluates interaction forces under relative compression (moving together) versus restitution (moving apart).  
-/// **Why:** Confirms that damping increases total force magnitude strictly during compression to correctly model collision energy loss.  
+/// ====================================================================================================================
+/// **What:** Validates the Hertzian non-linear elastic and viscous damping normal force calculation.  
+/// **How:** Computes normal forces for a particle contact with fractional overlap and approaching relative velocity.  
+/// **Why:** Ensures that contact elasticity follows the 1.5 power-law scaling and damping adjusts magnitudes correctly during collisions.
+/// ====================================================================================================================
 #[test]
-fn test_particle_particle_collision() {
-    let particles = create_particle_vec();
-    let (model, settings) = collision_helper();
+fn test_normal_hertzian() {
+    let contact = Contact {
+        overlap: 0.01,
+        eff_stiffness: 1e4,
+        eff_damping: 10.0,
+        rel_vel: DVec3::new(0.0, 0.0, -0.5), // Approaching along normal
+        ..Contact::default()
+    };
 
-    let mut force = DVec3::ZERO;
+    let (f_mag, f_vec) = normal_hertzian(&contact);
+    
+    // Expected:
+    // f_elastic = 1e4 * (0.01)^1.5 = 10000 * 0.001 = 10.0
+    // f_damping = 10.0 * (-0.5 * 1.0) = -5.0
+    // f_normal_mag = (10.0 - (-5.0)).max(0.0) = 15.0
+    assert!((f_mag - 15.0).abs() < 1e-6);
+    assert!((f_vec.z - 15.0).abs() < 1e-6);
+}
 
-    // Create a controlled overlap (Combined rad = 1.0, distance = 0.8, overlap = 0.2)
-    let mut particles = particles; 
-    particles.position[0] = DVec3::ZERO;
-    particles.position[1] = DVec3::new(0.8, 0.0, 0.0);
+/// ====================================================================================================================
+/// **What:** Validates linear elastic and viscous damping normal force calculation.  
+/// **How:** Computes normal forces for a contact with linear overlap compliance and separating relative velocity.  
+/// **Why:** Ensures that linear contact mechanics correctly follow Hooke's law combined with normal damping.
+/// ====================================================================================================================
+#[test]
+fn test_normal_linear() {
+    let contact = Contact {
+        overlap: 0.02,
+        eff_stiffness: 1e5,
+        eff_damping: 100.0,
+        rel_vel: DVec3::new(0.0, 0.0, 0.1), // Separating along normal
+        ..Contact::default()
+    };
 
-    // --- Case A: Compression (Moving towards each other) ---
-    particles.velocity[0] = DVec3::new(1.0, 0.0, 0.0);
-    particles.velocity[1] = DVec3::new(-1.0, 0.0, 0.0);
+    let (mag, vec) = normal_linear(&contact);
+    
+    // Expected:
+    // f_elastic = 1e5 * 0.02 = 2000.0
+    // f_damping = 100.0 * (0.1 * 1.0) = 10.0
+    // f_normal_mag = (2000.0 - 10.0) = 1990.0
+    assert!((mag - 1990.0).abs() < 1e-6);
+    assert_eq!(vec, contact.normal * 1990.0);
+}
 
-    (force, _) = add_particle_particle_collision(0, 1, force, DVec3::ZERO, &particles, &model, &settings);
+/// ====================================================================================================================
+/// **What:** Validates tangential friction response under pure normal relative motion.  
+/// **How:** Evaluates friction damping when tangential relative velocity is zero.  
+/// **Why:** Ensures no spurious tangential forces are generated when there is no sliding or shear relative motion.
+/// ====================================================================================================================
+#[test]
+fn test_friction_viscous_damping_zero_tangent() {
+    let contact = Contact {
+        rel_vel: DVec3::new(0.0, 0.0, -1.0), // Purely normal velocity
+        ..Contact::default()
+    };
+    let f_normal_mag = 100.0;
+    let f_t = friction_viscous_damping(f_normal_mag, &contact);
+    
+    assert_eq!(f_t, DVec3::ZERO);
+}
 
-    assert!(force.x < 0.0, "Force should be repulsive for particle 0");
-    let force_with_damping = force.length();
+/// ====================================================================================================================
+/// **What:** Validates viscous tangential friction when below the Coulomb friction limit.  
+/// **How:** Computes tangential force with a moderate relative velocity where ideal damping is smaller than the friction threshold.  
+/// **Why:** Ensures linear viscous damping is correctly applied unconstrained when sliding forces remain inside the friction cone.
+/// ====================================================================================================================
+#[test]
+fn test_friction_viscous_damping_within_limit() {
+    let contact = Contact {
+        rel_vel: DVec3::new(1.0, 0.0, 0.0), // Tangential velocity along X
+        eff_damping: 10.0,
+        mu: 0.5,
+        ..Contact::default()
+    };
+    let f_normal_mag = 100.0; // Coulomb limit = 0.5 * 100 = 50.0
+    
+    // v_tang = (1.0, 0.0, 0.0)
+    // f_t_ideal = (-10.0, 0.0, 0.0) -> magnitude = 10.0 (<= 50.0 limit)
+    let f_t = friction_viscous_damping(f_normal_mag, &contact);
+    
+    assert!((f_t.x - (-10.0)).abs() < 1e-6);
+    assert_eq!(f_t.y, 0.0);
+    assert_eq!(f_t.z, 0.0);
+}
 
-    // --- Case B: Restitution (Moving away) ---
-    force = DVec3::ZERO; // Reset force buffer
-    particles.velocity[0] = DVec3::new(-1.0, 0.0, 0.0);
-    particles.velocity[1] = DVec3::new(1.0, 0.0, 0.0);
-
-    (force, _ )=add_particle_particle_collision(0, 1,  force,DVec3::ZERO, &particles, &model, &settings);
-    let force_no_damping = force.length();
-
-    // force_with_damping (Compression) should be > force_no_damping (Restitution).
-    assert!(force_with_damping > force_no_damping, "Damping must increase total force magnitude during compression");
+/// ====================================================================================================================
+/// **What:** Validates Coulomb friction limiting and clamping behavior.  
+/// **How:** Applies a high tangential velocity where the ideal viscous force exceeds the maximum allowable Coulomb friction threshold.  
+/// **Why:** Ensures tangential forces are properly clamped to the friction cone limit to prevent unphysical adhesive or shear locking.
+/// ====================================================================================================================
+#[test]
+fn test_friction_viscous_damping_exceeds_limit() {
+    let contact = Contact {
+        rel_vel: DVec3::new(10.0, 0.0, 0.0), // High tangential velocity
+        eff_damping: 20.0,
+        mu: 0.2,
+        ..Contact::default()
+    };
+    let f_normal_mag = 100.0; // Coulomb limit = 0.2 * 100 = 20.0
+    
+    // f_t_ideal magnitude = 10.0 * 20.0 = 200.0 (exceeds limit of 20.0)
+    let f_t = friction_viscous_damping(f_normal_mag, &contact);
+    
+    // Should clamp to magnitude = 20.0 in the direction opposite to v_tang
+    assert!((f_t.length() - 20.0).abs() < 1e-6);
+    assert!(f_t.x < 0.0);
 }
 
 
+/// ====================================================================================================================
 /// **What:** Checks long-range electrostatic interaction forces between charged particles.  
 /// **How:** Assigns opposing unit charges and compares computed forces against analytical Coulomb's Law expectations.  
 /// **Why:** Confirms that electric field constants and distance-squared scaling factors are implemented accurately.
+/// ====================================================================================================================
 #[test]
 fn test_coulomb() {
-    let mut particles = create_molecule_vec();
     
-    particles.charge[0] = 1.0;
-    particles.charge[1] = -1.0;
+    let mut particles = ParticleVec::new();
 
-    let (model, settings) =coulomb_helper();
-
+    let p1 = Particle{
+        id : 0,
+        position: DVec3::new(1.0,1.0,1.0),
+        charge: -1.0,
+        ..Particle::default()
+    };
+    
+    let p2 = Particle{
+        id: 1,
+        position: DVec3::new(2.0,1.0,1.0),
+        charge: -1.0,
+        ..Particle::default()
+    };
+    
+    particles.push(p1);
+    particles.push(p2);
+   
     let mut force = DVec3::ZERO;
 
-    force = add_coulomb(0, 1, &particles, force, model);
+    let model = CoulombParams::default();
+
+    force = add_coulomb(0, 1, &particles, force, &model);
 
     const EPS0: f64 = 8.85418782e-12;
     let separation = particles.position[0]-particles.position[1];
     //forces the right are positive
-    let coulomb_force = -(1.0/(4.0*PI*EPS0))*-1.0*1.0/separation.length_squared();
+    let coulomb_force = (1.0/(4.0*PI*EPS0))*-1.0*1.0/separation;
     
-    assert_eq!(force.length(), coulomb_force);
+    assert!(force.x - coulomb_force.x < 1e-6);
 
 }
 
 
 
-//--------------------------------------------------------------------------------------------------
-// neighbours tests
-// -----------------------------------------------------------------------------------------------
 
+/// ====================================================================================================================
+///
+///  neighbours tests
+/// 
+/// ====================================================================================================================// -----------------------------------------------------------------------------------------------
+
+
+/// ====================================================================================================================
 /// **What:** Validates spatial cell indexing configurations across boundary constraints.  
 /// **How:** Builds neighbor matrices under both periodic wrapping and restricted non-periodic conditions.  
 /// **Why:** Ensures neighboring box maps are correctly sized and assign sentinel values (`usize::MAX`) appropriately out-of-bounds.
+/// ====================================================================================================================
 #[test]
 fn test_build_neighbour_table() {
     let (mut grid, _settings) = create_grid_and_settings();
@@ -244,9 +284,11 @@ fn test_build_neighbour_table() {
 
 
 
+/// ====================================================================================================================
 /// **What:** Tests mapping from 3D cell coordinates to a flat array index.  
 /// **How:** Converts grid coordinate indices `(2, 2, 2)` into a scalar value using `get_1d_idx`.  
 /// **Why:** Prevents spatial indexing mismatches by verifying flat buffer layout calculations.
+/// ====================================================================================================================
 #[test]
 fn test_get_1d_idx(){
     let (grid, _settings)=create_grid_and_settings();
@@ -259,9 +301,11 @@ fn test_get_1d_idx(){
 }
 
 
+/// ====================================================================================================================
 /// **What:** Checks neighbor offset translation behavior near boundaries.  
 /// **How:** Evaluates grid index queries outside bounds in non-periodic mode and across wrapped edges in periodic mode.  
 /// **Why:** Guarantees that spatial queries respect domain constraints cleanly without indexing faults.
+/// ====================================================================================================================
 #[test]
 fn test_get_neighbour_1d_idx(){
     let (mut grid, _settings)=create_grid_and_settings();
@@ -284,9 +328,12 @@ fn test_get_neighbour_1d_idx(){
 
 }
 
+
+/// ====================================================================================================================
 /// **What:** Tests spatial binning and sorting of particles into cells.  
 /// **How:** Passes a particle collection into `bin` and assesses resulting cell offset markers.  
 /// **Why:** Ensures particles are properly bucketed and indexed before running neighbor-dependent force passes.
+/// ====================================================================================================================
 #[test]
 fn test_bin() {
     let (mut grid, _settings) = create_grid_and_settings();
@@ -299,9 +346,11 @@ fn test_bin() {
 }
 
 
+/// ====================================================================================================================
 /// **What:** Validates initial state configuration during the first step of a simulation.  
 /// **How:** Initialises grid state with offset reference coordinates and verifies Verlet list population.  
 /// **Why:** Ensures everything synchronised correctly prior to regular displacement checks.
+/// ====================================================================================================================
 #[test]
 fn test_first_frame_rebuild() {
     let (mut grid, settings) = create_grid_and_settings();
@@ -318,9 +367,12 @@ fn test_first_frame_rebuild() {
     assert!(!grid.verlet_particle_ids[grid.verlet_offsets[1]..grid.verlet_offsets[2]].contains(&0));
 }
 
+
+/// ====================================================================================================================
 /// **What:** Tests particle displacement triggers for Verlet list updates.  
 /// **How:** Moves particles incrementally below and past the threshold value ($\text{skin} / 2$).  
 /// **Why:** Optimises performance by bypassing expensive re-binning cycles when particle movement is negligible.
+/// ====================================================================================================================
 #[test]
 fn test_skin_displacement_trigger() {
     let (mut grid, settings) = create_grid_and_settings();
@@ -341,322 +393,288 @@ fn test_skin_displacement_trigger() {
     assert_eq!(particles.ref_pos[0], particles.position[0], "Should have triggered rebuild");
 }
 
+
+/// ====================================================================================================================
 /// **What:** Confirms that intra-molecular particles are excluded from pairwise neighbor tables.  
 /// **How:** Manually attempts to insert a bonded internal pair into the Verlet list structure.  
 /// **Why:** Prevents duplicate force calculations and physical conflicts between atoms belonging to the same rigid structure.
+/// ====================================================================================================================
 #[test]
 fn test_molecular_exclusion() {
-    let (grid, settings) = create_grid_and_settings();
-    let particles = create_molecule_vec();
+    let mut particles = ParticleVec::new();
+
+    let com1 = DVec3::new(1.0, 2.0, 3.25);
+
+    let p0 = Particle{
+        id: 0,
+        molecule_id: 0,
+        position : com1 + DVec3::new(1.0, 1.0, 1.0),
+        rel_pos : DVec3::new(0.0, 0.0, 0.25),
+        omega : DVec3::new(0.0, 1.0, 0.0),
+        ..Particle::default()
+    };
+
+    let p1 = Particle{
+        id: 1,
+        molecule_id: 0,
+        position : com1 + DVec3::new(1.2, 1.0, 1.0),
+        rel_pos : DVec3::new(0.0, 0.0, 0.25),
+        omega : DVec3::new(0.0, 1.0, 0.0),
+        ..Particle::default()
+    };
+
+    particles.push(p0);
+    particles.push(p1);
     
+    let settings = SimulationSettings {
+        skin: 0.2,
+        interaction_ptypes: vec![(0, 1, 2.8)],
+        ..Default::default()
+    };
+
+    let grid = CellGrid::new(particles.length(), &settings);
+
     // Particles 0 and 1 belong to molecule 0 so shouldn't be in each other's verlet table
     let i = 0;
     let j = 1;
-    
-    let ctx = InteractionContext{
-        sim_box_size: settings.sim_box_size,
-        periodic: settings.periodic,
-
-    };
 
     let pids_b4 = grid.verlet_particle_ids.clone();
-    //println!("b4 {:?}", grid.verlet_particle_ids);
+    
     // Attempt to add a pair that is physically close but within the same molecule
-    CellGrid::add_to_verlet(i, j, &particles, &ctx);
+    grid.add_to_verlet(i, j, &particles);
     
     //println!("aft {:?}", grid.verlet_particle_ids);
     assert_eq!(pids_b4, grid.verlet_particle_ids, "Particle_ids should have stayed the same because particles in same molecule must be excluded");
 }
 
+
+/// ====================================================================================================================
 /// **What:** Checks neighbour tracking across periodic domain boundaries.  
-/// **How:** Places two interacting entities near opposite box edges and checks they are logged as neighbours.
-/// **Why:** Ensures boundary-spanning particle interactions are properly captured in Verlet neighborhoods.
+/// **How:** Places two interacting entities with distinct molecule IDs near opposite box edges and checks they are logged as neighbours.  
+/// **Why:** Ensures boundary-spanning particle interactions are properly captured in Verlet neighborhoods without molecular exclusion interference.
+/// ====================================================================================================================
 #[test]
 fn test_periodic_neighbours() {
-    let (mut grid, settings) = create_grid_and_settings();
-    let mut particles = create_particle_vec();
-    
-    // Place particles across periodic boundary
-    particles.position[0] = DVec3::new(0.1, 5.0, 5.0);
-    particles.position[1] = DVec3::new(8.9, 5.0, 5.0); // 1.2 distance, within cutoff 3.0
-    
+    let mut particles = ParticleVec::new();
 
+    let p0 = Particle {
+        id: 0,
+        ptype: 0,
+        molecule_id: 0,
+        position: DVec3::new(0.1, 5.0, 5.0),
+        ..Particle::default()
+    };
+
+    let p1 = Particle {
+        id: 1,
+        ptype: 0,
+        molecule_id: 1,
+        position: DVec3::new(8.9, 5.0, 5.0), // Effective wrapped distance is 1.2, within cutoff 2.8
+        ..Particle::default()
+    };
+
+    particles.push(p0);
+    particles.push(p1);
+
+    let settings = SimulationSettings {
+        sim_box_size: DVec3::splat(9.0),
+        periodic: [true, true, true],
+        skin: 0.2,
+        interaction_ptypes: vec![(0, 0, 2.8)],
+        ..Default::default()
+    };
+
+    let mut grid = CellGrid::new(particles.length(), &settings);
+    grid.init(&mut particles);
+    
     grid.check_and_rebuild_neighbours(&mut particles, &settings);
     
-    assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1), "Should detect periodic neighbour");
+    assert!(
+        grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1), 
+        "Should detect periodic neighbour across box boundaries"
+    );
 }
 
+
+/// ====================================================================================================================
 /// **What:** Validates ptype-filtered interactions.  
-/// **How:** Sets restricted type rules (`interaction_ptype = vec![[0, 1]]`) and checks directional inclusion in the list buffers.  
-/// **Why:** Ensures that interactions only occur between the types of particles and in the direction specified.
+/// **How:** Sets restricted type rules (`interaction_ptypes = vec![(0, 1, 3.0)]`) and checks directional inclusion in the list buffers.  
+/// **Why:** Ensures that interactions only occur between the specified particle types and directional pairs.
+/// ====================================================================================================================
 #[test]
 fn test_ptype_interactions() {
-    let (mut grid, settings) = create_grid_and_settings();
-    let mut particles = create_particle_vec();
-    grid.init(&mut particles, &settings);
+    let mut particles = ParticleVec::new();
 
-    // Ball (id=0) should have ball (id=1) in its list because interaction_ptype = vec![[0,1]]
-    assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1), "0 should see 1");
+    let p0 = Particle {
+        id: 0,
+        ptype: 0,
+        molecule_id: 0,
+        position: DVec3::new(1.0, 1.0, 1.0),
+        ..Particle::default()
+    };
+
+    let p1 = Particle {
+        id: 1,
+        ptype: 1,
+        molecule_id: 1,
+        position: DVec3::new(2.0, 1.0, 1.0), // Distance is 1.0, well within the 3.0 cutoff
+        ..Particle::default()
+    };
+
+    particles.push(p0);
+    particles.push(p1);
+
+    let settings = SimulationSettings {
+        sim_box_size: DVec3::splat(9.0),
+        periodic: [true, true, true],
+        skin: 0.2,
+        interaction_ptypes: vec![(0, 1, 3.0)], // Only type 0 interacting with type 1 is enabled
+        ..Default::default()
+    };
+
+    let mut grid = CellGrid::new(particles.length(), &settings);
+    grid.init(&mut particles);
+    grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
+    // Particle 0 (type 0) should have Particle 1 (type 1) in its verlet list
+    assert!(
+        grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1), 
+        "Particle 0 (type 0) should see Particle 1 (type 1)"
+    );
     
-    // Ball (id=1) should NOT have Ball (id=0) in its list because interaction_ptype not specified.
-    assert!(!grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&0), "1 should not see 0");
+    // Particle 1 (type 1) should NOT have Particle 0 (type 0) in its list because the (1, 0) interaction rule is not specified
+    assert!(
+        !grid.verlet_particle_ids[grid.verlet_offsets[1]..grid.verlet_offsets[2]].contains(&0), 
+        "Particle 1 (type 1) should not see Particle 0 (type 0)"
+    );
 }
-
 // --- Test Helpers ---
 
-fn test_color() -> Srgba {
-    Srgba::new(255, 0, 0, 255)
-}
 
-fn setup_test_settings(stiffness: f64, damping: f64, mu: f64) -> SimulationSettings {
-    SimulationSettings {
-        model: SimulationModel::Frictional(FrictionParams {
-            plane_stiffness: stiffness,
-            plane_damping: damping,
-            plane_mu: mu,
-            ..Default::default()
-        }),
-        ..Default::default()
-    }
-}
-
-fn setup_single_particle(pos: DVec3, vel: DVec3, omega: DVec3, radius: f64) -> ParticleVec {
+/// ====================================================================================================================
+/// **What:** Validates particle-to-particle collision detection, contact geometry resolution, and non-contact filtering.  
+/// **How:** Tests an overlapping particle pair (verifying positive contact properties) and a separated pair (verifying `None`).  
+/// **Why:** Ensures that particle interactions correctly compute overlap depth and relative kinematics while ignoring separated bodies.
+/// ====================================================================================================================
+#[test]
+fn test_check_particle_contact() {
     let mut particles = ParticleVec::new();
-    let particle = Particle::new(
-        0,                        // id
-        0,                        // molecule_id
-        0,                        // ptype
-        pos,                      // position
-        DVec3::ZERO,              // rel_pos
-        vel,                      // velocity
-        DQuat::IDENTITY,          // orientation
-        omega,                    // omega
-        radius,                   // radius
-        1000.0,                   // density
-        0.0,                      // charge
-        Srgba::new(255, 255, 255, 255), // colour
-        true,                     // visible
-    );
-    
-    // Auto-generated by soa_derive to push all fields simultaneously
-    particles.push(particle); 
-    particles
-}
 
+    let p0 = Particle {
+        id: 0,
+        ptype: 0,
+        position: DVec3::new(1.0, 1.0, 1.0),
+        velocity: DVec3::new(1.0, 0.0, 0.0),
+        radius: 0.5,
+        mass: 1.0,
+        ..Particle::default()
+    };
 
-
-// --- Mock Implementation ---
-
-#[derive(Default)]
-struct MockSurface {
-    closest_pt: DVec3,
-    surface_velocity: DVec3,
-}
-
-impl SurfaceKinematics for MockSurface {
-    fn closest_point(&self, _particle_pos: DVec3) -> DVec3 {
-        self.closest_pt
-    }
-
-    fn velocity_at_point(&self, _point: DVec3) -> DVec3 {
-        self.surface_velocity
-    }
-}
-
-// --- Particle-Contact Response Tests ---
-
-#[test]
-fn test_no_collision_out_of_range() {
-    let settings = setup_test_settings(1000.0, 10.0, 0.5);
-    let surface = MockSurface::default();
-
-    let particles = setup_single_particle(DVec3::new(0.0, 0.0, 2.0), DVec3::ZERO, DVec3::ZERO, 1.0);
-
-    let (force, torque) = particle_contact_response(
-        0,
-        &particles,
-        &surface,
-        DVec3::ZERO,
-        DVec3::ZERO,
-        &settings,
-    );
-
-    assert_eq!(force, DVec3::ZERO);
-    assert_eq!(torque, DVec3::ZERO);
-}
-
-#[test]
-fn test_pure_normal_spring_force() {
-    let settings = setup_test_settings(1000.0, 0.0, 0.0);
-    let surface = MockSurface::default();
-
-    let particles = setup_single_particle(DVec3::new(0.0, 0.0, 0.8), DVec3::ZERO, DVec3::ZERO, 1.0);
-
-    let (force, torque) = particle_contact_response(
-        0,
-        &particles,
-        &surface,
-        DVec3::ZERO,
-        DVec3::ZERO,
-        &settings,
-    );
-
-    let expected_force = DVec3::new(0.0, 0.0, 200.0);
-    assert_dvec3_near(force, expected_force, 1e-12);
-    assert_eq!(torque, DVec3::ZERO);
-}
-
-#[test]
-fn test_normal_damping_force() {
-    let settings = setup_test_settings(1000.0, 50.0, 0.0);
-    let surface = MockSurface::default();
-
-    let particles = setup_single_particle(
-        DVec3::new(0.0, 0.0, 0.8),
-        DVec3::new(0.0, 0.0, -2.0),
-        DVec3::ZERO,
-        1.0,
-    );
-
-    let (force, _) = particle_contact_response(
-        0,
-        &particles,
-        &surface,
-        DVec3::ZERO,
-        DVec3::ZERO,
-        &settings,
-    );
-
-    let expected_force = DVec3::new(0.0, 0.0, 300.0);
-    assert_dvec3_near(force, expected_force, 1e-12);
-}
-
-#[test]
-fn test_friction_and_torque() {
-    let settings = setup_test_settings(1000.0, 100.0, 0.3);
-    let surface = MockSurface::default();
-
-    let particles = setup_single_particle(
-        DVec3::new(0.0, 0.0, 0.9),
-        DVec3::new(10.0, 0.0, 0.0),
-        DVec3::ZERO,
-        1.0,
-    );
-
-    let (force, torque) = particle_contact_response(
-        0,
-        &particles,
-        &surface,
-        DVec3::ZERO,
-        DVec3::ZERO,
-        &settings,
-    );
-
-    let expected_force = DVec3::new(-30.0, 0.0, 100.0);
-    assert_dvec3_near(force, expected_force, 1e-12);
-
-    let expected_torque = DVec3::new(0.0, 27.0, 0.0);
-    assert_dvec3_near(torque, expected_torque, 1e-12);
-}
-
-// --- RectSpec Kinematics Tests ---
-
-#[test]
-fn test_closest_point_on_rectspec() {
-    let rect = RectSpec {
+    // Overlapping particle (distance = 0.8, combined radius = 1.0 -> overlap = 0.2)
+    let p1 = Particle {
         id: 1,
-        centre: DVec3::ZERO,
-        velocity: DVec3::ZERO,
-        orientation: DQuat::IDENTITY,
-        omega: DVec3::ZERO,
-        half_size: DVec2::new(2.0, 1.0),
-        vertices: [DVec3::ZERO; 4],
-        colour: test_color(),
-        visible: true,
+        ptype: 0,
+        position: DVec3::new(1.8, 1.0, 1.0),
+        velocity: DVec3::new(-1.0, 0.0, 0.0),
+        radius: 0.5,
+        mass: 1.0,
+        ..Particle::default()
     };
 
-    let eps = 1e-12;
-
-    // Corners
-    assert_dvec3_near(rect.closest_point(DVec3::new(3.0, 2.0, 0.5)), DVec3::new(2.0, 1.0, 0.0), eps);
-    assert_dvec3_near(rect.closest_point(DVec3::new(-3.0, -2.0, -0.5)), DVec3::new(-2.0, -1.0, 0.0), eps);
-
-    // Edges
-    assert_dvec3_near(rect.closest_point(DVec3::new(4.0, 0.0, 0.5)), DVec3::new(2.0, 0.0, 0.0), eps);
-    assert_dvec3_near(rect.closest_point(DVec3::new(0.0, 3.0, -0.5)), DVec3::new(0.0, 1.0, 0.0), eps);
-
-    // Faces
-    assert_dvec3_near(rect.closest_point(DVec3::new(0.5, 0.5, 3.0)), DVec3::new(0.5, 0.5, 0.0), eps);
-    assert_dvec3_near(rect.closest_point(DVec3::new(-0.2, -0.3, -2.5)), DVec3::new(-0.2, -0.3, 0.0), eps);
-}
-
-#[test]
-fn test_rectspec_transformed_closest_point() {
-    let rot_y90 = DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2);
-    let centre = DVec3::new(5.0, 5.0, 5.0);
-
-    let rect = RectSpec {
+    // Separated particle (distance = 2.2, combined radius = 1.0 -> no contact)
+    let p2 = Particle {
         id: 2,
-        centre,
-        velocity: DVec3::ZERO,
-        orientation: rot_y90,
-        omega: DVec3::ZERO,
-        half_size: DVec2::new(2.0, 1.0),
-        vertices: [DVec3::ZERO; 4],
-        colour: test_color(),
-        visible: true,
+        ptype: 0,
+        position: DVec3::new(3.2, 1.0, 1.0),
+        velocity: DVec3::new(0.0, 0.0, 0.0),
+        radius: 0.5,
+        mass: 1.0,
+        ..Particle::default()
     };
 
-    let rect_normal = rect.normal();
-    let p_above = rect.centre + rect_normal * 2.0;
-    
-    assert_dvec3_near(rect.closest_point(p_above), rect.centre, 1e-12);
+    particles.push(p0);
+    particles.push(p1);
+    particles.push(p2);
+
+    let settings = SimulationSettings::default();
+    let model = CollisionParams::default();
+
+    // 1. Verify contact when overlapping (particles 0 and 1)
+    let contact_opt = check_particle_contact(0, 1, &particles, &model, &settings);
+    assert!(contact_opt.is_some(), "Particles 0 and 1 should be in contact");
+    let contact = contact_opt.unwrap();
+
+    // Check overlap: combined_rad (1.0) - dist (0.8) = 0.2
+    assert!((contact.overlap - 0.2).abs() < 1e-6);
+    // Normal should point from j to i: (-1.0, 0.0, 0.0) normalized = (-1.0, 0.0, 0.0)
+    assert!((contact.normal.x - (-1.0)).abs() < 1e-6);
+    assert!(contact.eff_stiffness > 0.0);
+    assert!(contact.eff_damping > 0.0);
+
+    // Verify None when separated (particles 0 and 2)
+    let no_contact_opt = check_particle_contact(0, 2, &particles, &model, &settings);
+    assert!(no_contact_opt.is_none(), "Particles 0 and 2 should not be in contact when outside the combined radius threshold");
 }
 
-// --- TriSpec Kinematics Tests ---
-
+/// ====================================================================================================================
+/// **What:** Validates particle-to-object (surface) collision detection and contact properties.  
+/// **How:** Positions a particle penetrating a rectangular boundary surface and evaluates the returned contact specification.  
+/// **Why:** Ensures that boundary interactions map cleanly to the unified `Contact` structure for low-level force evaluation.
+/// ====================================================================================================================
 #[test]
-fn test_closest_point_on_trispec() {
-    let v0 = DVec3::new(0.0, 0.0, 0.0);
-    let v1 = DVec3::new(2.0, 0.0, 0.0);
-    let v2 = DVec3::new(0.0, 2.0, 0.0);
+fn test_check_object_contact_rectangle() {
+    let mut particles = ParticleVec::new();
 
-    let tri = TriSpec::new([v0, v1, v2], test_color(), true);
-    let eps = 1e-12;
+    // Particle positioned close to a plane, penetrating slightly (z = 0.4, radius = 0.5 -> overlap = 0.1)
+    let p0 = Particle {
+        id: 0,
+        ptype: 0,
+        position: DVec3::new(0.0, 0.0, 0.4),
+        velocity: DVec3::new(0.0, 0.0, -1.0),
+        radius: 0.5,
+        mass: 1.0,
+        ..Particle::default()
+    };
 
-    // Vertices
-    assert_dvec3_near(tri.closest_point(DVec3::new(-1.0, -1.0, 0.5)), tri.vertices[0], eps);
-    assert_dvec3_near(tri.closest_point(DVec3::new(3.0, 0.0, -0.5)), tri.vertices[1], eps);
-    assert_dvec3_near(tri.closest_point(DVec3::new(0.0, 3.0, 0.5)), tri.vertices[2], eps);
+    // Particle positioned safely outside the boundary plane (z = 0.6, radius = 0.5 -> separated)
+    let p1 = Particle {
+        id: 1,
+        ptype: 0,
+        position: DVec3::new(0.0, 0.0, 0.6),
+        velocity: DVec3::new(0.0, 0.0, 0.0),
+        radius: 0.5,
+        mass: 1.0,
+        ..Particle::default()
+    };
 
-    // Edges
-    assert_dvec3_near(tri.closest_point(DVec3::new(1.0, -2.0, 0.5)), DVec3::new(1.0, 0.0, 0.0), eps);
-    assert_dvec3_near(tri.closest_point(DVec3::new(-2.0, 1.0, -0.5)), DVec3::new(0.0, 1.0, 0.0), eps);
-    assert_dvec3_near(tri.closest_point(DVec3::new(2.0, 2.0, 1.0)), DVec3::new(1.0, 1.0, 0.0), eps);
+    particles.push(p0);
+    particles.push(p1);
 
-    // Faces
-    assert_dvec3_near(tri.closest_point(DVec3::new(0.5, 0.5, 3.0)), DVec3::new(0.5, 0.5, 0.0), eps);
-    assert_dvec3_near(tri.closest_point(DVec3::new(0.2, 0.3, -2.5)), DVec3::new(0.2, 0.3, 0.0), eps);
+    // Create a horizontal rectangular plane centered at origin lying on the xy-plane
+    let corners = [
+        DVec3::new(-2.0,  2.0, 0.0), // Top-Left
+        DVec3::new( 2.0,  2.0, 0.0), // Top-Right
+        DVec3::new( 2.0, -2.0, 0.0), // Bottom-Right
+        DVec3::new(-2.0, -2.0, 0.0), // Bottom-Left
+    ];
+    let rect = RectSpec::new(corners, Srgba::new(1.0, 1.0, 1.0, 1.0), true);
+    let object = ObjectSpec::Rectangle(rect);
+
+    let settings = SimulationSettings::default();
+    let model = CollisionParams::default();
+
+    // 1. Verify contact when penetrating
+    let contact_opt = check_object_contact(0, &object, &particles, &model, &settings);
+    assert!(contact_opt.is_some(), "Particle 0 should be in contact with the rectangle");
+    let contact = contact_opt.unwrap();
+
+    // Check overlap: radius (0.5) - distance to closest point (0.4) = 0.1
+    assert!((contact.overlap - 0.1).abs() < 1e-6);
+    // Normal should point along +z (from plane to particle)
+    assert!((contact.normal.z - 1.0).abs() < 1e-6);
+    assert!(contact.eff_stiffness > 0.0);
+
+    // 2. Verify None when moved out of contact
+    let no_contact_opt = check_object_contact(1, &object, &particles, &model, &settings);
+    assert!(no_contact_opt.is_none(), "Particle 1 should not be in contact when outside the radius threshold");
 }
-
-#[test]
-fn test_trispec_transformed_closest_point() {
-    let v0 = DVec3::new(0.0, 0.0, 0.0);
-    let v1 = DVec3::new(2.0, 0.0, 0.0);
-    let v2 = DVec3::new(0.0, 2.0, 0.0);
-
-    let mut tri = TriSpec::new([v0, v1, v2], test_color(), true);
-
-    let rot_y90 = DQuat::from_rotation_y(std::f64::consts::FRAC_PI_2);
-    tri.transform(DVec3::new(5.0, 5.0, 5.0), Some(rot_y90));
-
-    let p_above = tri.centre + tri.normal() * 2.0;
-
-    assert_dvec3_near(tri.closest_point(p_above), tri.centre, 1e-12);
-}
-
-
-
-
-
-

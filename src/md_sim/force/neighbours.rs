@@ -8,7 +8,28 @@ use crate::md_sim::SimulationSettings;
 use crate::md_sim::utils::{check_delta, InteractionContext};
 use crate::md_sim::Forces;
 
+///------------------------------------------------------------------------------
+/// CellGrid
+///------------------------------------------------------------------------------
 /// A spatial hashing cell grid and Verlet list manager for accelerated pair-force calculations.
+/// 
+/// Fields:
+/// * `num_cells` - Number of spatial cells along the x, y, and z axes.
+/// * `cell_size` - Physical edge length of each spatial hashing cell.
+/// * `inv_cell_size` - Precalculated reciprocal of the cell size for fast binning.
+/// * `sim_box_size` - Dimensions of the simulation periodic boundary box.
+/// * `strides` - 1D linearization strides for the 3D cell grid layout.
+/// * `periodic` - Periodic boundary flags for each axis.
+/// * `neighbour_table` - Precomputed table of adjacent cell indices for each cell.
+/// * `cell_offsets` - Compressed sparse row (CSR) offset markers for particles in cells.
+/// * `cell_particle_ids` - Particle indices sorted by spatial cell binning.
+/// * `skin` - Verlet list skin thickness added to interaction cutoffs.
+/// * `verlet_offsets` - CSR offset markers for particle Verlet lists.
+/// * `verlet_particle_ids` - Flattened storage of neighboring particle IDs.
+/// * `counts` - Temporary work buffer for tracking neighbor counts per particle.
+/// * `last_particle_count` - Particle count recorded during the last list build.
+/// * `int_context` - Precomputed interaction rules and cutoff matrices.
+/// * `thread_pool` - Optional dedicated Rayon thread pool for grid and force parallelism.
 #[derive(Debug, Clone)]
 pub struct CellGrid {
     // Grid parameters
@@ -21,8 +42,8 @@ pub struct CellGrid {
     pub neighbour_table: Vec<Vec<usize>>,
 
     // Cell CSR storage
-    pub cell_offsets: Vec<usize>,       // Length: num_cells + 1
-    pub cell_particle_ids: Vec<usize>,  // Length: num_particles   
+    pub cell_offsets: Vec<usize>,        // Length: num_cells + 1
+    pub cell_particle_ids: Vec<usize>,   // Length: num_particles   
 
     // Verlet CSR storage
     pub skin: f64,
@@ -40,9 +61,21 @@ pub struct CellGrid {
 impl CellGrid {
     //----------------------------------------------------------------------
     // Public API of CellGrid
-    //---------------------------------------------------------------------- 
+    //----------------------------------------------------------------------  
 
+    ///------------------------------------------------------------------------------
+    /// new
+    ///------------------------------------------------------------------------------
     /// Creates and initializes a new cell grid spatial partitioning structure.
+    ///
+    /// # Arguments
+    ///
+    /// * `particle_count` - Initial expected number of particles in the simulation.
+    /// * `settings` - Global simulation configuration parameters.
+    ///
+    /// # Returns
+    ///
+    /// * `CellGrid` - The configured spatial grid and neighbor lookup manager.
     pub fn new(particle_count: usize, settings: &SimulationSettings) -> Self {
         let int_context = InteractionContext::new(settings);
 
@@ -106,20 +139,35 @@ impl CellGrid {
         grid
     }
 
+    ///------------------------------------------------------------------------------
+    /// init
+    ///------------------------------------------------------------------------------
     /// Initializes the cell grid and builds initial Verlet lists upon simulation startup.
+    ///
+    /// # Arguments
+    ///
+    /// * `particles` - Mutable reference to particle data buffers.
     pub fn init(&mut self, particles: &mut ParticleVec) {
         self.bin(particles);
         particles.ref_pos.copy_from_slice(&particles.position);
         self.rebuild_verlet_table(particles);
     }
 
-    /// Checks particle displacement and updates neighbour lists if necessary.
+    ///------------------------------------------------------------------------------
+    /// check_and_rebuild_neighbours
+    ///------------------------------------------------------------------------------
+    /// Checks particle displacement against the skin distance threshold and updates 
+    /// neighbor lists if necessary.
+    ///
+    /// # Arguments
+    ///
+    /// * `particles` - Mutable reference to particle state buffers.
+    /// * `settings` - Global simulation parameters.
     pub fn check_and_rebuild_neighbours(
         &mut self,
         particles: &mut ParticleVec,
         settings: &SimulationSettings,
     ) {
-        
         let threshold_sq = (settings.skin * 0.5).powi(2);
 
         let count_changed = particles.len() != self.last_particle_count;
@@ -144,7 +192,18 @@ impl CellGrid {
         }
     }
 
+    ///------------------------------------------------------------------------------
+    /// apply_pair_forces
+    ///------------------------------------------------------------------------------
     /// Computes all pairwise interactions in parallel using the Verlet neighbor lists.
+    ///
+    /// # Arguments
+    ///
+    /// * `f_buf` - Mutable force accumulation buffer for all particles.
+    /// * `t_buf` - Mutable torque accumulation buffer for all particles.
+    /// * `particles` - Reference to particle state buffers.
+    /// * `user_impl` - Force model implementation conforming to the `Forces` trait.
+    /// * `settings` - Global simulation parameters.
     pub fn apply_pair_forces<F: Forces + Sync>(
         &self,
         f_buf: &mut [DVec3],
@@ -205,6 +264,10 @@ impl CellGrid {
     // Grid Partitioning
     //-----------------------------------------------------------------------------------
 
+    ///------------------------------------------------------------------------------
+    /// build_neighbour_table
+    ///------------------------------------------------------------------------------
+    /// Precomputes valid adjacent cell indices (up to 26 neighbors) for every cell in the grid.
     pub(super) fn build_neighbour_table(&mut self) {
         const OFFSETS: [[i32; 3]; 26] = [
             [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
@@ -212,7 +275,7 @@ impl CellGrid {
             [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1],                    
             [0, 1, 1], [0, 1, -1], [0, -1, 1], [0, -1, -1],                    
             [1, 1, 1], [1, 1, -1], [1, -1, 1], [1, -1, -1],                    
-            [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1]                  
+            [-1, 1, 1], [-1, 1, -1], [-1, -1, 1], [-1, -1, -1]                 
         ];
 
         let (nx, ny, nz) = (self.num_cells[0], self.num_cells[1], self.num_cells[2]);
@@ -236,6 +299,14 @@ impl CellGrid {
         }
     }
 
+    ///------------------------------------------------------------------------------
+    /// bin
+    ///------------------------------------------------------------------------------
+    /// Bins all particles into their corresponding spatial grid cells.
+    ///
+    /// # Arguments
+    ///
+    /// * `particles` - Reference to particle state buffers containing positions.
     pub(super) fn bin(&mut self, particles: &ParticleVec) {
         let mut cell_counts = vec![0; self.num_cells[0] * self.num_cells[1] * self.num_cells[2]];
         
@@ -260,6 +331,18 @@ impl CellGrid {
         }
     }
 
+    ///------------------------------------------------------------------------------
+    /// get_cell_idx_from_pos
+    ///------------------------------------------------------------------------------
+    /// Computes the 1D linear cell index corresponding to a given 3D spatial position vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `pos` - 3D position vector of a particle.
+    ///
+    /// # Returns
+    ///
+    /// * `usize` - The 1D index of the spatial cell containing the position.
     #[inline(always)]
     pub(super) fn get_cell_idx_from_pos(&self, pos: &DVec3) -> usize {
         let x = (pos.x * self.inv_cell_size) as usize;
@@ -273,11 +356,20 @@ impl CellGrid {
         ix + iy * self.strides[1] + iz * self.strides[2]
     }
 
+    ///------------------------------------------------------------------------------
+    /// get_1d_idx
+    ///------------------------------------------------------------------------------
+    /// Converts 3D integer grid coordinates `(ix, iy, iz)` into a 1D linear index.
     #[inline(always)]
     pub(super) fn get_1d_idx(&self, ix: usize, iy: usize, iz: usize) -> usize {
         ix + iy * self.strides[1] + iz * self.strides[2]
     }
 
+    ///------------------------------------------------------------------------------
+    /// get_neighbour_1d_idx
+    ///------------------------------------------------------------------------------
+    /// Computes the 1D neighbor cell index given base coordinates and an offset vector, 
+    /// handling periodic boundary wrap-around or boundaries.
     #[inline(always)]
     pub(super) fn get_neighbour_1d_idx(&self, ix: usize, iy: usize, iz: usize, offsets: [i32; 3]) -> usize {
         let mut coords = [ix as i32, iy as i32, iz as i32];
@@ -297,7 +389,10 @@ impl CellGrid {
         self.get_1d_idx(coords[0] as usize, coords[1] as usize, coords[2] as usize)
     }
 
-    
+    ///------------------------------------------------------------------------------
+    /// resize_buffers
+    ///------------------------------------------------------------------------------
+    /// Resizes internal particle count and Verlet list buffers when the particle count changes.
     fn resize_buffers(&mut self, particle_count: usize) {
         self.counts.resize(particle_count, 0);
         self.verlet_offsets.resize(particle_count + 1, 0);
@@ -308,6 +403,14 @@ impl CellGrid {
     // Verlet List Construction
     //------------------------------------------------------------------------------------
     
+    ///------------------------------------------------------------------------------
+    /// rebuild_verlet_table
+    ///------------------------------------------------------------------------------
+    /// Rebuilds the Verlet neighbor list using a three-pass algorithm (Count, Prefix Sum, Fill).
+    ///
+    /// # Arguments
+    ///
+    /// * `particles` - Reference to particle state buffers.
     pub(super) fn rebuild_verlet_table(&mut self, particles: &ParticleVec) {
         let offsets = &self.cell_offsets;
         let indices = &self.cell_particle_ids;
@@ -369,6 +472,11 @@ impl CellGrid {
         }
     }
 
+    ///------------------------------------------------------------------------------
+    /// add_to_verlet
+    ///------------------------------------------------------------------------------
+    /// Evaluates whether a particle pair `(i, j)` falls within the interaction cutoff 
+    /// radius and should be included in the Verlet list.
     #[inline]
     pub(super) fn add_to_verlet(&self, i: usize, j: usize, p: &ParticleVec) -> bool {
         let ptype_i = p.ptype[i];

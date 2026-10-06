@@ -58,6 +58,12 @@ impl ObjectSpec {
     }
 }
 
+pub trait SurfaceKinematics {
+    fn closest_point(&self, particle_pos: DVec3) -> DVec3;
+    fn velocity_at_point(&self, point: DVec3) -> DVec3;
+    fn normal(&self) -> DVec3;
+}
+
 ///------------------------------------------------------------------------------
 /// LineSpec
 /// 
@@ -285,10 +291,7 @@ impl BoxSpec {
     }
 }
 
-pub trait SurfaceKinematics {
-    fn closest_point(&self, particle_pos: DVec3) -> DVec3;
-    fn velocity_at_point(&self, point: DVec3) -> DVec3;
-}
+
 
 
 ///------------------------------------------------------------------------------
@@ -488,6 +491,10 @@ impl SurfaceKinematics for RectSpec {
 
     fn velocity_at_point(&self, point: DVec3) -> DVec3 {
         self.velocity + self.omega.cross(point - self.centre)
+    }
+
+    fn normal(&self) -> DVec3 {
+        self.normal()
     }
 }
 
@@ -693,6 +700,10 @@ impl SurfaceKinematics for TriSpec {
 
     fn velocity_at_point(&self, point: DVec3) -> DVec3 {
         self.velocity + self.omega.cross(point - self.centre)
+    }
+
+    fn normal(&self) -> DVec3 {
+        self.normal()
     }
 }
 

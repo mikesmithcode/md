@@ -20,7 +20,7 @@ from utils.particles_objects import create_rectangle, create_line, generate_dipo
 in the output / config directory."""
 
 
-config, particles_filepath, objects_filepath, var_filepath = get_config()
+config, particles_filepath, objects_filepath = get_config()
 #========================================================================
 # Read simulation parameters to get simulation box dimensions
 #========================================================================
@@ -95,16 +95,6 @@ df = pl.concat(molecules)
 # Save to file
 #========================================================================
 df.write_parquet(particles_filepath)
-
-#========================================================================
-# Create and save variables.json initialisation in output/config
-#========================================================================
-variables = {
-    "up": [0.0, 0.0, 1.0],
-    "angle": 0.0
-}
-
-save_dict_to_json(variables, var_filepath)
 
 #========================================================================
 # Summarise

@@ -164,3 +164,22 @@ impl InteractionContext {
         }
     }
 }
+
+impl Default for InteractionContext{
+    fn default()->Self{
+        let default_radius = 1.0 + 0.1; // e.g. cutoff + skin
+        let matrix = [[default_radius.powi(2); MAX_PTYPES]; MAX_PTYPES];
+
+        Self {
+            sim_box_size: DVec3::splat(9.0),
+            periodic: [true; 3],
+            max_cutoff: 1.0,
+            search_radius_sq_matrix: matrix,
+        }
+    }
+}
+
+
+        
+        
+        interaction_ptypes: vec![(0, 1, 2.8)],

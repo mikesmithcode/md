@@ -8,12 +8,12 @@ mod contact;
 
 // Re-export the traits and key functions for easier access
 // This allows you to call forces::Force instead of forces::force::Force
-pub use single::{add_weight, add_directional_weight, add_viscous_drag};
-pub use objects::{check_surface_contact};
-pub use pairwise::{check_particle_contact, CollisionParams, add_coulomb, CoulombParams};
+pub use contact::{check_particle_contact,check_object_contact, ContactManager};
 pub use neighbours::CellGrid;
-pub use contact::{normal_linear, normal_hertzian, friction_viscous_tangential, friction_cundall_strack, ContactManager};
-//pub use bonds::*;
+pub use objects::{check_surface_contact};
+pub use pairwise::{normal_linear, normal_hertzian, friction_viscous_damping, CollisionParams, add_coulomb, CoulombParams};
+pub use single::{add_gravity, Gravity, add_viscous_drag, ViscousDrag};
+
 
 
 
@@ -24,35 +24,53 @@ use crate::md_sim::{ObjectSpec, SimulationSettings};
 #[cfg(test)]
 mod tests;
 
+///------------------------------------------------------------------------------
+/// Forces Trait
+///------------------------------------------------------------------------------
 /// Defines the physical interactions, force constraints, and update phases for a simulation.
 ///
-/// The `Forces` trait controls the forces (and torques) applied during the simulation
-/// Implementations of this trait define the governing dynamics of a simulation script, 
-/// separating computations into pair-wise interactions, single-body forces, object collisions, 
+/// The `Forces` trait controls the forces and torques applied during the simulation. 
+/// Implementations define the governing dynamics of a simulation script, separating 
+/// computations into pair-wise interactions, single-body forces, object collisions, 
 /// or internal molecular forces.
 pub trait Forces {
+    ///------------------------------------------------------------------------------
+    /// has_pair_forces
+    ///------------------------------------------------------------------------------
     /// Indicates whether the simulation requires pair-wise force calculations.
     ///
     /// If `false`, the engine skips spatial binning and Verlet list construction, 
     /// significantly improving performance for non-interacting or external-field-only systems.
     fn has_pair_forces(&self) -> bool { true }
 
+    ///------------------------------------------------------------------------------
+    /// has_single_forces
+    ///------------------------------------------------------------------------------
     /// Indicates whether the simulation requires single-body force calculations.
     ///
     /// If `false`, the engine will skip the unary `update_single_forces` traversal loop.
     fn has_single_forces(&self) -> bool { true }
 
+    ///------------------------------------------------------------------------------
+    /// has_object_forces
+    ///------------------------------------------------------------------------------
     /// Indicates whether the simulation includes interactions between particles and geometric objects.
     ///
     /// Disabled (`false`) by default to avoid unnecessary evaluation overhead.
     fn has_object_forces(&self) -> bool { false }
 
+    ///------------------------------------------------------------------------------
+    /// has_internal_forces
+    ///------------------------------------------------------------------------------
     /// Indicates whether the simulation requires internal multi-component particle forces.
     ///
     /// Disabled (`false`) by default. Set to `true` if your system uses composite particles 
     /// requiring internal structural force and torque distributions.
     fn has_internal_forces(&self) -> bool { false }
 
+    ///------------------------------------------------------------------------------
+    /// update_single_forces
+    ///------------------------------------------------------------------------------
     /// Calculates forces and torques that act on a single particle.
     ///
     /// This method is called once per particle in an $O(N)$ loop. It is designed for 
@@ -61,12 +79,12 @@ pub trait Forces {
     ///
     /// # Arguments
     ///
-    /// * `i` - Index of the particle being updated.
-    /// * `force` - Accumulated incoming force vector for particle `i`.
-    /// * `torque` - Accumulated incoming torque vector for particle `i`.
-    /// * `particles` - Reference to the particle state buffers (positions, velocities, types, etc.).
-    /// * `settings` - Global simulation parameters.
-    /// * `time` - Current simulation timestamp.
+    /// * `_i` - Index of the particle being updated.
+    /// * `force` - Accumulated incoming force vector for particle `_i`.
+    /// * `torque` - Accumulated incoming torque vector for particle `_i`.
+    /// * `_particles` - Reference to the particle state buffers (positions, velocities, types, etc.).
+    /// * `_settings` - Global simulation parameters.
+    /// * `_time` - Current simulation timestamp.
     ///
     /// # Returns
     ///
@@ -79,20 +97,26 @@ pub trait Forces {
         _particles: &ParticleVec, 
         _settings: &SimulationSettings,
         _time: f64
-    ) -> (DVec3, DVec3){(force, torque)}
+    ) -> (DVec3, DVec3) {
+        (force, torque)
+    }
 
+    ///------------------------------------------------------------------------------
+    /// update_object_forces
+    ///------------------------------------------------------------------------------
     /// Calculates contact forces (or torques) between individual particles and simulation objects such as Rectangles.
     ///
-    /// Objects are passive they can be static or animated but don't respond to particle forces but do apply them to the particle.
+    /// Objects are passive: they can be static or animated, but do not respond to particle forces 
+    /// while still applying forces back to the particle.
     ///
     /// # Arguments
     ///
-    /// * `i` - Index of the interacting particle.
+    /// * `_i` - Index of the interacting particle.
     /// * `force` - Accumulated incoming force vector for the particle.
     /// * `torque` - Accumulated incoming torque vector for the particle.
-    /// * `particles` - Reference to the particle state buffers.
-    /// * `objects` - Reference to the object specification and boundary geometries.
-    /// * `settings` - Global simulation parameters.
+    /// * `_particles` - Reference to the particle state buffers.
+    /// * `_objects` - Reference to the object specification and boundary geometries.
+    /// * `_settings` - Global simulation parameters.
     ///
     /// # Returns
     ///
@@ -105,22 +129,27 @@ pub trait Forces {
         _particles: &ParticleVec, 
         _objects: &ObjectSpec,
         _settings: &SimulationSettings
-    ) -> (DVec3, DVec3){(force, torque)}
+    ) -> (DVec3, DVec3) {
+        (force, torque)
+    }
 
+    ///------------------------------------------------------------------------------
+    /// update_pair_forces
+    ///------------------------------------------------------------------------------
     /// Calculates interaction forces between two particles within a specified cutoff distance.
     ///
-    /// This method is invoked via the `CellGrid` manager for verified neighbour pairs $(i, j)$ 
+    /// This method is invoked via the `CellGrid` manager for verified neighbor pairs $(i, j)$ 
     /// fetched from the Verlet lists. Implementations should compute potentials like Lennard-Jones, 
     /// electrostatic, or Hertzian contact forces.
     ///
     /// # Arguments
     ///
-    /// * `i` - Index of the primary particle.
-    /// * `j` - Index of the neighboring particle.
+    /// * `_i` - Index of the primary particle.
+    /// * `_j` - Index of the neighboring particle.
     /// * `force` - Accumulated incoming force vector.
     /// * `torque` - Accumulated incoming torque vector.
-    /// * `particles` - Reference to the particle state buffers.
-    /// * `settings` - Global simulation parameters.
+    /// * `_particles` - Reference to the particle state buffers.
+    /// * `_settings` - Global simulation parameters.
     ///
     /// # Returns
     ///
@@ -133,9 +162,14 @@ pub trait Forces {
         torque: DVec3,
         _particles: &ParticleVec, 
         _settings: &SimulationSettings
-    ) -> (DVec3, DVec3){(force, torque)}
+    ) -> (DVec3, DVec3) {
+        (force, torque)
+    }
 
-    /// Calculates internal forces for molecules composed of multiple particles
+    ///------------------------------------------------------------------------------
+    /// update_internal_forces
+    ///------------------------------------------------------------------------------
+    /// Calculates internal forces for molecules composed of multiple particles.
     ///
     /// # Arguments
     ///
@@ -153,5 +187,9 @@ pub trait Forces {
         // Optional: No internal forces by default.
     }
 
+    ///------------------------------------------------------------------------------
+    /// cleanup_contacts
+    ///------------------------------------------------------------------------------
+    /// Performs cleanup tasks for contact managers or state caches at the end of an integration step.
     fn cleanup_contacts(&self) {}
 }

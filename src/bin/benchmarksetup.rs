@@ -22,73 +22,48 @@ use md::md_sim::utils::file_io::{SimulationContext, parse_simulation_args, get_l
 use md::md_sim::particle::MoleculeData;
 
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Variables {
-    pub up: DVec3,
-    pub angle: f64,
-
-    #[serde(skip)]
-    pub source_path: Option<PathBuf>,
-}
-
-impl Variables {
-    /// Create a brand-new instance manually without a source file
-    pub fn new(up: DVec3, angle: f64) -> Self {
-        Self {
-            up,
-            angle,
-            source_path: None,
-        }
-    }
-
-    /// Scans the directory for the latest variables file, loads it, 
-    /// and records its path. Returns `Some(Variables)` or `None`.
-    pub fn load_latest(dir_path: &Path) -> Option<Self> {
-        let path = get_latest_file(dir_path, "variables", "json")?;
-        
-        let file = File::open(&path).ok()?;
-        let reader = BufReader::new(file);
-        
-        let mut vars: Variables = serde_json::from_reader(reader).ok()?;
-        vars.source_path = Some(path);
-        Some(vars)
-    }
-
-    /// Saves variables to a 10-digit zero-padded step file if a source path exists.
-    /// Returns `Some(())` on success, or `None` if it skipped or failed.
-    pub fn save_at_step(&self, step: usize) -> Option<()> {
-        let source_path = self.source_path.as_ref()?;
-
-        let parent_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
-        let target_path = parent_dir.join(format!("variables_{:010}.json", step));
-
-        let file = File::create(target_path).ok()?;
-        let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, self).ok()?;
-        
-        Some(())
-    }
-}
+    
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ForceModel {
     pub collision: CollisionParams,
+    pub gravity: Gravity,
+    #[serde(skip)]
+    pub source_path: PathBuf,
 }
 
 impl ForceModel {
-    /// Load force model parameters from a JSON file path (panics cleanly if missing/invalid)
-    pub fn load<P: AsRef<Path>>(path: P) -> Self {
-        let file = File::open(path).expect("Failed to open model config file");
+    /// Scans the directory for the latest variables file, loads it, 
+    /// and records its path.
+    pub fn load_latest(dir_path: &Path) -> Self {
+        let path = get_latest_file(dir_path, "model", "json")?;
+        
+        let file = File::open(&path).ok()?;
         let reader = BufReader::new(file);
-        serde_json::from_reader(reader).expect("Failed to parse model config JSON")
+        
+        let mut model: ForceModel = serde_json::from_reader(reader).ok()?;
+        model.source_path = path;
+        
+        model
+    }
+
+    /// Saves variables to a 10-digit zero-padded step file if a source path exists.
+    pub fn save_at_step(&self, step: usize) {
+        let source_path = self.source_path.as_ref()?;
+
+        let parent_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
+        let target_path = parent_dir.join(format!("model_{:010}.json", step));
+
+        let file = File::create(target_path).ok()?;
+        let writer = BufWriter::new(file);
+        serde_json::to_writer_pretty(writer, self).ok()?;
     }
 }
+
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SimUpdate {
     pub model: ForceModel,
-    #[serde(default)]
-    pub variable: Option<Variables>,
     #[serde(skip)]
     pub contact_manager: ContactManager,
 }
@@ -96,15 +71,11 @@ pub struct SimUpdate {
 impl SimUpdate {
     pub fn new(ctx: &SimulationContext) -> Self {
         // Load the mandatory static model config
-        let model = ForceModel::load(&ctx.paths.model_config);
-
-        // Automatically scan the output directory for the latest variables_<10-digits>.json file.
-        // Returns Some(Variables) if a restart file exists, or None if starting fresh.
-        let variable = Variables::load_latest(&ctx.paths.output.join("config"));
+        let model = ForceModel::load_latest(&&ctx.paths.output.join("config"));
 
         let contact_manager = ContactManager::new();
 
-        Self { model, variable, contact_manager }
+        Self { model, contact_manager }
     }
 }
 

@@ -11,113 +11,146 @@ use glam::DVec3;
 use std::f64::consts::PI;
 use serde::{Serialize,Deserialize};
 
-use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::ParticleVec;
-use crate::md_sim::utils::check_delta;
 use crate::md_sim::force::contact::{Contact};
 
 
 
 
+///--------------------------------------------------------------------------------------------
+/// 
+/// Pairwise contact forces
+/// 
+/// -------------------------------------------------------------------------------------------
 
-
-/// Calculates collision geometry, relative kinematics, and effective contact properties 
-/// between two particles. 
-/// 
-/// N.B. Because each particle is stored in each other's Verlet list (i.e., $i$ knows about $j$ 
-/// and $j$ knows about $i$), Newton's third law ($\mathbf{F}_{ij} = -\mathbf{F}_{ji}$) is handled 
-/// by evaluating this function symmetrically for both $(i, j)$ and $(j, i)$ pairs.
-/// 
-/// # Physical Model & Processing Steps
-/// 
-/// 1. **Collision Mask Filtering**:
-///    - Exits early if particle $i$'s type is excluded by `settings.collision_mask`.
-/// 2. **Geometry & Overlap**:
-///    - Position delta with periodic boundary handling: $\boldsymbol{\delta} = \mathbf{p}_i - \mathbf{p}_j$
-///    - Center-to-center distance: $\text{dist} = \Vert{}\boldsymbol{\delta}\Vert{}$
-///    - Overlap: $\text{overlap} = (R_i + R_j) - \text{dist}$
-///    - Unit normal vector (pointing from $j$ to $i$): $\mathbf{n} = \frac{\boldsymbol{\delta}}{\text{dist}}$
-/// 3. **Effective Properties & Hertzian Contact Parameters**:
-///    - Reduced mass: $m_{\text{eff}} = \begin{cases} \frac{m_i m_j}{m_i + m_j} & \text{if } j \text{ is a collision object} \\ m_i & \text{otherwise} \end{cases}$
-///    - Effective radius: $r_{\text{eff}} = \frac{R_i R_j}{R_i + R_j}$
-///    - Contact stiffness ($k_n$): $k_n = \frac{4}{3} E^* \sqrt{r_{\text{eff}}}$
-///    - Damping coefficient ($\gamma_n$): $\gamma_n = 2 \beta \sqrt{m_{\text{eff}} k_n}$
-/// 4. **Kinematics & Contact Points**:
-///    - Contact offset vectors: $\mathbf{r}_i = \mathbf{n} \left(-R_i + \frac{\text{overlap} \cdot R_j}{R_i + R_j}\right)$, $\mathbf{r}_j = \mathbf{n} \left(R_j - \frac{\text{overlap} \cdot R_i}{R_i + R_j}\right)$
-///    - Relative surface velocity: $\mathbf{v}_{\text{rel}} = (\mathbf{v}_i + \boldsymbol{\omega}_i \times \mathbf{r}_i) - (\mathbf{v}_j + \boldsymbol{\omega}_j \times \mathbf{r}_j)$
-/// 
+///------------------------------------------------------------------------------
+/// normal_hertzian
+///------------------------------------------------------------------------------
+/// Computes the normal Hertzian contact force between two spherical particles.
+///
+/// This combines a nonlinear Hertzian elastic restoring force ($\delta^{3/2}$) 
+/// with a linear viscous damping term. Note that effective radii and material 
+/// moduli are implicitly accounted for via the precalculated effective stiffness 
+/// (`eff_stiffness`) stored within the contact state.
+///
+/// The resulting force magnitude is bounded at zero to prevent attractive 
+/// (tensile) forces, as standard dry DEM contacts cannot sustain tension.
+///
 /// # Arguments
-/// 
-/// * `i`, `j` - Indices of the interacting particles.
-/// * `particles` - Reference to the particle data structure (position, velocity, omega, radius, mass, type).
-/// * `model` - Collision parameter set (`CollisionParams`) containing elastic modulus, damping factors, and friction coefficients.
-/// * `settings` - Global simulation configuration (`SimulationSettings`) for box size and periodicity.
-/// 
+///
+/// * `contact` - A reference to the active [`Contact`] struct containing overlap depth, 
+///               relative velocity, contact normal, and precalculated material/geometric coefficients.
+///
 /// # Returns
-/// 
-/// * `Some(Contact)` containing the resolved geometry, kinematics, and material properties if overlapping.
-/// * `None` if particles are separated or filtered out by collision masks.
-pub fn check_particle_contact(
-    i: usize, 
-    j: usize, 
-    particles: &ParticleVec, 
-    model: &CollisionParams, 
-    settings: &SimulationSettings
-) -> Option<Contact>{ 
+///
+/// A tuple containing:
+/// * `0`: The scalar magnitude of the normal contact force (`f64`).
+/// * `1`: The vector normal force directed along the contact normal (`DVec3`).
+#[inline]
+pub fn normal_hertzian(contact: &Contact)-> (f64, DVec3){
+// Elastic and viscous damping normal forces
+    let f_elastic = contact.eff_stiffness * contact.overlap.powf(1.5);
+    let f_damping = contact.eff_damping * contact.rel_vel.dot(contact.normal);
+    let f_normal_mag = (f_elastic - f_damping).max(0.0);
     
-    // exit if not a collision type
-    if !settings.collision_mask[particles.ptype[i]] {
-        return None;
-    }
+    //f_normal_vec
+    (f_normal_mag, contact.normal * f_normal_mag)
+}
 
-    let mut delta = particles.position[i] - particles.position[j];
-    check_delta(&mut delta, settings.sim_box_size, settings.periodic);
-
-    let rad_i = particles.radius[i];
-    let rad_j = particles.radius[j];
-    let combined_rad = rad_i + rad_j;
-    let dist_sq = delta.length_squared();
-
-    if dist_sq < combined_rad * combined_rad {
-        let dist = dist_sq.sqrt();
-        let normal = delta / dist; 
-        let overlap = combined_rad - dist; 
-
-        let is_j_coll = settings.collision_mask[particles.ptype[j]];      
-        
-        let m_i = particles.mass[i];
-        let m_eff = if is_j_coll {
-            let m_j = particles.mass[j];
-            (m_i * m_j) / (m_i + m_j)
-        } else {
-            m_i
-        };
-
-        let r_eff = (rad_i * rad_j) / combined_rad;
-
-        let r_i = normal * (-rad_i + overlap * rad_j / combined_rad);
-        let r_j = normal * (rad_j - overlap * rad_i / combined_rad);
-
-        let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
-                            - (particles.velocity[j] + particles.omega[j].cross(r_j));
-
-        // Using precomputed values from model
-        let e_star = model.particle_e_star;
-        let beta = model.particle_beta;
-
-        let eff_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
-        let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
-
-        let contact = Contact{overlap,normal,r_contact: r_i,rel_vel, eff_stiffness, eff_damping, mu: model.mu};
-        
-        Some(contact)
-    }else{
-        None
-    }
-
+///------------------------------------------------------------------------------
+/// normal_linear
+///------------------------------------------------------------------------------
+/// Computes the linear normal contact force (linear spring-dashpot model) 
+/// between two spherical particles.
+///
+/// Unlike the Hertzian model, the elastic restoring force is directly 
+/// proportional to the overlap depth (`overlap`) rather than $\delta^{3/2}$. 
+/// This is combined with a linear viscous damping term based on the normal 
+/// component of the relative velocity.
+///
+/// The resulting force magnitude is bounded at zero to prevent attractive 
+/// (tensile) forces, as standard dry DEM contacts cannot sustain tension.
+///
+/// # Arguments
+///
+/// * `contact` - A reference to the active `Contact` struct containing overlap depth, 
+///               relative velocity, contact normal, and effective stiffness/damping coefficients.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// * `0`: The scalar magnitude of the normal contact force (`f64`).
+/// * `1`: The vector normal force directed along the contact normal (`DVec3`).
+#[inline]
+pub fn normal_linear(contact: &Contact)-> (f64, DVec3){
+    // Elastic and viscous damping normal forces
+    let f_elastic = contact.eff_stiffness * contact.overlap;
+    let f_damping = contact.eff_damping * contact.rel_vel.dot(contact.normal);
+    let f_normal_mag = (f_elastic - f_damping).max(0.0);
+    
+    //f_normal_vec
+    (f_normal_mag, contact.normal * f_normal_mag)
 }
 
 
+///------------------------------------------------------------------------------
+/// friction_viscous_damping
+///------------------------------------------------------------------------------
+/// Computes the tangential contact force using a viscous damping model 
+/// constrained by a Coulomb friction limit.
+///
+/// This calculates the relative tangential velocity by subtracting the normal 
+/// component from the total relative velocity vector. If the tangential 
+/// velocity is non-zero, a tangential damping force is applied and subsequently 
+/// capped by the maximum allowable static/kinetic friction limit ($\mu F_n$).
+///
+/// # Arguments
+///
+/// * `f_normal_mag` - The scalar normal force magnitude (`$F_n$`) computed from the normal contact model.
+/// * `contact`      - A reference to the active `Contact` struct containing relative velocity, 
+///                    contact normal, effective damping coefficient, and friction coefficient ($\mu$).
+///
+/// # Returns
+///
+/// A `DVec3` representing the resolved tangential force vector acting on the particle.
+pub fn friction_viscous_damping(f_normal_mag: f64, contact: &Contact)-> DVec3{
+
+    let v_tang = contact.rel_vel - contact.rel_vel.dot(contact.normal) * contact.normal;
+
+    if v_tang.length_squared() > 1e-18 {
+        let f_t_ideal = v_tang * -contact.eff_damping;
+        let limit = contact.mu * f_normal_mag;
+        let f_t_mag_sq = f_t_ideal.length_squared();
+
+        if f_t_mag_sq > limit * limit {
+            f_t_ideal * (limit / f_t_mag_sq.sqrt())
+        } else {
+            f_t_ideal
+        }
+    }
+    else{DVec3::ZERO}
+}
+
+
+///------------------------------------------------------------------------------
+/// CollisionParams
+/// 
+/// Configuration parameters for particle-particle and particle-plane contact mechanics.
+///------------------------------------------------------------------------------
+/// Holds raw material and mechanical properties along with precalculated 
+/// derived coefficients used for Hertzian or linear contact force models.
+/// 
+/// Fields:
+/// * `modulus` - Young's modulus of the particle material.
+/// * `restitution` - Coefficient of restitution for particle-particle collisions.
+/// * `mu` - Friction coefficient for particle-particle contacts.
+/// * `plane_modulus` - Young's modulus of the boundary plane material.
+/// * `plane_restitution` - Coefficient of restitution for particle-plane collisions.
+/// * `plane_mu` - Friction coefficient for particle-plane contacts.
+/// * `particle_e_star` - Precalculated effective modulus component for particles.
+/// * `particle_beta` - Precalculated damping factor for particles.
+/// * `plane_e_star` - Precalculated effective modulus for particle-plane interactions.
+/// * `plane_beta` - Precalculated damping factor for particle-plane interactions.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(from = "RawCollisionParams")] // Tells Serde to parse via the raw struct first
 pub struct CollisionParams {
@@ -151,7 +184,7 @@ impl Default for CollisionParams {
     }
 }
 
-// Temporary raw struct matching JSON input
+/// Temporary raw struct matching JSON input before derived coefficients are computed.
 #[derive(Deserialize)]
 struct RawCollisionParams {
     pub modulus: f64,
@@ -191,29 +224,25 @@ impl From<RawCollisionParams> for CollisionParams {
     }
 }
 
-/// Computes the electrostatic Coulomb force between two charged particles.
-///
-/// Applies the electrostatic interaction according to Coulomb's Law:
-/// $$F = \frac{1}{4\pi\varepsilon_0} \frac{q_i q_j}{r^2} \hat{r}$$
-///
-/// # Notes
-///
-/// * **Asymmetric Application:** This function computes and applies the force acting on particle `i`. 
-///   The reciprocal force on particle `j` is naturally handled when the pair $(j, i)$ is processed 
-///   if explicitly included in the simulation's `interaction_ptypes` configuration.
+
+///------------------------------------------------------------------------------
+/// add_coulomb
+///------------------------------------------------------------------------------
+/// Calculates and accumulates the electrostatic Coulomb force between two charged 
+/// particles within a specified cutoff distance.
 ///
 /// # Arguments
 ///
-/// * `i` - Index of the primary particle receiving the force.
-/// * `j` - Index of the interacting neighbor particle.
-/// * `particles` - Reference to particle state buffers containing positions and charges.
-/// * `force` - Accumulated incoming force vector for particle `i`.
-/// * `model` - Global simulation parameters (unused in pure Coulomb calculations, preserved for interface uniformity).
+/// * `i` - Index of the primary particle.
+/// * `j` - Index of the neighboring particle.
+/// * `particles` - Reference to the particle state buffers containing positions and charges.
+/// * `force` - Accumulated incoming force vector.
+/// * `model` - Coulomb interaction parameters including relative permittivity and cutoff.
 ///
 /// # Returns
 ///
-/// * `DVec3` - The updated force vector including the electrostatic contribution.
-pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3, model: CoulombParams)-> DVec3{
+/// * `DVec3` - The updated force vector incorporating the electrostatic contribution.
+pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3, model: &CoulombParams)-> DVec3{
     
 
     let r = particles.position[i] - particles.position[j];
@@ -232,6 +261,14 @@ pub fn add_coulomb(i: usize, j: usize, particles: &ParticleVec, mut force: DVec3
     
 }
 
+///------------------------------------------------------------------------------
+/// CoulombParams
+///------------------------------------------------------------------------------
+/// Configuration parameters for electrostatic Coulomb interactions.
+///
+/// Fields:
+/// * `eps_r` - Permittivity parameter (note: $8.854 \times 10^{-12}$ corresponds to vacuum permittivity $\varepsilon_0$).
+/// * `cutoff` - Maximum spatial cutoff distance for electrostatic force evaluations.
 #[derive(Copy, Clone, Debug, Serialize, Deserialize)]
 pub struct CoulombParams{
     pub eps_r: f64,
@@ -241,7 +278,7 @@ pub struct CoulombParams{
 impl Default for CoulombParams{
     fn default()->Self{
         Self{
-            eps_r: 8.854E-12,
+            eps_r: 1.0,
             cutoff: 0.3,
         }
     }
