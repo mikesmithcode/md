@@ -2,42 +2,34 @@
 //!
 //! This module handles two primary formats:
 //!
-//! 1. **Metadata (JSON)**: Handled by [`save_simsettings`] and [`load_simsettings`], 
-//!    this stores and loads the parameters of the experiment (e.g., time step, box size, 
+//! 1. **Metadata (JSON)**: Handled by [`save_simsettings`] and [`load_simsettings`],  
+//!    this stores and loads the parameters of the experiment (e.g., time step, box size,  
 //!    simulation models).
-//! 2. **State Snapshots (Parquet)**: Handled by [`save_particles`] and [`load_particles`], 
-//!    this uses the **Polars** library to efficiently store particle positions, velocities, 
+//! 2. **State Snapshots (Parquet)**: Handled by [`save_particles`] and [`load_particles`],  
+//!    this uses the **Polars** library to efficiently store particle positions, velocities,  
 //!    orientations, angular velocities, and optical properties.
 //!
 //! ### Data Workflow
-//! The simulation periodically saves snapshots. These files can be reloaded 
+//! The simulation periodically saves snapshots. These files can be reloaded  
 //! using [`load_latest_particles`] to resume a previously stopped experiment.
 
-use serde_json;
-use std::{fs, path::Path, path::PathBuf, io};
-use std::io::{Error, BufReader};
-use polars::prelude::*;
-use glam::{DVec3, DQuat};
-use three_d::core::Srgba;
+use glam::{DQuat, DVec3};
 use itertools::izip;
+use polars::prelude::*;
+use regex;
+use regex::Regex;
+use std::io::{BufReader, Error};
+use std::{fs, io, path::Path, path::PathBuf};
 
 use crate::md_sim::{LineSpec, ObjectSpec, Particle, ParticleVec, RectSpec, SimulationSettings, TriSpec};
 use crate::md_viz::SceneSettings;
 
-
-use regex::Regex;
-use regex;
-
-
-
-/// Given a directory, prefix, and extension, scans for files matching `<prefix>_<number>.<extension>`,
-/// identifies the file with the largest step number, and returns `Some(path)`
-/// or `None` if no matching files exist.
-pub fn get_latest_file(
-    output_path: &Path,
-    prefix: &str,
-    extension: &str,
-) -> Option<PathBuf> {
+/// ====================================================================================================================
+/// **What:** Scans a directory for files matching a specific prefix and file extension naming convention.  
+/// **How:** Uses regular expressions to parse numeric suffixes (e.g., `prefix_123.ext`), tracking and returning the path with the highest step number.  
+/// **Why:** Enables automatic discovery of the latest simulation checkpoint or output snapshot for resumption.
+/// ====================================================================================================================
+pub fn get_latest_file(output_path: &Path, prefix: &str, extension: &str) -> Option<PathBuf> {
     if !output_path.exists() {
         return None;
     }
@@ -74,17 +66,13 @@ pub fn get_latest_file(
     latest_path
 }
 
-/// Validates that a target directory exists and contains a specified list of required files.
-///
-/// # Arguments
-/// * `dir_path` - A reference to the `Path` representing the directory to check.
-/// * `required_files` - A slice of file name strings expected to be inside the directory.
-///
-/// # Errors
-/// Returns an `io::Error` with `ErrorKind::NotFound` if the directory itself does not exist 
-/// or if any of the required files are missing.
+/// ====================================================================================================================
+/// **What:** Validates that a target directory exists and contains all required input files.  
+/// **How:** Checks directory existence via `is_dir()` and verifies individual file paths using `is_file()`.  
+/// **Why:** Prevents runtime failures by ensuring configuration assets and initial states are present before simulation startup.
+/// ====================================================================================================================
 fn validate_simulation_inputs(dir_path: &Path, required_files: &[&str]) -> io::Result<()> {
-    // 1. Check if the directory exists
+    // Check if the directory exists
     if !dir_path.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -92,7 +80,7 @@ fn validate_simulation_inputs(dir_path: &Path, required_files: &[&str]) -> io::R
         ));
     }
 
-    // 2. Check each required file inside the folder
+    // Check each required file inside the folder
     for file_name in required_files {
         let file_path = dir_path.join(file_name);
         if !file_path.is_file() {
@@ -106,19 +94,27 @@ fn validate_simulation_inputs(dir_path: &Path, required_files: &[&str]) -> io::R
     Ok(())
 }
 
+/// ====================================================================================================================
+/// **What:** Encapsulates all major file paths required for running and saving a simulation experiment.  
+/// **How:** Groups configuration file paths, output directories, particle snapshots, and video destinations into a unified record.  
+/// **Why:** Simplifies path management and directory creation workflows across the simulation runner.
+/// ====================================================================================================================
 #[derive(Default, Debug)]
-/// Encapsulates all major file paths required for running and saving a simulation.
 pub struct SimulationPaths {
     pub output: PathBuf,
     pub sim_config: PathBuf,
     pub scene_config: PathBuf,
     pub model_config: PathBuf,
-    pub variables_config: Option<PathBuf>,
     pub object: PathBuf,
     pub particle: PathBuf,
     pub video: PathBuf,
 }
 
+/// ====================================================================================================================
+/// **What:** Defines runtime flags controlling visualization and data persistence behavior.  
+/// **How:** Stores boolean flags dictating headless execution, video recording, and state snapshot frequency.  
+/// **Why:** Allows flexible command-line configuration of simulation outputs and performance modes.
+/// ====================================================================================================================
 #[derive(Clone, Debug)]
 pub struct OutputSettings {
     pub headless: bool,
@@ -127,69 +123,76 @@ pub struct OutputSettings {
     pub save_objects: bool,
 }
 
+/// ====================================================================================================================
+/// **What:** Combines simulation file paths and output preferences into a unified runtime context.  
+/// **How:** Aggregates `SimulationPaths` and `OutputSettings` into a single structure initialized at startup.  
+/// **Why:** Streamlines parameter passing to execution loops, renderers, and serialization handlers.
+/// ====================================================================================================================
 #[derive(Debug)]
 pub struct SimulationContext {
     pub paths: SimulationPaths,
     pub output_settings: OutputSettings,
 }
 
+/// ====================================================================================================================
+/// **What:** Parses command-line arguments to establish the simulation environment and directory structure.  
+/// **How:** Inspects process arguments for target names, simulation tags, and display flags, validating input files and initializing output directories.  
+/// **Why:** Automates experiment configuration setup and safeguards against missing inputs or directory write errors.
+/// ====================================================================================================================
 pub fn parse_simulation_args() -> SimulationContext {
     let args: Vec<String> = std::env::args().collect();
-    
+
     let target_name = args.get(1).expect(
         "Error: No target name provided. \n\
          Usage: Please run via your shell script (e.g., `./scripts/run silo_123`) \n\
-         or pass the target name and sim argument explicitly."
+         or pass the target name and sim argument explicitly.",
     );
-    let sim_arg = args.get(2).expect(
-        "Error: No simulation argument provided."
-    );
-    
+    let sim_arg = args.get(2).expect("Error: No simulation argument provided.");
+
     // Parse output & display flags matching the shell script order and new defaults
-    let headless = args.get(3)
+    let headless = args
+        .get(3)
         .map(|val| val.parse::<bool>().unwrap_or(false))
         .unwrap_or(false); // Default: false (graphics enabled by default)
 
-    let record_video = args.get(4)
+    let record_video = args
+        .get(4)
         .map(|val| val.parse::<bool>().unwrap_or(false))
         .unwrap_or(false); // Default: false
 
-    let save_particles = args.get(5)
+    let save_particles = args
+        .get(5)
         .map(|val| val.parse::<bool>().unwrap_or(true))
         .unwrap_or(true); // Default: true
 
-    let save_objects = args.get(6)
+    let save_objects = args
+        .get(6)
         .map(|val| val.parse::<bool>().unwrap_or(false))
         .unwrap_or(false); // Default: false
 
-
-
     const INPUT_PATH: &'static str = "input";
-    
+
     let config_path = Path::new(INPUT_PATH).join(target_name);
     let output_path = Path::new("output").join(target_name).join(sim_arg);
 
     let required_files = vec!["sim_settings.json", "scene_settings.json"];
     let _ = validate_simulation_inputs(&config_path, &required_files);
-    let sim_config = config_path.join("sim_settings.json"); 
+    let sim_config = config_path.join("sim_settings.json");
     let scene_config = config_path.join("scene_settings.json");
     let model_config = config_path.join("model.json");
     let particle = output_path.join("particles");
     let _ = validate_simulation_inputs(&particle, &["particles_0000000000.parquet"]);
-    // Check if an optional variables.json exists in the output directory
-    let variables_config = get_latest_file(&output_path, "variables",".json");
-  
 
     let object = output_path.join("objects");
     if let Err(_e) = fs::create_dir_all(&object) {
         eprintln!("Error creating directory");
     };
 
-    //check a folder exists for outputting config copies
+    // check a folder exists for outputting config copies
     if let Err(_e) = fs::create_dir_all(output_path.join("config")) {
         eprintln!("Error creating directory");
     };
-    
+
     let video_dir = output_path.join("video");
     if let Err(_e) = fs::create_dir_all(&video_dir) {
         eprintln!("Error creating directory");
@@ -202,7 +205,6 @@ pub fn parse_simulation_args() -> SimulationContext {
             sim_config,
             scene_config,
             model_config,
-            variables_config,
             object,
             particle,
             video,
@@ -215,7 +217,6 @@ pub fn parse_simulation_args() -> SimulationContext {
         },
     }
 }
-
 
 
 

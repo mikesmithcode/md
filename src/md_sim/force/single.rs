@@ -4,6 +4,7 @@
 
 use glam::DVec3;
 use std::f64::consts::PI;
+use serde::{Serialize, Deserialize};
 
 use crate::md_sim::particle::ParticleVec;
 
@@ -38,6 +39,7 @@ pub fn add_gravity(i: usize, mut force: DVec3, particles: &ParticleVec, gravity:
     force
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Gravity{
     pub g: f64,
     pub up: DVec3,
@@ -87,6 +89,7 @@ pub fn add_viscous_drag(i: usize, particles: &ParticleVec, mut force: DVec3, vis
     force
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ViscousDrag{
     pub viscosity: f64,
 }

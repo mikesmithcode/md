@@ -5,7 +5,7 @@ pub mod test_utils;
 use glam::DVec3;
 
 pub use file_io::{parse_simulation_args, save_sim_settings, load_sim_settings, save_particles, load_latest_particles, load_objects, load_particles, load_scene_settings, load_latest_objects, save_objects, SimulationPaths};
-pub use test_utils::{assert_dvec3_near,create_molecule_vec, create_single_molecule, create_particle_vec, setup_single_molecule_data, create_grid_and_settings};
+pub use test_utils::{assert_dvec3_near,setup_single_molecule_data, create_grid_and_settings};
 pub use crate::md_sim::{SimulationSettings, Forces, Motion, ObjectSpec, ParticleVec};
 use crate::md_viz::actions::UserAction;
 
@@ -167,7 +167,7 @@ impl InteractionContext {
 
 impl Default for InteractionContext{
     fn default()->Self{
-        let default_radius = 1.0 + 0.1; // e.g. cutoff + skin
+        let default_radius:f64 = 1.0 + 0.1; // e.g. cutoff + skin
         let matrix = [[default_radius.powi(2); MAX_PTYPES]; MAX_PTYPES];
 
         Self {
@@ -182,4 +182,3 @@ impl Default for InteractionContext{
 
         
         
-        interaction_ptypes: vec![(0, 1, 2.8)],

@@ -15,8 +15,8 @@ use std::path::{Path, PathBuf};
 
 // Imports from simulation library
 use md::md_sim::{Forces, Interactivity, Motion, ParticleVec, SimulationSettings};
-use md::md_sim::force::{add_directional_weight, check_particle_contact, CollisionParams};
-use md::md_sim::force::{normal_linear, friction_viscous_tangential, ContactManager, normal_hertzian, friction_cundall_strack};
+use md::md_sim::force::{add_gravity, Gravity, check_particle_contact, CollisionParams};
+use md::md_sim::force::{normal_linear, friction_viscous_damping, ContactManager};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::utils::file_io::{SimulationContext, parse_simulation_args, get_latest_file};
 use md::md_sim::particle::MoleculeData;
@@ -36,12 +36,12 @@ impl ForceModel {
     /// Scans the directory for the latest variables file, loads it, 
     /// and records its path.
     pub fn load_latest(dir_path: &Path) -> Self {
-        let path = get_latest_file(dir_path, "model", "json")?;
+        let path = get_latest_file(dir_path, "model", "json").expect("Error getting latest file");
         
-        let file = File::open(&path).ok()?;
+        let file = File::open(&path).ok().expect("Error opening file");
         let reader = BufReader::new(file);
         
-        let mut model: ForceModel = serde_json::from_reader(reader).ok()?;
+        let mut model: ForceModel = serde_json::from_reader(reader).ok().expect("Error creating struct from file");
         model.source_path = path;
         
         model
@@ -49,14 +49,14 @@ impl ForceModel {
 
     /// Saves variables to a 10-digit zero-padded step file if a source path exists.
     pub fn save_at_step(&self, step: usize) {
-        let source_path = self.source_path.as_ref()?;
+        let source_path = &self.source_path;
 
         let parent_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
         let target_path = parent_dir.join(format!("model_{:010}.json", step));
 
-        let file = File::create(target_path).ok()?;
+        let file = File::create(target_path).ok().expect("Error creating file");
         let writer = BufWriter::new(file);
-        serde_json::to_writer_pretty(writer, self).ok()?;
+        let _ = serde_json::to_writer_pretty(writer, self);
     }
 }
 
@@ -95,7 +95,7 @@ impl Forces for SimUpdate{
         false
     }
 
-    fn cleanup_contacts(&self) {
+    fn cleanup_contacts(&mut self) {
         self.contact_manager.remove_old_contacts();
     }
 
@@ -104,8 +104,7 @@ impl Forces for SimUpdate{
     fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
         // Only the dynamic particle has weight
         if particles.ptype[i] == 0{
-            let var = self.variable.as_ref().expect("Variables are required for this simulation");
-            force = add_directional_weight(i, force, particles, var.up);
+            force = add_gravity(i, force, particles, &self.model.gravity);
         }
         (force, _torque)
     }
@@ -119,10 +118,10 @@ impl Forces for SimUpdate{
             if let Some(contact)=check_particle_contact(i, j, particles, &self.model.collision, settings){
                 //Normal and tangential forces
                 //at the end of every timestep we set all ContactState.is_active to false
-                self.contact_manager.get_or_create(i,j);
-                let fn_vec=normal_linear(&contact);
-                //let ft_vec = friction_viscous_tangential(fn_vec.length(), &contact);
-                let ft_vec = friction_cundall_strack(fn_vec, &contact, self.contact_state, settings.dt);
+                //self.contact_manager.check_or_add((i,j), displacement);
+                let (fn_mag, fn_vec)=normal_linear(&contact);
+                let ft_vec = friction_viscous_damping(fn_mag, &contact);
+                //let ft_vec = friction_cundall_strack(fn_vec, &contact, self.contact_state, settings.dt);
 
                 //Add to accumulators
                 force += fn_vec;
@@ -153,10 +152,8 @@ impl Motion for SimUpdate{
 
 // In SimUpdate (where Variables is fully in scope):
 impl Interactivity for SimUpdate {
-    fn save_variables(&self, step: usize) {
-        if let Some(ref vars) = self.variable {
-            let _ = vars.save_at_step(step);
-        }
+    fn save_variables(&self, step: usize) { 
+            let _ = self.model.save_at_step(step);
     }
 }
 

@@ -6,5 +6,9 @@
     "plane_modulus": 1.0e6,
     "plane_restitution": 0.7,
     "plane_mu": 0.3
+  },
+  "gravity": {
+    "g" : -9.81,
+    "up": [0.0,0.0,1.0]    
   }
 }

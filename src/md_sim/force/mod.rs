@@ -191,5 +191,5 @@ pub trait Forces {
     /// cleanup_contacts
     ///------------------------------------------------------------------------------
     /// Performs cleanup tasks for contact managers or state caches at the end of an integration step.
-    fn cleanup_contacts(&self) {}
+    fn cleanup_contacts(&mut self) {}
 }

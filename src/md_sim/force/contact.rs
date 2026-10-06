@@ -319,13 +319,13 @@ pub fn check_object_contact(
     }
 
     match object {
-        ObjectSpec::Rectangle(rect) => check_surface_contact(i, rect, particles, model, settings),
-        ObjectSpec::Triangle(tri) => check_surface_contact(i, tri, particles, model, settings),
-        ObjectSpec::WireBox(box_spec) => {
+        ObjectSpec::Rectangle(rect) => check_surface_contact(i, rect, particles, model),
+        ObjectSpec::Triangle(tri) => check_surface_contact(i, tri, particles, model),
+        ObjectSpec::WireBox(_box_spec) => {
             // Not implemented since this is just a visual element
             None 
         }
-        ObjectSpec::Line(line) => {
+        ObjectSpec::Line(_line) => {
             // Not implemented since this is just a visual element
             None
         }
@@ -355,8 +355,7 @@ fn check_surface_contact<S: SurfaceKinematics>(
     i: usize,
     surface: &S,
     particles: &ParticleVec,
-    model: &CollisionParams,
-    settings: &SimulationSettings,
+    model: &CollisionParams
 ) -> Option<Contact> {
 
     let closest = surface.closest_point(particles.position[i]);

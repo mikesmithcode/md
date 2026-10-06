@@ -78,10 +78,6 @@ pub trait SurfaceKinematics {
 /// thickness - Line has thickness and depth which are equal.
 /// position - this coord sets the centre of the box. The axis of system is 0,0,0 in bottom, left, back corner
 /// box_size - dimensions. The axis of system is x across, y front-back, z up down 
-///--------------------------------------------------------------------------------------------------------
-/// TriSpec
-/// -------------------------------------------------------------------------------------------------------
-/// 3D triangular surface in space
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub struct LineSpec {
     /// Unique identifier for the line instance.
