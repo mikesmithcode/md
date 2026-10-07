@@ -394,29 +394,47 @@ fn test_first_frame_rebuild() {
     let (mut grid, _settings) = create_grid_and_settings();
     
     let mut particles = ParticleVec::new();
-    
+
     // Particle 0
     let mut p0 = Particle::default();
     p0.position = DVec3::new(1.0, 1.0, 1.0);
+    p0.id=0;
+    p0.ptype=0;
     particles.push(p0);
 
     // Particle 1 (placed close to particle 0 to be within neighbor cutoff)
     let mut p1 = Particle::default();
-    p1.position = DVec3::new(1.2, 1.0, 1.0);
+    p1.position = DVec3::new(1.15, 1.0, 1.0);
+    p1.id=1;
+    p1.ptype=1;
     particles.push(p1);
 
     // Particle 2 (placed far away)
     let mut p2 = Particle::default();
-    p2.position = DVec3::new(10.0, 10.0, 10.0);
+    p2.id=2;
+    p2.ptype=0;
+    p2.position = DVec3::new(5.0, 5.0, 5.0);
     particles.push(p2);
+
+    println!("Particle types in SoA: {:?}", particles.ptype); // or particles.particle_type
+    println!("Particle positions in SoA: {:?}", particles.position); // or particles.particle_type
+
+    grid.init(&mut particles);
+
+    println!("ids {:?}", grid.verlet_particle_ids);
+    println!("offsets {:?}", grid.verlet_offsets);
+    println!("Particle types in SoA: {:?}", particles.ptype); 
 
     // Set a mismatched reference position to verify grid.init resets it
     particles.ref_pos[0] = DVec3::new(5.0, 5.0, 5.0);
 
-    grid.init(&mut particles);
+    
 
     assert_eq!(particles.ref_pos[0], particles.position[0]);
     
+    println!("ids {:?}", grid.verlet_particle_ids);
+    println!("offsets {:?}", grid.verlet_offsets);
+    println!("Particle types in SoA: {:?}", particles.ptype); // or particles.particle_type
     // Verify half-list neighbor structure: 
     // Particle 0's list contains particle 1, but particle 1's list does not contain 0
     assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1));

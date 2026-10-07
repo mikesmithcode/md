@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use md::md_viz::scene::Scene;
 use md::md_viz::scene_settings::SceneSettings;
 use md::md_sim::SimulationSettings;
-use md::md_sim::utils::{parse_simulation_args, load_particles, load_objects, load_latest_particles, load_latest_objects, SimulationPaths};
+use md::md_sim::utils::{parse_simulation_args, load_particles, load_objects, load_latest_particles, load_latest_objects};
 
 pub fn main() {    
     // Construct filepaths

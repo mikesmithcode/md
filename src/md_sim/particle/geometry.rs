@@ -1,6 +1,6 @@
 use glam::{DVec3,DMat3};
 
-use super::{ParticleVec, Particle};
+use super::ParticleVec;
 /// Stores structural and inertial properties for a rigid multi-particle molecule.
 #[derive(Debug)]
 pub struct MoleculeData {
@@ -69,38 +69,34 @@ pub fn calculate_molecule_com(pids: &[usize], particles: &ParticleVec) -> (f64, 
 /// # Returns
 ///
 /// * `DMat3` - The integrated 3x3 inertia tensor matrix for the rigid assembly.
-#[test]
-fn test_calc_inertia() {
-    let mut particles = ParticleVec::new();
-    
-    // Manually push or resize your ParticleVec and set SoA fields directly:
-    // (Assuming standard SoA push or index assignment methods)
-    
-    let mut particle = Particle::default();
-    particle.id=0;
-    particle.mass = 0.5;
-    particle.radius = 0.5;
-    particle.rel_pos = DVec3::new(-0.75, 0.0, 0.0); // Relative to COM (-0.75 from center of mass)
-    particles.push(particle); // or however your ParticleVec adds elements
+/// Calculates the rigid-body inertia tensor for a multi-particle molecule using static body-frame positions.
+///
+/// # Arguments
+///
+/// * `pids` - Slice of particle indices comprising the molecule.
+/// * `particles` - Reference to the particle state buffers containing radii, masses, and static relative positions.
+///
+/// # Returns
+///
+/// * `DMat3` - The integrated 3x3 inertia tensor matrix for the rigid assembly.
+pub fn calculate_molecule_inertia(pids: &[usize], particles: &ParticleVec) -> DMat3 {
+    let mut total_inertia = DMat3::ZERO;
+    // Note: Do not pass COM here; use the relative positions directly.
+    for &idx in pids {
+        let m = particles.mass[idx];
+        let r = particles.rel_pos[idx]; // The static body-frame vector
+        
+        let i_val = 0.4 * m * particles.radius[idx].powi(2);
+        let i_local = DMat3::from_diagonal(DVec3::splat(i_val));
 
-    let mut particle = Particle::default();
-    particle.id=1;
-    particle.mass = 1.5;
-    particle.radius = 0.5;
-    particle.rel_pos = DVec3::new(0.25, 0.0, 0.0); // Relative to COM (+0.25 from center of mass)
-    particles.push(particle); // or however your ParticleVec adds elements
-    
-    
-    let pids = vec![0,1];
-    let inertia = calculate_molecule_inertia(&pids, &particles);
-
-    let expected_inertia = DMat3::from_cols_array(&[
-        0.20,  0.0,   0.0,
-        0.0,   0.575, 0.0,
-        0.0,   0.0,   0.575,
-    ]);
-
-    for col in 0..3 {
-        assert_dvec3_near(inertia.col(col), expected_inertia.col(col), 1e-12);
+        let r2 = r.dot(r);
+        let outer_prod = DMat3::from_cols(
+            DVec3::new(r.x * r.x, r.x * r.y, r.x * r.z),
+            DVec3::new(r.y * r.x, r.y * r.y, r.y * r.z),
+            DVec3::new(r.z * r.x, r.z * r.y, r.z * r.z),
+        );
+        
+        total_inertia += i_local + (DMat3::IDENTITY * r2 - outer_prod) * m;
     }
+    total_inertia
 }

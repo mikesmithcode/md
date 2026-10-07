@@ -18,7 +18,7 @@ pub fn setup_single_molecule_data(particles: &ParticleVec) -> HashMap<usize, Mol
 
 /// Initializes a default test simulation cell grid and corresponding simulation settings.
 pub fn create_grid_and_settings() -> (CellGrid, SimulationSettings) {
-    let particle_count = 6;
+    let particle_count = 3;
     let settings = SimulationSettings {
         skin: 0.2,
         sim_box_size: DVec3::splat(9.0),
@@ -28,6 +28,7 @@ pub fn create_grid_and_settings() -> (CellGrid, SimulationSettings) {
     };
 
     let grid = CellGrid::new(particle_count, &settings);
+    
     (grid, settings)
 }
 
