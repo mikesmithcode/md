@@ -98,6 +98,7 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
     println!("Saving final state at step {}...", final_step);
     save_particles(&sim_filepaths, final_step, sim.get_particles(), sim.time).expect("Error saving final particles");
     save_objects(&sim_filepaths, final_step, sim.get_objects(), sim.time).expect("Error saving final objects");
+    sim.sim_update.save_on_exit(final_step).expect("Error saving contacts.json");
 
     if let Some(mut scene) = scene_opt {
         scene.close();

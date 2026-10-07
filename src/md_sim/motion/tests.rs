@@ -2,8 +2,8 @@
 
 use glam::DVec3;
 
-use crate::md_sim::utils::{create_particle_vec, create_single_molecule, create_molecule_vec, setup_single_molecule_data, assert_dvec3_near};
-use crate::md_sim::particle::{calculate_molecule_com, calculate_kinetic_energy, calculate_total_angular_momentum};
+use crate::md_sim::utils::setup_single_molecule_data;
+use crate::md_sim::particle::{Particle, ParticleVec, calculate_molecule_com, calculate_kinetic_energy, calculate_total_angular_momentum};
 use crate::md_sim::motion::{enforce_boundary,integrate_rigid_bodies, integrate_rigid_bodies_correct, integrate_singleparticle_correct, integrate_singleparticle_update, change_rad};
 use crate::md_sim::SimulationSettings;
 
@@ -16,7 +16,13 @@ use crate::md_sim::SimulationSettings;
 /// **Why:** Verifies that velocities receive the correct half-step acceleration and positions advance correctly using Velocity Verlet.
 #[test]
 fn test_integrate_singleparticle_update() {
-    let mut particles = create_particle_vec(); // Particles at (1,2,3)
+    let mut particles = ParticleVec::new();
+    let mut p = Particle::default();
+    p.id = 0;
+    p.position = DVec3::new(1.0, 2.0, 3.0);
+    p.velocity = DVec3::new(1.0, 0.0, 0.0);
+    particles.push(p);
+
     let mut settings = SimulationSettings::default();
     settings.dt = 0.1;
     settings.sim_box_size = DVec3::new(10.0, 10.0, 10.0);
@@ -41,7 +47,10 @@ fn test_integrate_singleparticle_update() {
 /// **Why:** Ensures the final half-step velocity update correctly completes the Velocity Verlet cycle.
 #[test]
 fn test_integrate_singleparticle_correct() {
-    let mut particles = create_particle_vec();
+    let mut particles = ParticleVec::new();
+    let p = Particle::default();
+    particles.push(p);
+
     let mut settings = SimulationSettings::default();
     settings.dt = 0.1;
 
@@ -78,11 +87,31 @@ fn test_integrate_singleparticle_correct() {
 #[test]
 fn test_integrate_rigid_body_conservation() {
     let settings = SimulationSettings { dt: 0.1, ..Default::default() };
-    let mut particles = create_molecule_vec();// Uses a molecule which consists of 2 spheres of mass 0.5 and 1.5 separated by 1.0.
+    
+    let mut particles = ParticleVec::new();
+    
+    // Particle 0 (mass 0.5)
+    let mut p1 = Particle::default();
+    p1.id = 0;
+    p1.molecule_id = 0;
+    p1.mass = 0.5;
+    p1.position = DVec3::new(0.0, 0.0, 0.0);
+    p1.velocity = DVec3::new(1.0, 0.5, -0.5);
+    particles.push(p1);
+    
+    // Particle 1 (mass 1.5, separated by 1.0 along X)
+    let mut p2 = Particle::default();
+    p2.id = 1;
+    p2.molecule_id = 0;
+    p2.mass = 1.5;
+    p2.position = DVec3::new(1.0, 0.0, 0.0);
+    p2.velocity = DVec3::new(1.0, 0.5, -0.5);
+    particles.push(p2);
+
     let mol_data = setup_single_molecule_data(&particles); 
     
     // Calculate Initial State
-    let (_mass,_com,initial_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);       
+    let (_mass, _com, initial_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);        
     let initial_omega = particles.omega[0];
 
     // Perform one step with zero forces
@@ -90,12 +119,11 @@ fn test_integrate_rigid_body_conservation() {
     integrate_rigid_bodies_correct(&vec![DVec3::ZERO; 2], &vec![DVec3::ZERO; 2], &mut particles, &mol_data, &settings);
 
     // Verify Conservation
-    let (_,_,final_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);
+    let (_, _, final_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);
 
     assert!((final_com_vel - initial_com_vel).length() < 1e-12, "COM Velocity changed!");
     assert!((particles.omega[0] - initial_omega).length() < 1e-12, "Omega changed!");
 }
-
 /// **What:** Tests rigid-body translation under a uniform external field (gravity).  
 /// **How:** Applies a directional gravitational force vector across a rigid molecule's constituent particles.  
 /// **Why:** Verifies that external forces correctly alter the Center of Mass vertical velocity without causing artificial lateral drift
@@ -104,7 +132,24 @@ fn test_integrate_rigid_body_gravity() {
     let dt = 0.1;
     let settings = SimulationSettings { dt, ..Default::default() };
 
-    let mut particles = create_molecule_vec();
+    let mut particles = ParticleVec::new();
+    
+    // Particle 0
+    let mut p1 = Particle::default();
+    p1.id = 0;
+    p1.molecule_id = 0;
+    p1.position = DVec3::new(-0.5, 0.0, 0.0);
+    p1.velocity = DVec3::new(0.75, 0.0, 1.0);
+    particles.push(p1);
+
+    // Particle 1
+    let mut p2 = Particle::default();
+    p2.id = 1;
+    p2.molecule_id = 0;
+    p2.position = DVec3::new(0.5, 0.0, 0.0);
+    p2.velocity = DVec3::new(0.75, 0.0, 1.0);
+    particles.push(p2);
+
     let mol_data = setup_single_molecule_data(&particles);
     
     // Gravity acting only on Z
@@ -120,7 +165,7 @@ fn test_integrate_rigid_body_gravity() {
     // Integration
     integrate_rigid_bodies(&forces, &torques, &mut particles, &mol_data, &settings);
     integrate_rigid_bodies_correct(&forces, &torques, &mut particles, &mol_data, &settings);
-    let (_,_,final_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);
+    let (_, _, final_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);
 
     // Verify: Only Z-velocity should be affected by gravity
     let expected_z_vel = 1.0 + (gravity.z * dt);
@@ -137,7 +182,22 @@ fn test_integrate_rigid_body_gravity() {
 fn test_molecule_rotation_no_torque() {
     let dt = 0.1;
     let settings = SimulationSettings { dt, ..Default::default() };
-    let mut particles = create_single_molecule();
+    
+    // Construct ParticleVec manually with two particles in the same molecule
+    let mut particles = ParticleVec::new();
+    
+    let mut p1 = Particle::default();
+    p1.id = 0;
+    p1.position = DVec3::new(-0.5, 0.0, 0.0);
+    p1.molecule_id = 0;
+    particles.push(p1);
+    
+    let mut p2 = Particle::default();
+    p2.id = 1;
+    p2.position = DVec3::new(0.5, 0.0, 0.0);
+    p2.molecule_id = 0;
+    particles.push(p2);
+
     let mol_data = setup_single_molecule_data(&particles);
     let molecule = mol_data.get(&0).expect("0 should exist");
 
@@ -154,7 +214,7 @@ fn test_molecule_rotation_no_torque() {
     let (_, _, final_com_vel) = calculate_molecule_com(&molecule.pids, &particles);
 
     assert!((final_omega.y - initial_omega.y).abs() < 1e-12, "Angular velocity change failed!");    
-    assert!((final_com_vel.x - initial_com_vel.x).abs() < 1e-12, "COM X-velocity should be conserved!");       
+    assert!((final_com_vel.x - initial_com_vel.x).abs() < 1e-12, "COM X-velocity should be conserved!");        
 }
 
 
@@ -165,7 +225,22 @@ fn test_molecule_rotation_no_torque() {
 fn test_molecule_rotation_torque() {
     let dt = 0.1;
     let settings = SimulationSettings { dt, ..Default::default() };
-    let mut particles = create_single_molecule();
+    
+    // Construct ParticleVec manually with two particles in the same molecule
+    let mut particles = ParticleVec::new();
+    
+    let mut p1 = Particle::default();
+    p1.id = 0;
+    p1.position = DVec3::new(-0.5, 0.0, 0.0);
+    p1.molecule_id = 0;
+    particles.push(p1);
+    
+    let mut p2 = Particle::default();
+    p2.id = 1;
+    p2.position = DVec3::new(0.5, 0.0, 0.0);
+    p2.molecule_id = 0;
+    particles.push(p2);
+
     let mol_data = setup_single_molecule_data(&particles);
     let molecule = mol_data.get(&0).expect("0 should exist");
 
@@ -181,12 +256,12 @@ fn test_molecule_rotation_torque() {
     let mid_omega = particles.omega[0];
     assert!((mid_omega.y - 0.08695652173913045).abs() < 1e-12, "Angular velocity change failed!"); 
 
-    integrate_rigid_bodies_correct(&forces, &torques, &mut particles, &mol_data, &settings);   
+    integrate_rigid_bodies_correct(&forces, &torques, &mut particles, &mol_data, &settings);    
     let final_omega = particles.omega[0];
     let (_, _, final_com_vel) = calculate_molecule_com(&molecule.pids, &particles);
     
     assert!((final_omega.y - 0.17390975591781438).abs() < 1e-12, "Angular velocity change failed!"); 
-    assert!((final_com_vel.x - init_com_vel.x).abs() < 1e-12, "COM X-velocity should be conserved!");       
+    assert!((final_com_vel.x - init_com_vel.x).abs() < 1e-12, "COM X-velocity should be conserved!");        
 }
 
 //-------------------------------------------------------------------------------------------------------
@@ -231,7 +306,22 @@ fn test_enforce_boundary() {
 /// **Why:** Verifies selective growth control for compression protocols without polluting unrelated particle categories.
 #[test]
 fn test_particle_growth_by_type() {
-    let mut particles = create_particle_vec();
+    let mut particles = ParticleVec::new();
+
+    // Particle 0 (Type 0)
+    let mut p0 = Particle::default();
+    p0.id = 0;
+    p0.ptype = 0;
+    p0.radius = 0.5;
+    particles.push(p0);
+
+    // Particle 1 (Type 1)
+    let mut p1 = Particle::default();
+    p1.id = 1;
+    p1.ptype = 1;
+    p1.radius = 0.5;
+    particles.push(p1);
+
     let original_rad_0 = particles.radius[0];
     let original_rad_1 = particles.radius[1];
 
@@ -253,7 +343,20 @@ fn test_numerical_stability() {
     let num_steps = 10_000;
     let settings = SimulationSettings { dt, ..Default::default() };
     
-    let mut particles = create_single_molecule();
+    // Construct ParticleVec manually with two particles in the same molecule
+    let mut particles = ParticleVec::new();
+    
+    let mut p1 = Particle::default();
+    p1.position = DVec3::new(-0.5, 0.0, 0.0);
+    p1.molecule_id = 0;
+    particles.push(p1);
+    
+    let mut p2 = Particle::default();
+    p2.id=1;
+    p2.position = DVec3::new(0.5, 0.0, 0.0);
+    p2.molecule_id = 0;
+    particles.push(p2);
+
     let mol_data = setup_single_molecule_data(&particles);
     
     let initial_energy = calculate_kinetic_energy(&particles, &mol_data);

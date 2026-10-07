@@ -1,7 +1,5 @@
 import json
 from pathlib import Path
-import math
-import numpy as np
 import sys
 import re
 import shutil
@@ -73,7 +71,7 @@ def get_config(*args, **kwargs):
     # Define file paths (loads config based on the target name, e.g., 'silo.')
     config_dir = Path("input") / target_name
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / "sim_settings.json"
+    config_path = config_dir / "sim.json"
     
     print(particles_filepath)
     

@@ -1,7 +1,6 @@
 
-use crate::md_sim::force::pairwise::CollisionParams;
 use crate::md_sim::{ObjectSpec, ParticleVec, SurfaceKinematics};
-use crate::md_sim::force::contact::{Contact};
+use crate::md_sim::force::contact::{Contact, ContactType};
 use crate::md_sim::SimulationSettings;
 
 
@@ -24,18 +23,17 @@ pub fn check_surface_contact(
     i: usize,
     particles: &ParticleVec,
     object_spec: &ObjectSpec,
-    model: &CollisionParams,
     settings: &SimulationSettings,
 ) -> Option<Contact> {
     match object_spec {
         ObjectSpec::Rectangle(rect) => {
             surface_contact(
-                i, particles, rect, model, settings
+                i, particles, rect, settings
             )
         }
         ObjectSpec::Triangle(tri) => {
             surface_contact(
-                i, particles, tri, model, settings
+                i, particles, tri, settings
             )
         }
         _ => None
@@ -78,7 +76,6 @@ pub(crate) fn surface_contact<S: SurfaceKinematics>(
     i: usize,
     particles: &ParticleVec,
     surface: &S,
-    model: &CollisionParams,
     settings: &SimulationSettings, // Pass settings directly instead of raw pieces
 ) -> Option<Contact> { 
     // O(1) type check using settings mask
@@ -102,16 +99,12 @@ pub(crate) fn surface_contact<S: SurfaceKinematics>(
 
         let m_eff = particles.mass[i];      
 
-        // Using precomputed invariant terms directly from model
-        let eff_stiffness = (4.0 / 3.0) * model.plane_e_star * radius.sqrt();
-        let eff_damping = 2.0 * model.plane_beta * (m_eff * eff_stiffness).sqrt();
-
         let surface_vel = surface.velocity_at_point(closest_point);
         let r_particle = -normal * dist;
         let particle_contact_vel = particle_vel + particle_omega.cross(r_particle);
         let rel_vel = particle_contact_vel - surface_vel;
 
-        let contact = Contact{overlap,normal,r_contact: r_particle,rel_vel, eff_stiffness, eff_damping, mu: model.plane_mu};
+        let contact = Contact{overlap,normal,r_contact: r_particle,rel_vel, r_eff: radius, m_eff, contact_type: ContactType::Plane};
         Some(contact)
         
     }

@@ -20,6 +20,7 @@ use regex;
 use regex::Regex;
 use std::io::{BufReader, Error};
 use std::{fs, io, path::Path, path::PathBuf};
+use three_d::Srgba;
 
 use crate::md_sim::{LineSpec, ObjectSpec, Particle, ParticleVec, RectSpec, SimulationSettings, TriSpec};
 use crate::md_viz::SceneSettings;
@@ -170,15 +171,15 @@ pub fn parse_simulation_args() -> SimulationContext {
         .map(|val| val.parse::<bool>().unwrap_or(false))
         .unwrap_or(false); // Default: false
 
-    const INPUT_PATH: &'static str = "input";
+    const INPUT_PATH: &str = "input";
 
     let config_path = Path::new(INPUT_PATH).join(target_name);
     let output_path = Path::new("output").join(target_name).join(sim_arg);
 
-    let required_files = vec!["sim_settings.json", "scene_settings.json"];
+    let required_files = vec!["sim.json", "scene.json"];
     let _ = validate_simulation_inputs(&config_path, &required_files);
-    let sim_config = config_path.join("sim_settings.json");
-    let scene_config = config_path.join("scene_settings.json");
+    let sim_config = config_path.join("sim.json");
+    let scene_config = config_path.join("scene.json");
     let model_config = config_path.join("model.json");
     let particle = output_path.join("particles");
     let _ = validate_simulation_inputs(&particle, &["particles_0000000000.parquet"]);
@@ -238,7 +239,7 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
     sim_settings.start = index;
 
     // Save a copy of config to output with simulation index as suffix.
-    save_sim_settings(&sim_settings, &sim_paths)?;
+    save_sim_settings(&sim_settings, sim_paths)?;
     
     Ok(sim_settings)
 }
@@ -249,15 +250,15 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
 ///
 /// # File Naming
 /// The filename is automatically generated using the `start` step counter to ensure 
-/// uniqueness (e.g., `sim_config_0000000001.json`).
+/// uniqueness (e.g., `sim_0000000001.json`).
 ///
 /// # Errors
 /// This function will return an [`Error`] if the directory is not writable 
 /// or if an I/O issue occurs during writing.
 pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &SimulationPaths) -> Result<(), Error> 
 {
-    let sim_filename = format!("sim_config_{:010}.json", sim_settings.start);
-    let model_filename = format!("model_config_{:010}.json", sim_settings.start);
+    let sim_filename = format!("sim_{:010}.json", sim_settings.start);
+    let model_filename = format!("model_{:010}.json", sim_settings.start);
 
     let full_sim_filename = Path::new(&sim_paths.output).join("config").join(sim_filename);
     let input_model_filename = Path::new(&sim_paths.model_config);
@@ -296,7 +297,7 @@ pub fn load_scene_settings(sim_paths: &SimulationPaths) -> Result<SceneSettings,
 
 pub fn save_scene_settings(scene_settings: &SceneSettings, snapshot_path: &Path) -> Result<(), Error> 
 {
-    let output_filename = Path::new(&snapshot_path).join("config").join("scene_config.json");
+    let output_filename = Path::new(&snapshot_path).join("config").join("scene.json");
     let json = serde_json::to_string_pretty(scene_settings)
         .expect("Error serializing metadata");
     fs::write(output_filename, json)?;
@@ -711,7 +712,7 @@ pub fn load_latest_objects(
         return Ok(None);
     }
 
-    entries.sort_by(|a, b| b.1.cmp(&a.1));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.1));
 
     for (_path, step) in entries {
         if let Ok(objects) = load_objects(sim_paths, step) {

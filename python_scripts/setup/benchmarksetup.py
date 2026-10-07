@@ -4,16 +4,13 @@ import sys
 # Add the parent 'python_scripts' directory to sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
-
+from utils.file_io import get_config
+from utils.particles_objects import generate_particle_cube, generate_spheres
+from utils.graphics import display
 import polars as pl
 import matplotlib
 import numpy as np
 matplotlib.use('qtAgg')
-
-from utils.file_io import get_config, save_dict_to_json
-from utils.graphics import display
-from utils.particles_objects import create_rectangle, create_line, generate_dipoles, generate_spheres, generate_particle_cube
-
 
 
 """Setup script designed to produce a bunch of regular particles with slightly varying radius. It also creates an initialising variables.json 

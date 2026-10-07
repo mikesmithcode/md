@@ -15,7 +15,6 @@ pub fn main() {
     // Construct filepaths
     let ctx = parse_simulation_args();
     let sim_filepaths = ctx.paths;
-    let headless = ctx.headless;
     
     // Initialise simulation settings and initial scene state
     let (particles, start_step, _time) = load_latest_particles(&sim_filepaths).expect("Failed to load initial particle snapshot");
@@ -25,8 +24,8 @@ pub fn main() {
     // Setup Graphics & Recording
     let event_loop = EventLoop::new(); 
     let scene_settings = SceneSettings::new(&sim_filepaths, &sim_settings); 
-    let mut scene = Scene::new(&event_loop, &particles, objects.as_deref(), scene_settings);   
-    let _ = scene.start_recording(&sim_filepaths, start_step).expect("Failed to start recording");
+    let mut scene = Scene::new(event_loop, &particles, objects.as_deref(), scene_settings);   
+    scene.start_recording(&sim_filepaths, start_step).expect("Failed to start recording");
 
     println!("Video started...");
 

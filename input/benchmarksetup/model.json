@@ -1,11 +1,13 @@
 {
- "collision": {
+ "normal_force": {
     "modulus": 1.0e5,
     "restitution": 0.7,
-    "mu": 0.5,
     "plane_modulus": 1.0e6,
-    "plane_restitution": 0.7,
-    "plane_mu": 0.3
+    "plane_restitution": 0.7
+  },
+  "friction":{
+    "mu":0.4,
+    "restitution":0.7
   },
   "gravity": {
     "g" : -9.81,

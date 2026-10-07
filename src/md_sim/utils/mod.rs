@@ -45,8 +45,8 @@ mod tests;
 /// '''
 /// 
 pub trait Interactivity {
-    // Default implementation does nothing for types that don't track variables
-    fn save_variables(&self, _step: usize) {}
+    // Default implementation does nothing for types that don't have model changes
+    fn save_changes_model(&self, _step: usize) {}
 
     fn handle_key(
         &mut self, 
@@ -56,7 +56,7 @@ pub trait Interactivity {
         step: usize
     ) {
         // Call the trait method; SimUpdate will override this to do the actual save
-        self.save_variables(step);
+        self.save_changes_model(step);
 
         println!("No keys implemented: You pressed {:?}", key);
     }

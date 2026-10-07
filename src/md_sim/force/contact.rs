@@ -6,15 +6,15 @@
 
 use glam::DVec3;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use dashmap::DashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
+
 use crate::md_sim::utils::file_io::get_latest_file;
 use crate::md_sim::utils::check_delta;
 use crate::md_sim::particle::ParticleVec;
-use crate::md_sim::force::CollisionParams;
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::{SurfaceKinematics, ObjectSpec};
 
@@ -29,17 +29,17 @@ use crate::md_sim::particle::{SurfaceKinematics, ObjectSpec};
 /// * `normal` - Unit normal vector pointing from the interacting entity to the primary particle.
 /// * `r_contact` - Radial vector from the centre of the particle to the contact point (used for torque calculation).
 /// * `rel_vel` - Relative surface velocity between the contacting bodies at the contact point.
-/// * `eff_stiffness` - Combined/effective normal contact stiffness coefficient.
-/// * `eff_damping` - Combined/effective normal damping coefficient.
-/// * `mu` - Effective friction coefficient for tangential forces.
+/// * `r_eff` - effective rad curvature 1/r_eff = 1/r1 + 1/r2,
+/// * `m_eff` - Effective mass 1/m_eff = 1/m1+1/m2,
+/// * `contact_type` - [`ContactType`] enum defining whether contact is with particle or plane,
 pub struct Contact{
     pub overlap: f64,
     pub normal: DVec3,
     pub r_contact: DVec3, 
     pub rel_vel: DVec3,
-    pub eff_stiffness: f64,
-    pub eff_damping: f64,
-    pub mu: f64,
+    pub r_eff: f64,
+    pub m_eff: f64,
+    pub contact_type: ContactType,
 }
 
 impl Default for Contact{
@@ -48,12 +48,17 @@ impl Default for Contact{
             overlap: 1e-5, 
             normal: DVec3::new(0.0, 0.0, 1.0), 
             r_contact: DVec3::new(0.0, 0.0, 0.005), 
-            rel_vel: DVec3::new(0.0, 0.0, 0.0), 
-            eff_stiffness: 1e5, 
-            eff_damping: 10.0, 
-            mu: 0.5 
+            rel_vel: DVec3::new(0.0, 0.0, 0.0),
+            r_eff: 0.0,
+            m_eff: 0.0,
+            contact_type: ContactType::Particle,
         }
     }
+}
+
+pub enum ContactType{
+    Particle,
+    Plane,
 }
 
 ///------------------------------------------------------------------------------
@@ -74,7 +79,7 @@ pub struct ContactState {
 impl Default for ContactState {
     fn default() -> Self {
         Self { 
-            tangential_disp: DVec3::new(1e-5, 0.0, 0.0), 
+            tangential_disp: DVec3::ZERO, 
             is_active: true 
         }
     }
@@ -95,21 +100,20 @@ pub struct ContactManager {
     // because JSON objects require string keys. Storing as a Vec or serializing via sequence 
     // avoids JSON key serialization errors for `(usize, usize)`.
     #[serde(with = "tuple_map_as_vec")]
-    pub states: HashMap<(usize, usize), ContactState>,
-    
+    pub states: DashMap<(usize, usize), ContactState>,
     #[serde(skip)]
-    pub source_path: Option<PathBuf>,
+    pub source_path: PathBuf,
 }
 
 impl ContactManager {
-    ///------------------------------------------------------------------------------
+    /// ==============================================================================
     /// new
-    ///------------------------------------------------------------------------------
-    /// Initializes an empty `ContactManager` instance with no tracked contacts.
-    pub fn new() -> Self {
+    /// ==============================================================================
+    /// Inititialises a fresh contact manager
+    pub fn new(source_path: PathBuf) -> Self {
         Self {
-           states: HashMap::new(), 
-           source_path: None,
+            states: DashMap::new(),
+            source_path,
         }
     }
 
@@ -125,7 +129,7 @@ impl ContactManager {
         let reader = BufReader::new(file);
         
         let mut manager: ContactManager = serde_json::from_reader(reader).ok()?;
-        manager.source_path = Some(path);
+        manager.source_path = path;
         
         Some(manager)
     }
@@ -133,12 +137,10 @@ impl ContactManager {
     ///------------------------------------------------------------------------------
     /// save_at_step
     ///------------------------------------------------------------------------------
-    /// Saves contact states to a 10-digit zero-padded step file if a source path exists.
+    /// Saves contact states to a 10-digit zero-padded step file
     pub fn save_at_step(&self, step: usize) -> Option<()> {
-        let source_path = self.source_path.as_ref()?;
-
-        let parent_dir = source_path.parent().unwrap_or_else(|| Path::new("."));
-        let target_path = parent_dir.join(format!("contacts_{:010}.json", step));
+        let source_path = self.source_path.clone();
+        let target_path = source_path.join(format!("contacts_{:010}.json", step));
 
         let file = File::create(target_path).ok()?;
         let writer = BufWriter::new(file);
@@ -147,13 +149,13 @@ impl ContactManager {
         Some(())
     }
 
-    pub fn check_or_add(&mut self, pair: (usize, usize), displacement: DVec3) {
-        let state = self.states.entry(pair).or_default();
+    pub fn check_or_add(&self, pair: (usize, usize), displacement: DVec3) {
+        let mut state = self.states.entry(pair).or_default();
         state.tangential_disp += displacement;
         state.is_active = true;
     }
 
-    pub fn remove_old_contacts(&mut self) {
+    pub fn remove_old_contacts(&self) {
         self.states.retain(|_, state| {
             let active = state.is_active;
             state.is_active = false;
@@ -164,31 +166,36 @@ impl ContactManager {
 
 impl Default for ContactManager {
     fn default() -> Self {
-        let mut states = HashMap::new();
+        let states = DashMap::new();
         states.insert((0, 1), ContactState::default());
 
         Self { 
             states, 
-            source_path: None,
+            source_path: PathBuf::new(),
         }
     }
 }
 
-/// Helper module to serialize `HashMap<(usize, usize), ContactState>` as a list of entries 
+/// Helper module to serialize `DashMap<(usize, usize), ContactState>` as a list of entries 
 /// so serde/JSON doesn't crash over non-string map keys.
 mod tuple_map_as_vec {
     use super::*;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S>(map: &HashMap<(usize, usize), ContactState>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(map: &DashMap<(usize, usize), ContactState>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let vec: Vec<_> = map.iter().collect();
+        // ✅ Map the reference guards into owned tuples so they implement Serialize
+        let vec: Vec<((usize, usize), ContactState)> = map
+            .iter()
+            .map(|entry| (*entry.key(), entry.value().clone())) // Use *entry.value() if ContactState is Copy
+            .collect();
+            
         vec.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<(usize, usize), ContactState>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<DashMap<(usize, usize), ContactState>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -240,7 +247,6 @@ pub fn check_particle_contact(
     i: usize, 
     j: usize, 
     particles: &ParticleVec, 
-    model: &CollisionParams, 
     settings: &SimulationSettings
 ) -> Option<Contact> { 
     
@@ -280,21 +286,15 @@ pub fn check_particle_contact(
         let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
                             - (particles.velocity[j] + particles.omega[j].cross(r_j));
 
-        // Using precomputed values from model
-        let e_star = model.particle_e_star;
-        let beta = model.particle_beta;
-
-        let eff_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
-        let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
 
         let contact = Contact {
             overlap,
             normal,
             r_contact: r_i,
             rel_vel, 
-            eff_stiffness, 
-            eff_damping, 
-            mu: model.mu,
+            r_eff,
+            m_eff,
+            contact_type: ContactType::Particle,
         };
         
         Some(contact)
@@ -310,7 +310,6 @@ pub fn check_object_contact(
     i: usize,
     object: &ObjectSpec,
     particles: &ParticleVec,
-    model: &CollisionParams,
     settings: &SimulationSettings,
 ) -> Option<Contact> {
     // Exit early if particle type is excluded from collisions
@@ -319,8 +318,8 @@ pub fn check_object_contact(
     }
 
     match object {
-        ObjectSpec::Rectangle(rect) => check_surface_contact(i, rect, particles, model),
-        ObjectSpec::Triangle(tri) => check_surface_contact(i, tri, particles, model),
+        ObjectSpec::Rectangle(rect) => check_surface_contact(i, rect, particles),
+        ObjectSpec::Triangle(tri) => check_surface_contact(i, tri, particles),
         ObjectSpec::WireBox(_box_spec) => {
             // Not implemented since this is just a visual element
             None 
@@ -354,8 +353,7 @@ pub fn check_object_contact(
 fn check_surface_contact<S: SurfaceKinematics>(
     i: usize,
     surface: &S,
-    particles: &ParticleVec,
-    model: &CollisionParams
+    particles: &ParticleVec
 ) -> Option<Contact> {
 
     let closest = surface.closest_point(particles.position[i]);
@@ -381,21 +379,14 @@ fn check_surface_contact<S: SurfaceKinematics>(
 
         let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) - surface_vel;
 
-        // Hertzian parameters from model
-        let e_star = model.particle_e_star;
-        let beta = model.particle_beta;
-
-        let eff_stiffness = (4.0 / 3.0) * e_star * r_eff.sqrt();
-        let eff_damping = 2.0 * beta * (m_eff * eff_stiffness).sqrt();
-
         let contact = Contact {
             overlap,
             normal,
             r_contact: r_i,
             rel_vel,
-            eff_stiffness,
-            eff_damping,
-            mu: model.mu,
+            r_eff,
+            m_eff,
+            contact_type: ContactType::Plane,
         };
 
         Some(contact)

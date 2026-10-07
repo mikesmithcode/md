@@ -2,7 +2,7 @@
 use glam::{DVec2, DVec3, DQuat, DMat3};
 use three_d::Srgba;
 
-use crate::md_sim::utils::{create_molecule_vec, setup_single_molecule_data, assert_dvec3_near};
+use crate::md_sim::utils::{setup_single_molecule_data, assert_dvec3_near};
 
 use super::*;
 const NULL_ID: usize = usize::MAX;
@@ -15,45 +15,81 @@ const NULL_ID: usize = usize::MAX;
 /// **How:** Computes expected translational and rotational kinetic energy components manually from state properties and compares against `calculate_kinetic_energy`.  
 /// **Why:** Ensures that rigid-body mechanics correctly combine center-of-mass translation and global inertia-tensor rotation.
 #[test]
-fn test_rigidbody_ke(){
-    let p = create_molecule_vec();
-    let molecules = setup_single_molecule_data(&p);
+fn test_rigidbody_ke() {
+    let mut particles = ParticleVec::new();
+    
+    // Push Particle 0
+    let mut p1 = Particle::default();
+    p1.id = 0;
+    p1.molecule_id = 0;
+    p1.mass = 1.5;
+    p1.position = DVec3::new(1.0, 2.0, 3.5) + DVec3::new(0.25, 0.0, 0.0);
+    p1.velocity = DVec3::new(1.0, 1.0, 1.0);
+    p1.omega = DVec3::new(0.0, 0.0, 1.0);       // Set on the particle struct
+    p1.orientation = DQuat::IDENTITY;           // Set on the particle struct
+    particles.push(p1);
 
-    //p consists of m[1.5, 0.5], rel_pos[0.25, -0.75], vel[(1,1,1), (0,1,1)]
-    let total_mass = p.mass[0] + p.mass[1];
-    //let com = (p.mass[0]*p.position[0] + p.mass[1]*p.position[1])/total_mass;
-    let v_com = (p.mass[0]*p.velocity[0] + p.mass[1]*p.velocity[1])/total_mass;
-    let ke_t = 0.5*total_mass*v_com.length_squared();
+    // Push Particle 1
+    let mut p2 = Particle::default();
+    p2.id = 1;
+    p2.molecule_id = 0;
+    p2.mass = 0.5;
+    p2.position = DVec3::new(1.0, 2.0, 3.5) + DVec3::new(-0.75, 0.0, 0.0);
+    p2.velocity = DVec3::new(0.0, 1.0, 1.0);
+    p2.omega = DVec3::new(0.0, 0.0, 1.0);       // Set on the particle struct
+    p2.orientation = DQuat::IDENTITY;           // Set on the particle struct
+    particles.push(p2);
 
-    let rot_mat = DMat3::from_quat(p.orientation[0]);
+    let molecules = setup_single_molecule_data(&particles);
+    let total_mass = particles.mass[0] + particles.mass[1];
+    let v_com = (particles.mass[0] * particles.velocity[0] + particles.mass[1] * particles.velocity[1]) / total_mass;
+    let ke_t = 0.5 * total_mass * v_com.length_squared();
+
+    let rot_mat = DMat3::from_quat(particles.orientation[0]);
     let mol = molecules.get(&0).unwrap();
     let i_global = rot_mat * mol.inertia * rot_mat.transpose();
-    let ke_rot = 0.5 * p.omega[0].dot(i_global * p.omega[0]);
+    let ke_rot = 0.5 * particles.omega[0].dot(i_global * particles.omega[0]);
 
     let expected_ke = ke_t + ke_rot;
     println!("expect ke {:?}", expected_ke);
 
-
-    let ke = calculate_kinetic_energy(&p, &molecules);
+    let ke = calculate_kinetic_energy(&particles, &molecules);
     println!("ke {:?}", ke);
-    // Expected total = 4.0 + 0.5 = 4.5
     
     assert!((ke - expected_ke).abs() < 1e-10, 
             "Expected total KE of 4.5 (4.0 trans + 0.5 rot), but got {}", ke);
 }
-
 
 /// **What:** Tests conservation and calculation of total angular momentum for multi-particle rigid bodies.  
 /// **How:** Accumulates spin and orbital angular momentum components across constituent molecule particles.  
 /// **Why:** Confirms that rotational dynamics correctly account for off-center offsets relative to the center of mass.
 #[test]
 fn test_total_ang_momentum() {
-    let p = create_molecule_vec();
+    let mut particles = ParticleVec::new();
+    
+    // Construct Particle 0
+    let mut p1 = Particle::default();
+    p1.id = 0;
+    p1.molecule_id = 0;
+    p1.mass = 1.5;
+    p1.position = DVec3::new(0.25, 0.0, 0.0);
+    particles.push(p1);
+
+    // Construct Particle 1
+    let mut p2 = Particle::default();
+    p2.id = 1;
+    p2.molecule_id = 0;
+    p2.mass = 0.5;
+    p2.position = DVec3::new(-0.75, 0.0, 0.0);
+    particles.push(p2);
+
+    particles.omega.push(DVec3::new(0.0, 0.0, 1.0));
+    particles.orientation.push(DQuat::IDENTITY);
     
     // Set up molecule data specifically for the isolated vector
-    let molecules = setup_single_molecule_data(&p);
+    let molecules = setup_single_molecule_data(&particles);
 
-    let ang_mom = calculate_total_angular_momentum(&p, &molecules);
+    let ang_mom = calculate_total_angular_momentum(&particles, &molecules);
 
     let expected = DVec3::new(0.0, 0.95, 0.0);
     assert_dvec3_near(ang_mom, expected, 1e-12);
@@ -68,10 +104,29 @@ fn test_total_ang_momentum() {
 /// **Why:** Ensures kinematic reference frames are centered correctly for rigid-body updates.  
 #[test]
 fn test_calculate_com() {
-    let p = create_molecule_vec();
+    let mut particles = ParticleVec::new();
+
+    // Particle 0 (mass 0.5)
+    let mut p1 = Particle::default();
+    p1.id = 0;
+    p1.molecule_id = 0;
+    p1.mass = 0.5;
+    p1.position = DVec3::new(1.0, 2.0, 3.5);
+    p1.velocity = DVec3::new(0.75, 1.0, 1.0);
+    particles.push(p1);
+
+    // Particle 1 (mass 1.5)
+    let mut p2 = Particle::default();
+    p2.id = 1;
+    p2.molecule_id = 0;
+    p2.mass = 1.5;
+    p2.position = DVec3::new(1.0, 2.0, 3.5);
+    p2.velocity = DVec3::new(0.75, 1.0, 1.0);
+    particles.push(p2);
+
     let pids = vec![0, 1];
 
-    let (total_mass, com_pos, com_vel) = calculate_molecule_com(&pids, &p);
+    let (total_mass, com_pos, com_vel) = calculate_molecule_com(&pids, &particles);
 
     assert!((total_mass - 2.0).abs() < 1e-12);
     assert_dvec3_near(com_pos, DVec3::new(1.0, 2.0, 3.5), 1e-12);
@@ -83,15 +138,38 @@ fn test_calculate_com() {
 /// **Why:** Prevents rotational inertia anomalies during rigid-body torque applications.  
 #[test]
 fn test_calc_inertia() {
-    let p = create_molecule_vec();
+    let mut particles = ParticleVec::new();
+    
+    // Particle 0 (mass 0.5)
+    let mut p1 = Particle::default();
+    p1.id = 0;
+    p1.molecule_id = 0;
+    p1.mass = 0.5;
+    p1.radius = 0.5;
+    p1.position = DVec3::new(0.0, 0.0, 0.0);
+    particles.push(p1);
+    
+    // Particle 1 (mass 1.5, separated by 1.0 along X)
+    let mut p2 = Particle::default();
+    p2.id = 1;
+    p2.molecule_id = 0;
+    p2.mass = 1.5;
+    p2.radius = 0.5;
+    p2.position = DVec3::new(1.0, 0.0, 0.0);
+    particles.push(p2);
+
     let pids = vec![0, 1];
 
-    let inertia = calculate_molecule_inertia(&pids, &p);
+    let inertia = calculate_molecule_inertia(&pids, &particles);
 
+    // Corrected expected inertia tensor for X-axis alignment:
+    // I_xx = 0.20 (intrinsic only)
+    // I_yy = 0.575 (orbital + intrinsic)
+    // I_zz = 0.575 (orbital + intrinsic)
     let expected_inertia = DMat3::from_cols_array(&[
-        0.575, 0.0,   0.0,
+        0.20,  0.0,   0.0,
         0.0,   0.575, 0.0,
-        0.0,   0.0,   0.20,
+        0.0,   0.0,   0.575,
     ]);
 
     for col in 0..3 {

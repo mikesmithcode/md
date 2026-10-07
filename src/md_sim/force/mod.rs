@@ -11,7 +11,7 @@ mod contact;
 pub use contact::{check_particle_contact,check_object_contact, ContactManager};
 pub use neighbours::CellGrid;
 pub use objects::{check_surface_contact};
-pub use pairwise::{normal_linear, normal_hertzian, friction_viscous_damping, CollisionParams, add_coulomb, CoulombParams};
+pub use pairwise::{normal_linear, normal_hertzian, friction_viscous_damping, friction_cundall_strack, FrictionCundallStrack, FrictionViscous, NormalForce, add_coulomb, CoulombParams};
 pub use single::{add_gravity, Gravity, add_viscous_drag, ViscousDrag};
 
 
@@ -165,6 +165,14 @@ pub trait Forces {
     ) -> (DVec3, DVec3) {
         (force, torque)
     }
+
+
+    fn save_on_exit(&self, _step:usize)->Option<()>{
+        println!("Contact saving not implemented by default. impl Forces for SimUpdate with function save_contacts(&self, step: usize)");
+        
+        Some(())
+    }
+
 
     ///------------------------------------------------------------------------------
     /// update_internal_forces

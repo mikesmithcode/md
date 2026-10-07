@@ -473,7 +473,6 @@ impl RectSpec {
 }
 
 
-
 impl SurfaceKinematics for RectSpec {
     fn closest_point(&self, particle_pos: DVec3) -> DVec3 {
         let local_pos = self.orientation.inverse() * (particle_pos - self.centre);

@@ -12,20 +12,19 @@ use std::f64::consts::PI;
 use serde::{Serialize,Deserialize};
 
 use crate::md_sim::particle::ParticleVec;
-use crate::md_sim::force::contact::{Contact};
+use crate::md_sim::force::contact::{Contact, ContactType, ContactManager};
 
 
 
 
-///--------------------------------------------------------------------------------------------
+///============================================================================================
 /// 
 /// Pairwise contact forces
 /// 
-/// -------------------------------------------------------------------------------------------
-
-///------------------------------------------------------------------------------
+///============================================================================================
+///============================================================================================
 /// normal_hertzian
-///------------------------------------------------------------------------------
+///============================================================================================
 /// Computes the normal Hertzian contact force between two spherical particles.
 ///
 /// This combines a nonlinear Hertzian elastic restoring force ($\delta^{3/2}$) 
@@ -47,19 +46,32 @@ use crate::md_sim::force::contact::{Contact};
 /// * `0`: The scalar magnitude of the normal contact force (`f64`).
 /// * `1`: The vector normal force directed along the contact normal (`DVec3`).
 #[inline]
-pub fn normal_hertzian(contact: &Contact)-> (f64, DVec3){
-// Elastic and viscous damping normal forces
-    let f_elastic = contact.eff_stiffness * contact.overlap.powf(1.5);
-    let f_damping = contact.eff_damping * contact.rel_vel.dot(contact.normal);
+pub fn normal_hertzian(
+    contact: &Contact, 
+    model: &NormalForce
+) -> (f64, DVec3) {
+    // Select the appropriate precomputed material constants based on contact type
+    let (e_star, beta) = match contact.contact_type {
+        ContactType::Particle => (model.particle_estar, model.particle_beta),
+        ContactType::Plane => (model.plane_estar, model.plane_beta),
+    };
+
+    // Compute local effective stiffness and damping using geometry/mass from Contact
+    let eff_stiffness = (4.0 / 3.0) * e_star * contact.r_eff.sqrt();
+    let eff_damping = 2.0 * beta * (contact.m_eff * eff_stiffness).sqrt();
+
+    // Elastic and viscous damping normal forces
+    let f_elastic = eff_stiffness * contact.overlap.powf(1.5);
+    let f_damping = eff_damping * contact.rel_vel.dot(contact.normal);
     let f_normal_mag = (f_elastic - f_damping).max(0.0);
-    
-    //f_normal_vec
+
+    // f_normal_vec
     (f_normal_mag, contact.normal * f_normal_mag)
 }
 
-///------------------------------------------------------------------------------
+///============================================================================================
 /// normal_linear
-///------------------------------------------------------------------------------
+///============================================================================================
 /// Computes the linear normal contact force (linear spring-dashpot model) 
 /// between two spherical particles.
 ///
@@ -82,20 +94,115 @@ pub fn normal_hertzian(contact: &Contact)-> (f64, DVec3){
 /// * `0`: The scalar magnitude of the normal contact force (`f64`).
 /// * `1`: The vector normal force directed along the contact normal (`DVec3`).
 #[inline]
-pub fn normal_linear(contact: &Contact)-> (f64, DVec3){
-    // Elastic and viscous damping normal forces
-    let f_elastic = contact.eff_stiffness * contact.overlap;
-    let f_damping = contact.eff_damping * contact.rel_vel.dot(contact.normal);
+pub fn normal_linear(
+    contact: &Contact, 
+    model: &NormalForce
+) -> (f64, DVec3) {
+    // Select the appropriate precomputed material constants based on contact type
+    let (e_star, beta) = match contact.contact_type {
+        ContactType::Particle => (model.particle_estar, model.particle_beta),
+        ContactType::Plane => (model.plane_estar, model.plane_beta),
+    };
+
+    // Correct dimensional linear stiffness: 
+    // [E*] (N/m^2) * [r_eff] (m) = N/m (Linear stiffness units)
+    let eff_stiffness = 2.0 * e_star * contact.r_eff; 
+    let eff_damping = 2.0 * beta * (contact.m_eff * eff_stiffness).sqrt();
+
+    // Linear elastic force (F = k * delta) and viscous damping
+    let f_elastic = eff_stiffness * contact.overlap;
+    let f_damping = eff_damping * contact.rel_vel.dot(contact.normal);
     let f_normal_mag = (f_elastic - f_damping).max(0.0);
-    
-    //f_normal_vec
+
     (f_normal_mag, contact.normal * f_normal_mag)
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(from = "RawNormalForce")]
+pub struct NormalForce {
+    pub modulus: f64,
+    pub restitution: f64,
+    pub plane_modulus: f64,
+    pub plane_restitution: f64,
+    #[serde(skip)]
+    pub particle_estar: f64,
+    #[serde(skip)]
+    pub particle_beta: f64,
+    #[serde(skip)]
+    pub plane_estar: f64,
+    #[serde(skip)]
+    pub plane_beta: f64,
+}
 
-///------------------------------------------------------------------------------
+// Raw struct matching the exact keys found in your JSON input
+#[derive(Deserialize)]
+pub(crate) struct RawNormalForce {
+    pub modulus: f64,
+    pub restitution: f64,
+    pub plane_modulus: f64,
+    pub plane_restitution: f64,
+}
+
+impl From<RawNormalForce> for NormalForce {
+    fn from(raw: RawNormalForce) -> Self {
+        // Assume standard Poisson's ratio nu = 0.25
+        let nu = 0.25;
+        let denom = 1.0 - nu * nu;
+
+        // Particle-Particle Effective Modulus (assuming identical particle materials)
+        // 1 / E* = (1-nu^2)/E + (1-nu^2)/E = 2(1-nu^2)/E
+        let particle_estar = raw.modulus / (2.0 * denom);
+
+        // Particle-Plane Effective Modulus (combining particle and plane moduli)
+        // 1 / E* = (1-nu^2)/E_particle + (1-nu^2)/E_plane
+        let compliance_particle = denom / raw.modulus;
+        let compliance_plane = denom / raw.plane_modulus;
+        let plane_estar = 1.0 / (compliance_particle + compliance_plane);
+
+        // Damping factors derived from coefficients of restitution (e)
+        // beta = -ln(e) / sqrt(pi^2 + ln(e)^2)
+        let particle_beta = if raw.restitution > 0.0 && raw.restitution < 1.0 {
+            let ln_e = raw.restitution.ln();
+            -ln_e / (std::f64::consts::PI.powi(2) + ln_e.powi(2)).sqrt()
+        } else {
+            0.0
+        };
+
+        let plane_beta = if raw.plane_restitution > 0.0 && raw.plane_restitution < 1.0 {
+            let ln_e = raw.plane_restitution.ln();
+            -ln_e / (std::f64::consts::PI.powi(2) + ln_e.powi(2)).sqrt()
+        } else {
+            0.0
+        };
+
+        Self {
+            modulus: raw.modulus,
+            restitution: raw.restitution,
+            plane_modulus: raw.plane_modulus,
+            plane_restitution: raw.plane_restitution,
+            particle_estar,
+            particle_beta,
+            plane_estar,
+            plane_beta,
+        }
+    }
+}
+
+impl Default for NormalForce {
+    fn default() -> Self {
+        RawNormalForce {
+            modulus: 1e5,
+            restitution: 0.5,
+            plane_modulus: 1e5,
+            plane_restitution: 0.5,
+        }
+        .into()
+    }
+}
+
+///============================================================================================
 /// friction_viscous_damping
-///------------------------------------------------------------------------------
+///============================================================================================
 /// Computes the tangential contact force using a viscous damping model 
 /// constrained by a Coulomb friction limit.
 ///
@@ -113,13 +220,21 @@ pub fn normal_linear(contact: &Contact)-> (f64, DVec3){
 /// # Returns
 ///
 /// A `DVec3` representing the resolved tangential force vector acting on the particle.
-pub fn friction_viscous_damping(f_normal_mag: f64, contact: &Contact)-> DVec3{
-
+#[inline]
+pub fn friction_viscous_damping(
+    f_normal_mag: f64, 
+    contact: &Contact, 
+    model: &FrictionViscous
+) -> DVec3 {
     let v_tang = contact.rel_vel - contact.rel_vel.dot(contact.normal) * contact.normal;
 
     if v_tang.length_squared() > 1e-18 {
-        let f_t_ideal = v_tang * -contact.eff_damping;
-        let limit = contact.mu * f_normal_mag;
+        // Compute tangential damping using the parameter struct's value 
+        // (or combine it with m_eff / stiffness if you want it dynamically scaled)
+        let c_t = model.damping_coeff; // or derived from contact.m_eff and model parameters
+        
+        let f_t_ideal = v_tang * -c_t;
+        let limit = model.mu * f_normal_mag;
         let f_t_mag_sq = f_t_ideal.length_squared();
 
         if f_t_mag_sq > limit * limit {
@@ -127,99 +242,201 @@ pub fn friction_viscous_damping(f_normal_mag: f64, contact: &Contact)-> DVec3{
         } else {
             f_t_ideal
         }
+    } else {
+        DVec3::ZERO
     }
-    else{DVec3::ZERO}
 }
 
 
-///------------------------------------------------------------------------------
-/// CollisionParams
-/// 
-/// Configuration parameters for particle-particle and particle-plane contact mechanics.
-///------------------------------------------------------------------------------
-/// Holds raw material and mechanical properties along with precalculated 
-/// derived coefficients used for Hertzian or linear contact force models.
-/// 
-/// Fields:
-/// * `modulus` - Young's modulus of the particle material.
-/// * `restitution` - Coefficient of restitution for particle-particle collisions.
-/// * `mu` - Friction coefficient for particle-particle contacts.
-/// * `plane_modulus` - Young's modulus of the boundary plane material.
-/// * `plane_restitution` - Coefficient of restitution for particle-plane collisions.
-/// * `plane_mu` - Friction coefficient for particle-plane contacts.
-/// * `particle_e_star` - Precalculated effective modulus component for particles.
-/// * `particle_beta` - Precalculated damping factor for particles.
-/// * `plane_e_star` - Precalculated effective modulus for particle-plane interactions.
-/// * `plane_beta` - Precalculated damping factor for particle-plane interactions.
+///============================================================================================
+/// FrictionViscous
+///============================================================================================
+/// Configuration parameters for the viscous tangential damping model.
+///
+/// Stores user-facing configuration fields (`mu`, `restitution`) which serialize and 
+/// deserialize directly, while precomputing the simulation-ready `damping_coeff` upon deserialization.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(from = "RawCollisionParams")] // Tells Serde to parse via the raw struct first
-pub struct CollisionParams {
-    pub modulus: f64,
-    pub restitution: f64,
+#[serde(from = "RawFrictionViscous")]
+pub struct FrictionViscous {
     pub mu: f64,
-    pub plane_modulus: f64,
-    pub plane_restitution: f64,
-    pub plane_mu: f64,
-    
-    pub particle_e_star: f64,
-    pub particle_beta: f64,
-    pub plane_e_star: f64,
-    pub plane_beta: f64,
+    pub restitution: f64,
+    #[serde(skip)]
+    pub damping_coeff: f64,
 }
 
-impl Default for CollisionParams {
-    fn default() -> Self {
-        // Define standard default values for your raw parameters
-        let raw = RawCollisionParams {
-            modulus: 1.0E6,       
-            restitution: 0.8,     
-            mu: 0.5,              
-            plane_modulus: 1.0E6, 
-            plane_restitution: 0.8,
-            plane_mu: 0.5,
+///============================================================================================
+/// RawFrictionViscous
+///============================================================================================
+/// Intermediate configuration struct used to parse raw JSON inputs for the viscous friction model.
+#[derive(Deserialize)]
+struct RawFrictionViscous {
+    pub mu: f64,
+    pub restitution: f64,
+}
+
+impl From<RawFrictionViscous> for FrictionViscous {
+    fn from(raw: RawFrictionViscous) -> Self {
+        let damping_coeff = if raw.restitution > 0.0 && raw.restitution < 1.0 {
+            let ln_e = raw.restitution.ln();
+            -ln_e / (std::f64::consts::PI.powi(2) + ln_e.powi(2)).sqrt()
+        } else {
+            0.0
         };
 
-        // Automatically compute the derived fields using your existing From implementation
-        Self::from(raw)
+        Self {
+            mu: raw.mu,
+            restitution: raw.restitution,
+            damping_coeff,
+        }
     }
 }
 
-/// Temporary raw struct matching JSON input before derived coefficients are computed.
-#[derive(Deserialize)]
-struct RawCollisionParams {
+impl Default for FrictionViscous {
+    fn default() -> Self {
+        let mu:f64 = 0.5;
+        let restitution:f64 = 0.5;
+        
+        let damping_coeff = if restitution > 0.0 && restitution < 1.0 {
+            let ln_e = restitution.ln();
+            -ln_e / (std::f64::consts::PI.powi(2) + ln_e.powi(2)).sqrt()
+        } else {
+            0.0
+        };
+
+        Self {
+            mu,
+            restitution,
+            damping_coeff,
+        }
+    }
+}
+
+///============================================================================================
+/// friction_cundall_strack
+///============================================================================================
+/// Computes the tangential contact force using the Cundall-Strack history-dependent 
+/// spring-dashpot model constrained by a Coulomb friction limit.
+///
+/// Accumulates tangential shear displacement across time steps via the thread-safe `ContactManager`, 
+/// applying an elastic restoring spring force and a viscous tangential damping force, 
+/// bounded by the maximum friction yield limit ($\mu F_n$). If sliding occurs, the stored 
+/// tangential displacement history is back-corrected to prevent unphysical accumulation.
+///
+/// # Arguments
+///
+/// * `f_normal_mag`    - The scalar normal force magnitude ($F_n$) computed from the normal contact model.
+/// * `contact`         - A reference to the active `Contact` struct containing spatial geometry and relative velocities.
+/// * `model`           - A reference to the `FrictionCundallStrack` configuration parameters.
+/// * `contact_manager` - A reference to the thread-safe `ContactManager` tracking history-dependent states.
+/// * `i`               - Index of the first entity in the contact pair.
+/// * `j`               - Index of the second entity in the contact pair.
+/// * `dt`              - The simulation time step duration.
+///
+/// # Returns
+///
+/// A `DVec3` representing the resolved tangential force vector acting on the particle.
+pub fn friction_cundall_strack(
+    f_normal_mag: f64,
+    contact: &Contact,
+    model: &FrictionCundallStrack,
+    contact_manager: &ContactManager,
+    i: usize,
+    j: usize,
+    dt: f64,
+) -> DVec3 {
+    let pair = (i, j);
+
+    // Extract tangential relative velocity component (reusing your clean vector projection)
+    let v_tang = contact.rel_vel - contact.rel_vel.dot(contact.normal) * contact.normal;
+
+    // Compute incremental tangential displacement and update history in the manager
+    let delta_tangential = v_tang * dt;
+    contact_manager.check_or_add(pair, delta_tangential);
+
+    // Retrieve accumulated tangential displacement
+    let full_tang_disp = contact_manager.states.get(&pair).unwrap().tangential_disp;
+
+    // Define tangential stiffness and damping coefficients 
+    // (Standard Hertz-Mindlin convention: k_t is typically 2/3 of normal stiffness)
+    let k_t = (2.0 / 3.0) * model.tang_stiffness;
+    let c_t = 0.5 * model.tang_damping;
+
+    // Calculate trial tangential force (Elastic Spring + Viscous Damping)
+    let mut f_t_ideal = -k_t * full_tang_disp - c_t * v_tang;
+
+    // Apply Coulomb friction yield limit (||F_t|| <= mu * F_n)
+    let limit = model.mu * f_normal_mag;
+    let f_t_mag_sq = f_t_ideal.length_squared();
+
+    if f_t_mag_sq > limit * limit && f_t_mag_sq > 1e-18 {
+        let f_t_mag = f_t_mag_sq.sqrt();
+        f_t_ideal = f_t_ideal * (limit / f_t_mag);
+
+        // Back-correct stored tangential displacement so history doesn't 
+        // falsely over-accumulate while sliding under the friction limit
+        if let Some(mut state) = contact_manager.states.get_mut(&pair) {
+            state.tangential_disp = -f_t_ideal / k_t;
+        }
+    }
+
+    f_t_ideal
+}
+
+///============================================================================================
+/// FrictionCundallStrack
+///============================================================================================
+/// Configuration parameters for the Cundall-Strack tangential contact model.
+///
+/// Stores resolved tangential stiffness, damping coefficients, and the Coulomb friction 
+/// coefficient ($\mu$), derived automatically from raw user configuration via Serde.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(from = "RawFrictionCundallStrack")]
+pub struct FrictionCundallStrack {
     pub modulus: f64,
     pub restitution: f64,
     pub mu: f64,
-    pub plane_modulus: f64,
-    pub plane_restitution: f64,
-    pub plane_mu: f64,
+    #[serde(skip)]
+    pub tang_stiffness: f64,
+    #[serde(skip)]
+    pub tang_damping: f64,
 }
 
-// Automatically compute precalculated values when converting from raw to CollisionParams
-impl From<RawCollisionParams> for CollisionParams {
-    fn from(raw: RawCollisionParams) -> Self {
-        let particle_e_star = raw.modulus / 1.82;
-        let particle_beta = -raw.restitution.ln() 
-            / (std::f64::consts::PI.powi(2) + raw.restitution.ln().powi(2)).sqrt();
+///============================================================================================
+/// RawFrictionCundallStrack
+///============================================================================================
+/// Intermediate configuration struct used to parse raw JSON inputs for the Cundall-Strack model.
+///
+/// Allows users to specify a dedicated tangential modulus or fall back to standard 
+/// proportions relative to the normal contact parameters.
+///============================================================================================
+/// RawFrictionCundallStrack
+///============================================================================================
+/// Intermediate configuration struct used to parse raw JSON inputs for the Cundall-Strack model.
+#[derive(Deserialize)]
+struct RawFrictionCundallStrack {
+    pub modulus: f64,
+    pub restitution: f64,
+    pub mu: f64,
+}
 
-        let compliance = 0.91 * ((1.0 / raw.modulus) + (1.0 / raw.plane_modulus));
-        let plane_e_star = 1.0 / compliance;
+impl From<RawFrictionCundallStrack> for FrictionCundallStrack {
+    fn from(raw: RawFrictionCundallStrack) -> Self {
+        let tang_stiffness = raw.modulus;
 
-        let combined_restitution = (raw.restitution * raw.plane_restitution).sqrt();
-        let plane_beta = -combined_restitution.ln() 
-            / (std::f64::consts::PI.powi(2) + combined_restitution.ln().powi(2)).sqrt();
+        // Derive tangential damping using the standard restitution relation
+        let tang_damping = if raw.restitution > 0.0 && raw.restitution < 1.0 {
+            let ln_e = raw.restitution.ln();
+            -ln_e / (std::f64::consts::PI.powi(2) + ln_e.powi(2)).sqrt() * tang_stiffness
+        } else {
+            0.0
+        };
 
         Self {
             modulus: raw.modulus,
             restitution: raw.restitution,
             mu: raw.mu,
-            plane_modulus: raw.plane_modulus,
-            plane_restitution: raw.plane_restitution,
-            plane_mu: raw.plane_mu,
-            particle_e_star,
-            particle_beta,
-            plane_e_star,
-            plane_beta,
+            tang_stiffness,
+            tang_damping,
         }
     }
 }
