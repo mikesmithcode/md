@@ -129,7 +129,7 @@ impl ContactManager {
         let reader = BufReader::new(file);
         
         let mut manager: ContactManager = serde_json::from_reader(reader).ok()?;
-        manager.source_path = path;
+        manager.source_path = path.parent().unwrap().to_path_buf();
         
         Some(manager)
     }
@@ -139,8 +139,10 @@ impl ContactManager {
     ///------------------------------------------------------------------------------
     /// Saves contact states to a 10-digit zero-padded step file
     pub fn save_at_step(&self, step: usize) -> Option<()> {
+        
         let source_path = self.source_path.clone();
         let target_path = source_path.join(format!("contacts_{:010}.json", step));
+        println!("Saving contacts {:?}", &target_path);
 
         let file = File::create(target_path).ok()?;
         let writer = BufWriter::new(file);
@@ -150,9 +152,24 @@ impl ContactManager {
     }
 
     pub fn check_or_add(&self, pair: (usize, usize), displacement: DVec3) {
-        let mut state = self.states.entry(pair).or_default();
-        state.tangential_disp += displacement;
-        state.is_active = true;
+        // Try to find and update the existing state
+        let mut updated = false;
+        if let Some(mut state) = self.states.get_mut(&pair) {
+            state.tangential_disp += displacement;
+            state.is_active = true;
+            updated = true;
+        }
+
+        // If it wasn't found, insert a new one in a separate operation
+        if !updated {
+            self.states.insert(
+                pair,
+                ContactState {
+                    tangential_disp: displacement,
+                    is_active: true,
+                },
+            );
+        }
     }
 
     pub fn remove_old_contacts(&self) {
@@ -164,6 +181,7 @@ impl ContactManager {
     }
 }
 
+/*
 impl Default for ContactManager {
     fn default() -> Self {
         let states = DashMap::new();
@@ -174,7 +192,7 @@ impl Default for ContactManager {
             source_path: PathBuf::new(),
         }
     }
-}
+}*/
 
 /// Helper module to serialize `DashMap<(usize, usize), ContactState>` as a list of entries 
 /// so serde/JSON doesn't crash over non-string map keys.

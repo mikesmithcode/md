@@ -43,6 +43,7 @@ use crate::md_sim::Motion;
 use crate::md_sim::Interactivity;
 use crate::md_sim::{SimulationSettings, Dimensions};
 use crate::md_viz::actions::UserAction;
+use crate::md_sim::motion::periodic_wrap_molecules;
 
 
 /// The main simulation engine orchestrating particle states, forces, boundary grids, and time integration steps.
@@ -72,7 +73,7 @@ impl<S> Simulation<S>
     /// Creates and initializes a new simulation instance, building molecule groupings and setting up the spatial cell grid.
     pub fn new(mut particles: ParticleVec, objects: Option<Vec<ObjectSpec>>, sim_update: S, settings: SimulationSettings, time: f64) -> Self {
         let n = particles.len();
-        let molecule_map = build_molecule_map(&particles);
+        let molecule_map = build_molecule_map(&mut particles);
         let mut cell_grid = CellGrid::new(n, &settings);
         cell_grid.init(&mut particles);
 
@@ -202,6 +203,9 @@ impl<S> Simulation<S>
 
         // Perform correction to the motion based on the updated forces
         self.sim_update.correct_motion(&self.forces, &self.torques, &mut self.particles, &self.settings, &self.molecule_map);
+
+        //Perform periodic wrapping based on molecule COM.
+        periodic_wrap_molecules(&mut self.particles, &self.molecule_map, &self.settings);
         
         // Update simulation time
         self.time += self.settings.dt;
@@ -240,7 +244,7 @@ impl<S> Simulation<S>
 }
 
 /// Groups particle identifiers by their molecular IDs and constructs inertial mapping data for each molecule.
-fn build_molecule_map(particles: &ParticleVec) -> HashMap<usize, MoleculeData> {
+fn build_molecule_map(particles: &mut ParticleVec) -> HashMap<usize, MoleculeData> {
     // Group indices by mol_id
     let mut temp_map: HashMap<usize, Vec<usize>> = HashMap::new();
     for (id, &mol_id) in izip!(&particles.id, &particles.molecule_id) {

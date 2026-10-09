@@ -171,6 +171,7 @@ impl CellGrid {
         let threshold_sq = (settings.skin * 0.5).powi(2);
 
         let count_changed = particles.len() != self.last_particle_count;
+    
         
         let moved_too_far = particles.position.iter()
             .zip(particles.ref_pos.iter())
@@ -489,7 +490,9 @@ impl CellGrid {
 
         let mut delta = p.position[i] - p.position[j];
         check_delta(&mut delta, self.int_context.sim_box_size, self.int_context.periodic);
-        
+
         delta.length_squared() < search_radius_sq
+
+        
     }
 }

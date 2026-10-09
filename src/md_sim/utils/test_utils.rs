@@ -8,7 +8,7 @@ use crate::md_sim::particle::{ParticleVec, MoleculeData};
 
 
 /// Constructs a lookup map containing metadata and inertial properties for a single test molecule.
-pub fn setup_single_molecule_data(particles: &ParticleVec) -> HashMap<usize, MoleculeData> {
+pub fn setup_single_molecule_data(particles: &mut ParticleVec) -> HashMap<usize, MoleculeData> {
     let mut map = HashMap::new();
     let pids = vec![0, 1];
     let mol_data = MoleculeData::new(pids, particles);

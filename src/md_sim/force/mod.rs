@@ -59,14 +59,6 @@ pub trait Forces {
     /// Disabled (`false`) by default to avoid unnecessary evaluation overhead.
     fn has_object_forces(&self) -> bool { false }
 
-    ///------------------------------------------------------------------------------
-    /// has_internal_forces
-    ///------------------------------------------------------------------------------
-    /// Indicates whether the simulation requires internal multi-component particle forces.
-    ///
-    /// Disabled (`false`) by default. Set to `true` if your system uses composite particles 
-    /// requiring internal structural force and torque distributions.
-    fn has_internal_forces(&self) -> bool { false }
 
     ///------------------------------------------------------------------------------
     /// update_single_forces
@@ -167,11 +159,7 @@ pub trait Forces {
     }
 
 
-    fn save_on_exit(&self, _step:usize)->Option<()>{
-        println!("Contact saving not implemented by default. impl Forces for SimUpdate with function save_contacts(&self, step: usize)");
-        
-        Some(())
-    }
+   
 
 
     ///------------------------------------------------------------------------------

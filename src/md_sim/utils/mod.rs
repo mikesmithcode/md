@@ -48,6 +48,11 @@ pub trait Interactivity {
     // Default implementation does nothing for types that don't have model changes
     fn save_changes_model(&self, _step: usize) {}
 
+     fn save_on_exit(&self, _step:usize)->Option<()>{
+        println!("Contact saving not implemented by default. impl Interactivity for SimUpdate with function save_on_exit(&self, step: usize)->Option<()>");   
+        Some(())
+    }
+
     fn handle_key(
         &mut self, 
         key: UserAction, 
@@ -59,6 +64,10 @@ pub trait Interactivity {
         self.save_changes_model(step);
 
         println!("No keys implemented: You pressed {:?}", key);
+    }
+
+    fn do_stuff(&mut self, _particles: &mut ParticleVec, _objects: Option<&mut Vec<ObjectSpec>>, _step: usize){
+        
     }
 }
 

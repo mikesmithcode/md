@@ -32,9 +32,6 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
     let sim_filepaths = ctx.paths;
     let output_settings = ctx.output_settings;
     
-    let headless = output_settings.headless;
-    let record = output_settings.record_video;
-    
     let (particles, start_step, time) = load_latest_particles(&sim_filepaths).expect("Failed snapshot");
     let sim_settings = SimulationSettings::new(&sim_filepaths, start_step).expect("settings failed"); 
     let objects = load_latest_objects(&sim_filepaths).expect("objects failed");
@@ -43,8 +40,8 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
 
     // init_scene now returns Option<Scene> directly because Scene owns its EventLoop
     let mut scene_opt = init_scene(
-        headless,
-        record,
+        output_settings.headless,
+        output_settings.record_video,
         &sim_filepaths,
         &sim_settings,
         sim.get_particles(),
@@ -52,7 +49,7 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
         start_step,
     );
 
-    println!("Simulation started (Headless: {}, Record Video: {})...", headless, record);
+    println!("Simulation started (Headless: {}, Record Video: {})...", output_settings.headless, output_settings.record_video);
 
     let mut final_step = start_step;
 
@@ -62,7 +59,7 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
 
             //Poll window events and render graphics on EVERY step (keeps keyboard responsive)
             if let Some(ref mut scene) = scene_opt {
-                if !headless & (step%scene.scene_settings.display_steps == 0){
+                if !output_settings.headless & (step%scene.scene_settings.display_steps == 0){
                     let (close_requested, action) = scene.poll_events(); // No event_loop argument needed!
                     if close_requested {
                         break;
@@ -77,7 +74,7 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
                     scene.display(sim.get_particles(), sim.get_objects()).expect("Error displaying");
                 }
 
-                if record {
+                if output_settings.record_video {
                     let _ = scene.save_frame(sim.get_particles(), sim.get_objects());
                 }
             }       
@@ -98,6 +95,7 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
     println!("Saving final state at step {}...", final_step);
     save_particles(&sim_filepaths, final_step, sim.get_particles(), sim.time).expect("Error saving final particles");
     save_objects(&sim_filepaths, final_step, sim.get_objects(), sim.time).expect("Error saving final objects");
+    save_setings
     sim.sim_update.save_on_exit(final_step).expect("Error saving contacts.json");
 
     if let Some(mut scene) = scene_opt {

@@ -8,23 +8,36 @@ import shutil
 def get_latest_file(src_dir, prefix="particles", extension="parquet"):
     """
     Finds the latest file in a directory matching <prefix>_<10-digit-step>.<extension>
-    e.g., particles_0000001500.parquet or variables_0000000500.json
     """
-    # Dynamically build the regex pattern based on the prefix and extension
+    src_path = Path(src_dir)
+    
+    # Check if the directory actually exists
+    if not src_path.exists():
+        print(f"Directory does not exist: {src_path.absolute()}")
+        return None
+
+    # Dynamic regex: matches e.g. particles_0001000100.parquet
     pattern = re.compile(rf"^{re.escape(prefix)}_(\d{{10}})\.{re.escape(extension)}$")
     
     max_step = -1
     latest_file = None
     
-    # Corrected glob usage to scan files in the directory
-    for file_path in src_dir.glob(f"{prefix}_*.{extension}"):
+    # Use rglob if files might be nested, or glob for direct children
+    for file_path in src_path.glob(f"{prefix}_*.{extension}"):
         match = pattern.match(file_path.name)
         if match:
             step_num = int(match.group(1))
             if step_num > max_step:
                 max_step = step_num
                 latest_file = file_path
-                
+        else:
+            # Debug: see what failed to match if any files matched the glob
+            # print(f"Filename didn't match regex: {file_path.name}")
+            pass
+            
+    if latest_file is None:
+        print(f"No matching files found in {src_path.absolute()} for pattern {prefix}_*_.{extension}")
+        
     return latest_file
 
 def save_dict_to_json(data_dict, filepath):
@@ -73,10 +86,7 @@ def get_config(*args, **kwargs):
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / "sim.json"
     
-    print(particles_filepath)
-    
-    print(config_dir)
-    
+    print("\n===================================================================================\nget_config is copying model.json from input to your output folder\n===================================================================================\n")
     shutil.copy(str(config_dir / 'model.json'), str(output_config_dir / 'model_0000000000.json'))
     
     

@@ -9,7 +9,7 @@ use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::{Particle, RectSpec, ObjectSpec, ParticleVec};
 use crate::md_sim::utils::create_grid_and_settings;
 use crate::md_sim::force::contact::{Contact, ContactState, ContactManager};
-use crate::md_sim::force::{add_gravity,Gravity, add_viscous_drag, ViscousDrag, FrictionViscous, FrictionCundallStrack, NormalForce, add_coulomb, CoulombParams};
+use crate::md_sim::force::{add_gravity,Gravity, add_viscous_drag, ViscousDrag, FrictionViscous, friction_cundall_strack, FrictionCundallStrack, NormalForce, add_coulomb, CoulombParams};
 use crate::md_sim::force::{normal_hertzian, normal_linear, friction_viscous_damping};
 use super::neighbours::CellGrid;
 use std::f64::consts::PI;
@@ -51,9 +51,16 @@ fn test_add_drag() {
     use std::f64::consts::PI;
     
     let mut particles = ParticleVec::new();
-    particles.push(Particle::default());
+    let mut p0 = Particle::default() ;
+    p0.velocity=DVec3::new(1.0,0.0,0.0);
+    p0.radius = 0.5;
+
+    particles.push(p0);
+
     let mut force = DVec3::ZERO;
-    let viscous_drag = ViscousDrag::default();
+    
+    let mut viscous_drag = ViscousDrag::default();
+    viscous_drag.viscosity=1.0;
 
     // Apply drag to the first particle
     force = add_viscous_drag(0, &particles,force, &viscous_drag);
@@ -214,6 +221,91 @@ fn test_friction_viscous_damping_exceeds_limit() {
     assert!(f_t.x < 0.0);
 }
 
+
+
+#[test]
+fn test_cundall_strack_spring_stretch() {
+    let manager = ContactManager::new(PathBuf::from("dummy/path"));
+    let model = FrictionCundallStrack::default(); // modulus = 1000.0, mu = 0.3
+    let i=0;
+    let j=1;
+    let dt = 0.01;
+
+    // v_tang should be (1.0, 0.0, 0.0) since rel_vel is orthogonal to normal
+    let contact = Contact {
+        rel_vel: DVec3::new(1.0, 0.0, 0.0), // Pure X-direction sliding velocity
+        normal: DVec3::new(0.0, 1.0, 0.0),  // Normal pointing along Y
+        ..Contact::default()
+    };
+    
+
+    let f_normal_mag = 1000.0; // limit = mu * f_normal_mag = 0.3 * 100.0 = 300.0
+    println!("FEBUG: {:?}", manager.states);
+    // First step
+    let _force_1 = friction_cundall_strack(i, j, f_normal_mag, &contact, &manager, &model, dt);
+
+    println!("FEBUG: {:?}", manager.states);
+    
+
+    // Verify state was created and force was calculated
+    assert!(manager.states.contains_key(&(i,j)));
+    
+    // get accumulated displacement
+    let disp_x = {
+        manager.states.get(&(i,j)).unwrap().tangential_disp.x
+    };
+    
+    // delta_tangential = v_tang * dt = (1.0, 0.0, 0.0) * 0.01 = 0.01
+    assert!((disp_x - 0.01).abs() < 1e-6);
+
+    // Second step: accumulate more displacement
+    let _force_2 = friction_cundall_strack(i, j, f_normal_mag, &contact, &manager, &model, dt);
+    
+    let disp_x_2 = {
+        manager.states.get(&(i,j)).unwrap().tangential_disp.x
+    };
+    assert!((disp_x_2 - 0.02).abs() < 1e-6);
+}
+
+#[test]
+fn test_cundall_strack_coulomb_friction_limit() {
+    let manager = ContactManager::new(PathBuf::from("dummy/path"));
+    let model = FrictionCundallStrack {
+        modulus: 10000.0, // High stiffness to quickly exceed limit
+        restitution: 0.0,
+        mu: 0.1,
+        tang_stiffness: 10000.0,
+        tang_damping: 0.0,
+    };
+    let i=0;
+    let j=1;
+    let dt = 0.1;
+
+    let contact = Contact {
+        rel_vel: DVec3::ZERO,
+        normal: DVec3::Z,
+        ..Contact::default()
+    };
+
+    // Seed an artificially large displacement to force yielding (0.05*model.tang_stiffness)
+    manager.check_or_add((i,j), DVec3::new(0.05, 0.0, 0.0));
+
+    let f_normal_mag = 100.0; // Friction limit = 0.1 * 100.0 = 10.0
+    let force = friction_cundall_strack(i, j, f_normal_mag, &contact, &manager, &model, dt);
+
+    // Force magnitude should be clipped exactly to the friction limit (10.0)
+    assert!((force.length() - 10.0).abs() < 1e-6, "Force should be clipped to Coulomb limit");
+
+    // Stored displacement should be back-corrected: state.tangential_disp = -f_t_ideal / tang_stiffness
+    let corrected_disp_x = {
+        manager.states.get(&(i,j)).unwrap().tangential_disp.x
+    };
+    
+    // Expected clipped force vector points in -X direction based on initial positive displacement
+    // f_t_ideal was pointing negative (-10000 * 0.05 = -500), clipped to magnitude 10 -> force vector = (-10, 0, 0)
+    // Back-corrected disp = -(-10) / 10000 = 0.001
+    assert!((corrected_disp_x - 0.001).abs() < 1e-6, "Displacement history should be back-corrected during sliding");
+}
 
 /// ====================================================================================================================
 /// **What:** Checks long-range electrostatic interaction forces between charged particles.  
@@ -398,43 +490,34 @@ fn test_first_frame_rebuild() {
     // Particle 0
     let mut p0 = Particle::default();
     p0.position = DVec3::new(1.0, 1.0, 1.0);
-    p0.id=0;
-    p0.ptype=0;
+    p0.id = 0;
+    p0.ptype = 0;
+    p0.molecule_id = 0; // Assigned to molecule 0
     particles.push(p0);
 
     // Particle 1 (placed close to particle 0 to be within neighbor cutoff)
     let mut p1 = Particle::default();
     p1.position = DVec3::new(1.15, 1.0, 1.0);
-    p1.id=1;
-    p1.ptype=1;
+    p1.id = 1;
+    p1.ptype = 1;
+    p1.molecule_id = 1; // Assigned to a DIFFERENT molecule so they can interact
     particles.push(p1);
 
     // Particle 2 (placed far away)
     let mut p2 = Particle::default();
-    p2.id=2;
-    p2.ptype=0;
+    p2.id = 2;
+    p2.ptype = 0;
+    p2.molecule_id = 2;
     p2.position = DVec3::new(5.0, 5.0, 5.0);
     particles.push(p2);
-
-    println!("Particle types in SoA: {:?}", particles.ptype); // or particles.particle_type
-    println!("Particle positions in SoA: {:?}", particles.position); // or particles.particle_type
-
-    grid.init(&mut particles);
-
-    println!("ids {:?}", grid.verlet_particle_ids);
-    println!("offsets {:?}", grid.verlet_offsets);
-    println!("Particle types in SoA: {:?}", particles.ptype); 
 
     // Set a mismatched reference position to verify grid.init resets it
     particles.ref_pos[0] = DVec3::new(5.0, 5.0, 5.0);
 
-    
+    grid.init(&mut particles);
 
     assert_eq!(particles.ref_pos[0], particles.position[0]);
-    
-    println!("ids {:?}", grid.verlet_particle_ids);
-    println!("offsets {:?}", grid.verlet_offsets);
-    println!("Particle types in SoA: {:?}", particles.ptype); // or particles.particle_type
+
     // Verify half-list neighbor structure: 
     // Particle 0's list contains particle 1, but particle 1's list does not contain 0
     assert!(grid.verlet_particle_ids[grid.verlet_offsets[0]..grid.verlet_offsets[1]].contains(&1));
@@ -450,20 +533,24 @@ fn test_first_frame_rebuild() {
 #[test]
 fn test_skin_displacement_trigger() {
     let (mut grid, settings) = create_grid_and_settings();
-    
+    grid.last_particle_count = 1;
+
     // Create a ParticleVec and push particles manually
     let mut particles = ParticleVec::new();
     let mut p = Particle::default();
     p.position = DVec3::new(1.0, 1.0, 1.0);
     p.radius = 0.5;
     particles.push(p);
-    
+
+
     // Initialize grid and reference positions
     grid.init(&mut particles);
 
     // Move 0.09 (less than skin/2 = 0.1), shouldn't rebuild reference positions
     particles.position[0] += DVec3::new(0.09, 0.0, 0.0);
+
     grid.check_and_rebuild_neighbours(&mut particles, &settings);
+
     assert_ne!(particles.ref_pos[0], particles.position[0], "Should not have rebuilt");
 
     // Move another 0.2 (total displacement exceeds skin threshold)
@@ -778,17 +865,27 @@ fn test_contact_manager_check_or_add() {
     manager.check_or_add(pair, displacement);
     
     assert!(manager.states.contains_key(&pair), "Contact pair should be registered in the manager");
-    let state = manager.states.get(&pair).unwrap();
-    assert!(state.is_active, "Contact should be marked active");
-    assert!((state.tangential_disp.x - 0.1).abs() < 1e-6, "Initial tangential displacement should match");
+    
+    // Extract values into local variables so the DashMap read guard drops immediately
+    let (is_active, tangential_disp_x) = {
+        let state = manager.states.get(&pair).unwrap();
+        (state.is_active, state.tangential_disp.x)
+    }; // <-- guard drops here when this block ends!
 
-    // Second encounter: should accumulate shear displacement across steps
-    let additional_displacement=DVec3::new(0.05, 0.0, 0.0); 
+    assert!(is_active, "Contact should be marked active");
+    assert!((tangential_disp_x - 0.1).abs() < 1e-6, "Initial tangential displacement should match");
+
+    // Second encounter: now the shard is unlocked, so this will succeed cleanly
+    let additional_displacement = DVec3::new(0.05, 0.0, 0.0); 
     manager.check_or_add(pair, additional_displacement);
     
-    let updated_state = manager.states.get(&pair).unwrap();
-    assert!((updated_state.tangential_disp.x - 0.15).abs() < 1e-6, "Tangential displacement should accumulate correctly");
-    assert!(updated_state.is_active, "Contact should remain active after re-encounter");
+    let (updated_is_active, updated_disp_x) = {
+        let updated_state = manager.states.get(&pair).unwrap();
+        (updated_state.is_active, updated_state.tangential_disp.x)
+    };
+
+    assert!((updated_disp_x - 0.15).abs() < 1e-6, "Tangential displacement should accumulate correctly");
+    assert!(updated_is_active, "Contact should remain active after re-encounter");
 }
 
 

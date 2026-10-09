@@ -21,8 +21,13 @@ impl MoleculeData {
     /// # Returns
     ///
     /// * `Self` - An initialized molecule specification.
-    pub fn new(pids: Vec<usize>, particles: &ParticleVec) -> Self {           
-        // Calculate constant body-frame inertia tensor
+    pub fn new(pids: Vec<usize>, particles: &mut ParticleVec) -> Self {                  
+        let (_, com_pos, _) = calculate_molecule_com(&pids, particles);
+
+        // Automatically set each particle's static relative position
+        for &idx in &pids {
+            particles.rel_pos[idx] = particles.position[idx] - com_pos;
+        }
         let inertia = calculate_molecule_inertia(&pids, particles);
         
         Self { pids, inertia }

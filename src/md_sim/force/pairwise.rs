@@ -336,12 +336,12 @@ impl Default for FrictionViscous {
 ///
 /// A `DVec3` representing the resolved tangential force vector acting on the particle.
 pub fn friction_cundall_strack(
-    f_normal_mag: f64,
-    contact: &Contact,
-    model: &FrictionCundallStrack,
-    contact_manager: &ContactManager,
     i: usize,
     j: usize,
+    f_normal_mag: f64,
+    contact: &Contact,
+    contact_manager: &ContactManager,
+    model: &FrictionCundallStrack,
     dt: f64,
 ) -> DVec3 {
     let pair = (i, j);
@@ -351,18 +351,14 @@ pub fn friction_cundall_strack(
 
     // Compute incremental tangential displacement and update history in the manager
     let delta_tangential = v_tang * dt;
+    
     contact_manager.check_or_add(pair, delta_tangential);
 
     // Retrieve accumulated tangential displacement
     let full_tang_disp = contact_manager.states.get(&pair).unwrap().tangential_disp;
 
-    // Define tangential stiffness and damping coefficients 
-    // (Standard Hertz-Mindlin convention: k_t is typically 2/3 of normal stiffness)
-    let k_t = (2.0 / 3.0) * model.tang_stiffness;
-    let c_t = 0.5 * model.tang_damping;
-
     // Calculate trial tangential force (Elastic Spring + Viscous Damping)
-    let mut f_t_ideal = -k_t * full_tang_disp - c_t * v_tang;
+    let mut f_t_ideal = -model.tang_stiffness * full_tang_disp - model.tang_damping * v_tang;
 
     // Apply Coulomb friction yield limit (||F_t|| <= mu * F_n)
     let limit = model.mu * f_normal_mag;
@@ -375,7 +371,7 @@ pub fn friction_cundall_strack(
         // Back-correct stored tangential displacement so history doesn't 
         // falsely over-accumulate while sliding under the friction limit
         if let Some(mut state) = contact_manager.states.get_mut(&pair) {
-            state.tangential_disp = -f_t_ideal / k_t;
+            state.tangential_disp = -f_t_ideal / model.tang_stiffness;
         }
     }
 
@@ -389,6 +385,11 @@ pub fn friction_cundall_strack(
 ///
 /// Stores resolved tangential stiffness, damping coefficients, and the Coulomb friction 
 /// coefficient ($\mu$), derived automatically from raw user configuration via Serde.
+/// 
+/// Choosing appropriate values:
+/// 
+/// Generally (Standard Hertz-Mindlin convention) tangential stiffness is typically 2/3 of normal stiffness
+/// Tangential damping is half normal damping. This is not always true but they should not be orders of magnitude different.    
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(from = "RawFrictionCundallStrack")]
 pub struct FrictionCundallStrack {
@@ -399,6 +400,17 @@ pub struct FrictionCundallStrack {
     pub tang_stiffness: f64,
     #[serde(skip)]
     pub tang_damping: f64,
+}
+
+impl Default for FrictionCundallStrack {
+    fn default() -> Self {
+        RawFrictionCundallStrack {
+            modulus: 1000.0,
+            restitution: 0.5,
+            mu: 0.3,
+        }
+        .into()
+    }
 }
 
 ///============================================================================================
@@ -421,6 +433,9 @@ struct RawFrictionCundallStrack {
 
 impl From<RawFrictionCundallStrack> for FrictionCundallStrack {
     fn from(raw: RawFrictionCundallStrack) -> Self {
+        if raw.modulus <=0.0{
+            panic!("negative or zero tangential modulus in FrictionCundallStrack")
+        }
         let tang_stiffness = raw.modulus;
 
         // Derive tangential damping using the standard restitution relation

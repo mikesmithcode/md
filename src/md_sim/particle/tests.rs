@@ -40,7 +40,7 @@ fn test_rigidbody_ke() {
     p2.orientation = DQuat::IDENTITY;           // Set on the particle struct
     particles.push(p2);
 
-    let molecules = setup_single_molecule_data(&particles);
+    let molecules = setup_single_molecule_data(&mut particles);
     let total_mass = particles.mass[0] + particles.mass[1];
     let v_com = (particles.mass[0] * particles.velocity[0] + particles.mass[1] * particles.velocity[1]) / total_mass;
     let ke_t = 0.5 * total_mass * v_com.length_squared();
@@ -67,12 +67,17 @@ fn test_rigidbody_ke() {
 fn test_total_ang_momentum() {
     let mut particles = ParticleVec::new();
     
+    let omega_val = DVec3::new(0.0, 0.0, 1.0);
+
     // Construct Particle 0
     let mut p1 = Particle::default();
     p1.id = 0;
     p1.molecule_id = 0;
     p1.mass = 1.5;
     p1.position = DVec3::new(0.25, 0.0, 0.0);
+    p1.omega = omega_val;
+    p1.orientation = DQuat::IDENTITY;
+    p1.velocity = omega_val.cross(p1.position); // v = w x r
     particles.push(p1);
 
     // Construct Particle 1
@@ -81,17 +86,17 @@ fn test_total_ang_momentum() {
     p2.molecule_id = 0;
     p2.mass = 0.5;
     p2.position = DVec3::new(-0.75, 0.0, 0.0);
+    p2.omega = omega_val;
+    p2.orientation = DQuat::IDENTITY;
+    p2.velocity = omega_val.cross(p2.position); // v = w x r
     particles.push(p2);
 
-    particles.omega.push(DVec3::new(0.0, 0.0, 1.0));
-    particles.orientation.push(DQuat::IDENTITY);
-    
     // Set up molecule data specifically for the isolated vector
-    let molecules = setup_single_molecule_data(&particles);
+    let molecules = setup_single_molecule_data(&mut particles);
 
     let ang_mom = calculate_total_angular_momentum(&particles, &molecules);
 
-    let expected = DVec3::new(0.0, 0.95, 0.0);
+    let expected = DVec3::new(0.0, 0.0, 0.95);
     assert_dvec3_near(ang_mom, expected, 1e-12);
 }
 
@@ -134,7 +139,7 @@ fn test_calculate_com() {
 }
 
 /// **What:** Verifies analytical inertia tensor generation against known geometric configurations.  
-/// **How:** Evaluates `calculate_molecule_inertia` for a structured particle pair and checks diagonal and off-diagonal tensor terms.  
+/// **How:** Evaluates `calculate_molecule_inertia` for a structured particle pair. Both particles are spheres. calculate_moment_inertia uses the rel_pos fields  
 /// **Why:** Prevents rotational inertia anomalies during rigid-body torque applications.  
 #[test]
 fn test_calc_inertia() {
@@ -147,6 +152,7 @@ fn test_calc_inertia() {
     p1.mass = 0.5;
     p1.radius = 0.5;
     p1.position = DVec3::new(0.0, 0.0, 0.0);
+    p1.rel_pos = DVec3::new(-0.75,0.0,0.0);
     particles.push(p1);
     
     // Particle 1 (mass 1.5, separated by 1.0 along X)
@@ -156,6 +162,7 @@ fn test_calc_inertia() {
     p2.mass = 1.5;
     p2.radius = 0.5;
     p2.position = DVec3::new(1.0, 0.0, 0.0);
+    p2.rel_pos = DVec3::new(0.25,0.0,0.0);
     particles.push(p2);
 
     let pids = vec![0, 1];

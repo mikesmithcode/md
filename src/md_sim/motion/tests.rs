@@ -6,6 +6,7 @@ use crate::md_sim::utils::setup_single_molecule_data;
 use crate::md_sim::particle::{Particle, ParticleVec, calculate_molecule_com, calculate_kinetic_energy, calculate_total_angular_momentum};
 use crate::md_sim::motion::{enforce_boundary,integrate_rigid_bodies, integrate_rigid_bodies_correct, integrate_singleparticle_correct, integrate_singleparticle_update, change_rad};
 use crate::md_sim::SimulationSettings;
+use crate::md_sim::motion::periodic_wrap_molecules;
 
 //-------------------------------------------------------------------------------------------------------
 // Testing integration functions
@@ -108,7 +109,7 @@ fn test_integrate_rigid_body_conservation() {
     p2.velocity = DVec3::new(1.0, 0.5, -0.5);
     particles.push(p2);
 
-    let mol_data = setup_single_molecule_data(&particles); 
+    let mol_data = setup_single_molecule_data(&mut particles); 
     
     // Calculate Initial State
     let (_mass, _com, initial_com_vel) = calculate_molecule_com(&vec![0, 1], &particles);        
@@ -150,7 +151,7 @@ fn test_integrate_rigid_body_gravity() {
     p2.velocity = DVec3::new(0.75, 0.0, 1.0);
     particles.push(p2);
 
-    let mol_data = setup_single_molecule_data(&particles);
+    let mol_data = setup_single_molecule_data(&mut particles);
     
     // Gravity acting only on Z
     let gravity = DVec3::new(0.0, 0.0, -9.81);
@@ -198,7 +199,7 @@ fn test_molecule_rotation_no_torque() {
     p2.molecule_id = 0;
     particles.push(p2);
 
-    let mol_data = setup_single_molecule_data(&particles);
+    let mol_data = setup_single_molecule_data(&mut particles);
     let molecule = mol_data.get(&0).expect("0 should exist");
 
     let initial_omega = particles.omega[0];
@@ -217,12 +218,12 @@ fn test_molecule_rotation_no_torque() {
     assert!((final_com_vel.x - initial_com_vel.x).abs() < 1e-12, "COM X-velocity should be conserved!");        
 }
 
-
 /// **What:** Tests rigid-body rotational dynamics under a physical torque couple.  
 /// **How:** Applies equal and opposite forces to individual particles in a molecule to induce rotational acceleration.  
 /// **Why:** Validates that external forces produce torque. Checks that translational velocity stays the same but rotation speeds up.
 #[test]
 fn test_molecule_rotation_torque() {
+    
     let dt = 0.1;
     let settings = SimulationSettings { dt, ..Default::default() };
     
@@ -232,35 +233,50 @@ fn test_molecule_rotation_torque() {
     let mut p1 = Particle::default();
     p1.id = 0;
     p1.position = DVec3::new(-0.5, 0.0, 0.0);
+    p1.velocity = DVec3::ZERO;
+    p1.omega = DVec3::ZERO;
     p1.molecule_id = 0;
     particles.push(p1);
     
     let mut p2 = Particle::default();
     p2.id = 1;
     p2.position = DVec3::new(0.5, 0.0, 0.0);
+    p2.velocity = DVec3::ZERO;
+    p2.omega = DVec3::ZERO;
     p2.molecule_id = 0;
     particles.push(p2);
 
-    let mol_data = setup_single_molecule_data(&particles);
+    let mol_data = setup_single_molecule_data(&mut particles);
     let molecule = mol_data.get(&0).expect("0 should exist");
 
     let (_, _, init_com_vel) = calculate_molecule_com(&molecule.pids, &particles);
 
-    // Apply a force couple: P0 pushed in +X, P1 pushed in -X
+    // Apply a force couple: P0 pushed in +Z, P1 pushed in -Z
     // This creates rotation around the Y-axis.
-    let forces = vec![DVec3::new(1.0, 0.0, 0.0), DVec3::new(-1.0, 0.0, 0.0)];
+    let forces = vec![DVec3::new(0.0, 0.0, 1.0), DVec3::new(0.0, 0.0, -1.0)];
     let torques = vec![DVec3::ZERO, DVec3::ZERO];
 
     // Integration
     integrate_rigid_bodies(&forces, &torques, &mut particles, &mol_data, &settings);
+
     let mid_omega = particles.omega[0];
-    assert!((mid_omega.y - 0.08695652173913045).abs() < 1e-12, "Angular velocity change failed!"); 
+    
+    //Where 0.07142857 comes from:
+    //The Inertia Tensor (I_yy):
+    //The parallel-axis contribution from your two particles at +/- 0.5 is 2 * m * x^2 = 2 * 1.0 * 0.5^2 = 0.5.
+    //The 2 internal sphere rotation terms 2* 2/5 * m * r^2 = 0.2 
+    //This brings the total computed I_yy 0.7.
+    //The Angular Acceleration: alpha_y = torque/I_yy = 1.0/0.7 ~ 1.4285714
+    //The Mid-Step Omega = alpha_y * dt/2 = 1.4285714 * 0.05 = 0.07142857
+    assert!((mid_omega.y - 0.07142857142857144).abs() < 1e-12, "Middle angular velocity change failed!"); 
 
     integrate_rigid_bodies_correct(&forces, &torques, &mut particles, &mol_data, &settings);    
+
     let final_omega = particles.omega[0];
-    let (_, _, final_com_vel) = calculate_molecule_com(&molecule.pids, &particles);
     
-    assert!((final_omega.y - 0.17390975591781438).abs() < 1e-12, "Angular velocity change failed!"); 
+    let (_, _, final_com_vel) = calculate_molecule_com(&molecule.pids, &particles);
+    println!("{:?}", final_omega.y);
+    assert!((final_omega.y - 0.14285532070745574).abs() < 1e-12, "Final angular velocity change failed!"); 
     assert!((final_com_vel.x - init_com_vel.x).abs() < 1e-12, "COM X-velocity should be conserved!");        
 }
 
@@ -275,30 +291,21 @@ fn test_molecule_rotation_torque() {
 fn test_enforce_boundary() {
     let sim_box = DVec3::new(10.0, 10.0, 10.0);
 
-    // 1. Test Periodic Wrapping
-    let mut pos = DVec3::new(12.0, -2.0, 5.0);
-    let mut vel = DVec3::new(1.0, 1.0, 1.0);
-    enforce_boundary(&mut pos, &mut vel, sim_box, [true, true, true], 0.0);
-    
-    assert!((pos.x - 2.0).abs() < 1e-9);
-    assert!((pos.y - 8.0).abs() < 1e-9);
-    assert!((pos.z - 5.0).abs() < 1e-9);
-
-    // 2. Test Elastic Lower Bound Reflection
-    let mut pos = DVec3::new(-1.0, 5.0, 5.0);
+    // Test Elastic Lower Bound Reflection
+    let mut pos = DVec3::new(-0.01, 5.0, 5.0);
     let mut vel = DVec3::new(-1.0, 0.0, 0.0);
     enforce_boundary(&mut pos, &mut vel, sim_box, [false, false, false], 0.0);
     
-    assert!((pos.x - 1.0).abs() < 1e-9); 
-    assert!((vel.x - 1.0).abs() < 1e-9); 
+    assert!((pos.x).abs() < 1e-9, "test position"); 
+    assert!((vel.x - 1.0).abs() < 1e-9, "test reflected velocity"); 
 
-    // 3. Test Elastic Upper Bound Reflection
-    let mut pos = DVec3::new(11.0, 5.0, 5.0);
+    // Test Elastic Upper Bound Reflection
+    let mut pos = DVec3::new(10.1, 5.0, 5.0);
     let mut vel = DVec3::new(1.0, 0.0, 0.0);
     enforce_boundary(&mut pos, &mut vel, sim_box, [false, false, false], 0.0);
     
-    assert!((pos.x - 9.0).abs() < 1e-9); 
-    assert!((vel.x - -1.0).abs() < 1e-9); 
+    assert!((pos.x - 10.0).abs() < 1e-9); 
+    assert!((vel.x + 1.0).abs() < 1e-9); 
 }
 
 /// **What:** Tests type-specific particle swelling/growth (`change_rad`).  
@@ -349,30 +356,61 @@ fn test_numerical_stability() {
     let mut p1 = Particle::default();
     p1.position = DVec3::new(-0.5, 0.0, 0.0);
     p1.molecule_id = 0;
+    p1.mass=1.0;
+    p1.radius=1.0;
     particles.push(p1);
     
     let mut p2 = Particle::default();
     p2.id=1;
     p2.position = DVec3::new(0.5, 0.0, 0.0);
     p2.molecule_id = 0;
+    p2.mass=1.0;
+    p2.radius=1.0;
     particles.push(p2);
 
-    let mol_data = setup_single_molecule_data(&particles);
+
+    let mol_data = setup_single_molecule_data(&mut particles);
+
+    particles.omega[0] = DVec3::new(0.0, 0.0, 1.0);
+    particles.omega[1] = DVec3::new(0.0, 0.0, 1.0);
+    particles.velocity[0] = particles.omega[0].cross(particles.rel_pos[0]);
+    particles.velocity[1] = particles.omega[1].cross(particles.rel_pos[1]);
+
     
+
     let initial_energy = calculate_kinetic_energy(&particles, &mol_data);
     let initial_angular_momentum = calculate_total_angular_momentum(&particles, &mol_data);
     
-    for _ in 0..num_steps {
+    println!("ang {:?}", initial_angular_momentum);
+
+    for i in 0..num_steps {
         let forces = vec![DVec3::ZERO; particles.len()];
         let torques = vec![DVec3::ZERO; particles.len()];
         
         integrate_rigid_bodies(&forces, &torques, &mut particles, &mol_data, &settings);
         integrate_rigid_bodies_correct(&forces, &torques, &mut particles, &mol_data, &settings);
+        periodic_wrap_molecules(&mut particles, &mol_data, &settings); 
+        // Print diagnostics every 1,000 steps to trace the decay
+        if i % 1000 == 0 || i == num_steps - 1 {
+            let current_am = calculate_total_angular_momentum(&particles, &mol_data);
+            let current_energy = calculate_kinetic_energy(&particles, &mol_data);
+            println!(
+                "Step {:5} | omega[0]: {:?}, orient[0]: {:?}, AM: {:?}, KE: {:.6}",
+                i,
+                particles.omega[0],
+                particles.orientation[0],
+                current_am,
+                current_energy
+            );
+        }
+    
     }
     
     let final_energy = calculate_kinetic_energy(&particles, &mol_data);
     let final_angular_momentum = calculate_total_angular_momentum(&particles, &mol_data);
-    
+    println!("ang {:?}", final_angular_momentum);
+
+
     let energy_drift = (final_energy - initial_energy).abs() / initial_energy;
     let momentum_drift = (final_angular_momentum - initial_angular_momentum).length();
     

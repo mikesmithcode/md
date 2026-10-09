@@ -1,13 +1,51 @@
 use glam::DVec3;
 use itertools::izip;
 use three_d::Srgba;
+use std::collections::HashMap;
 
 use crate::md_sim::{SimulationSettings, particle::ParticleVec};
-
+use crate::md_sim::particle::{calculate_molecule_com,MoleculeData};
 
 //-------------------------------------------------------------------------------------------------------
 // Special functions
 //-------------------------------------------------------------------------------------------------------
+/// Wrap molecules
+/// 
+/// This is used to apply periodic boundary conditions
+pub fn periodic_wrap_molecules(
+    particles: &mut ParticleVec, 
+    molecule_map: &HashMap<usize, MoleculeData>,
+    settings: &SimulationSettings
+) {
+    let box_size = settings.sim_box_size;
+    let periodic = settings.periodic;
+
+    for (_, mol) in molecule_map {
+        // Calculate the current center of mass
+        let (_, com_pos, _) = calculate_molecule_com(&mol.pids, particles);
+
+        // Determine the wrapped COM position for periodic axes
+        let mut wrapped_com = com_pos;
+        for i in 0..3 {
+            if periodic[i] {
+                let val = wrapped_com[i] / box_size[i];
+                wrapped_com[i] -= box_size[i] * val.floor();
+            }
+        }
+
+        // Compute the shift vector
+        let shift = wrapped_com - com_pos;
+
+        // Apply the shift uniformly to all constituent particles
+        if shift.length_squared() > 1e-12 {
+            for &idx in &mol.pids {
+                particles.position[idx] += shift;
+            }
+        }
+    }
+}
+
+
 
 /// Enforces boundary conditions (periodic wrapping or elastic reflection) dimension by dimension.
 /// 
@@ -24,30 +62,28 @@ use crate::md_sim::{SimulationSettings, particle::ParticleVec};
 /// 
 /// Each spatial dimension is treated independently:
 /// 
-/// 1. **Periodic Boundaries (`true`):** Wraps the coordinate back into the primary simulation box $[0, \text{sim\_box\_size})$ using floor-based modular arithmetic. 
-/// 2. **Non-Periodic Boundaries (`false`):** Implements perfectly elastic reflection off the box walls:
+///  **Non-Periodic Boundaries (`false`):** Implements perfectly elastic reflection off the box walls:
 ///    * If the particle crosses the lower boundary ($< 0.0$), position is reflected inward and velocity is inverted ($v_i = -v_i$).
 ///    * If the particle crosses the upper boundary ($\ge \text{sim\_box\_size}$), position is bounced back relative to the wall and velocity is inverted.
 #[inline]
-pub fn enforce_boundary(pos: &mut DVec3, vel: &mut DVec3, sim_box_size: DVec3, periodic: [bool; 3], radius: f64) {
+pub fn enforce_boundary(
+    pos: &mut DVec3, 
+    vel: &mut DVec3, 
+    sim_box_size: DVec3, 
+    periodic: [bool; 3], 
+    radius: f64
+) {
     for i in 0..3 {
-        if periodic[i] {
-            let val = pos[i] / sim_box_size[i];
-            pos[i] -= sim_box_size[i] * val.floor();
-        } else {
-            // Precise Elastic Reflection
+        if !periodic[i] {
             let min_bound = radius;
             let max_bound = sim_box_size[i] - radius;
 
             if pos[i] < min_bound {
-                pos[i] = min_bound;//2.0*min_bound - pos[i];//-pos[i]; // Reflect from 0
-                vel[i] = -vel[i]; // Reverse velocity
-            } else if pos[i] >= sim_box_size[i] - radius {
-                // Reflect from box_size: 
-                // The distance past the wall is (pos[i] - sim_box_size[i])
-                // We subtract that distance from the wall to bounce back
-                pos[i] = max_bound;//2.0 * max_bound - pos[i];//2.0 * sim_box_size[i] - pos[i];
-                vel[i] = -vel[i];
+                pos[i] = min_bound;
+                vel[i] = -vel[i]; // Reverse velocity component upon wall collision
+            } else if pos[i] > max_bound {
+                pos[i] = max_bound;
+                vel[i] = -vel[i]; // Reverse velocity component upon wall collision
             }
         }
     }

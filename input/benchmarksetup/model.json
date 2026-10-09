@@ -6,6 +6,7 @@
     "plane_restitution": 0.7
   },
   "friction":{
+    "modulus":1.0e5,
     "mu":0.4,
     "restitution":0.7
   },

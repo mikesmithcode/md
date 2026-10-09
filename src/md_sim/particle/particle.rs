@@ -124,7 +124,7 @@ impl Default for Particle{
             ptype: 0, 
             position: DVec3::new(1.0,1.0,1.0), 
             rel_pos: DVec3::ZERO,
-            velocity: DVec3::new(1.0,0.0,0.0), 
+            velocity: DVec3::ZERO,
             orientation: DQuat::IDENTITY, //(w,x,y,z) = (1.0,0.0,0.0,0.0)
             omega: DVec3::ZERO, 
             radius: 0.5, 

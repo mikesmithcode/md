@@ -13,7 +13,7 @@ To make things easier this is a guide of both cargo commands and my own bash scr
 
 ## Outline of a simulation
 
-In outline, inside your simulation script which lives in src/bin you will create a new Simulation struct. Optionally decide on graphics via a new Scene struct. Then run a simulation loop calling sim.update() at each step. You can also write to file the results of your simulation and update the simulation time.
+The design of the simulation is supposed to abstract away anything that is not essential to the specifics of your simulation. You therefore define configuration files, define the forces that interact by using or creating a struct with force specific parameters which matches the layout of a corresponding bit of json. You then use or create a function handling the interaction.
 
 Open the template simulation in to see a skeleton of how to set up a simulation. This file contains detailed comments on how to set up the simulation, the simulation loop, the SimUpdate struct which defines the details of the simulation and the Scene struct which defines the graphics.
 

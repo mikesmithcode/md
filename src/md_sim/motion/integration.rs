@@ -7,7 +7,6 @@ use itertools::izip;
 use std::collections::HashMap;
 
 use crate::md_sim::motion::change::enforce_boundary;
-use crate::md_sim::utils::check_delta;
 use crate::md_sim::{SimulationSettings, ParticleVec};
 use crate::md_sim::particle::{calculate_molecule_com, MoleculeData};
 
@@ -156,8 +155,8 @@ pub fn integrate_rigid_bodies(
         // Calculate current COM and aggregate forces/torques via shared helper
         let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, particles);
         let (total_force, total_torque) = compute_molecule_forces_and_torques(
-            &mol.pids, forces, torques, particles, com_pos, sim_box_size, periodic
-        );
+                                                            &mol.pids, forces, torques, particles, com_pos
+                                                            );
 
         // Update COM Velocity and Angular Velocity (Half-step predictor)
         let acc = total_force / total_mass;
@@ -174,7 +173,7 @@ pub fn integrate_rigid_bodies(
         let new_com_pos = com_pos + (new_com_vel * dt);
         let delta_q = DQuat::from_scaled_axis(new_omega * dt);
         let new_orientation = (delta_q * particles.orientation[lead_idx]).normalize();
-        
+
         // Update every constituent particle's state
         let rot_mat_new = DMat3::from_quat(new_orientation);
         for &idx in &mol.pids {
@@ -227,15 +226,13 @@ pub fn integrate_rigid_bodies_correct(
     settings: &SimulationSettings
 ) {
     let half_dt = settings.dt * 0.5;
-    let sim_box_size = settings.sim_box_size;
-    let periodic = settings.periodic;
 
     for (_m_id, mol) in molecule_map {
         let lead_idx = mol.pids[0];
         
         let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, particles);
         let (total_force, total_torque) = compute_molecule_forces_and_torques(
-            &mol.pids, forces, torques, particles, com_pos, sim_box_size, periodic
+            &mol.pids, forces, torques, particles, com_pos
         );
 
         let acc = total_force / total_mass;
@@ -259,22 +256,19 @@ pub fn integrate_rigid_bodies_correct(
 
 
 /// Helper to aggregate total force and torque for a molecule relative to its COM.
-fn compute_molecule_forces_and_torques(
+pub fn compute_molecule_forces_and_torques(
     pids: &[usize],
     forces: &[DVec3],
     torques: &[DVec3],
     particles: &ParticleVec,
-    com_pos: DVec3,
-    sim_box_size: DVec3,
-    periodic: [bool; 3],
+    com_pos: DVec3
 ) -> (DVec3, DVec3) {
     let mut total_force = DVec3::ZERO;
     let mut total_torque = DVec3::ZERO;
 
     for &idx in pids {
         total_force += forces[idx];
-        let mut delta_r = particles.position[idx] - com_pos;
-        check_delta(&mut delta_r, sim_box_size, periodic);
+        let delta_r = particles.position[idx] - com_pos;
         total_torque += torques[idx] + delta_r.cross(forces[idx]);
     }
 

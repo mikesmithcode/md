@@ -238,9 +238,6 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
     let mut sim_settings: SimulationSettings = serde_json::from_reader(reader).expect("Does your config file match an enum variant in simulation.rs?");
     sim_settings.start = index;
 
-    // Save a copy of config to output with simulation index as suffix.
-    save_sim_settings(&sim_settings, sim_paths)?;
-    
     Ok(sim_settings)
 }
 
@@ -255,10 +252,10 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
 /// # Errors
 /// This function will return an [`Error`] if the directory is not writable 
 /// or if an I/O issue occurs during writing.
-pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &SimulationPaths) -> Result<(), Error> 
+pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &SimulationPaths, step:usize) -> Result<(), Error> 
 {
-    let sim_filename = format!("sim_{:010}.json", sim_settings.start);
-    let model_filename = format!("model_{:010}.json", sim_settings.start);
+    let sim_filename = format!("sim_{:010}.json", step);
+    let model_filename = format!("model_{:010}.json", step);
 
     let full_sim_filename = Path::new(&sim_paths.output).join("config").join(sim_filename);
     let input_model_filename = Path::new(&sim_paths.model_config);
@@ -273,6 +270,10 @@ pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &Simulati
     .expect("Failed to copy model.json to output config directory");
 
     Ok(())
+}
+
+pub fn save_model_settings(){
+    
 }
 
 //--------------------------------------------------------
@@ -512,7 +513,6 @@ pub fn load_latest_particles(
 
     Err("All available snapshot files were corrupted or could not be read".into())
 }
-
 
 
 /// Saves a [`ParticleVec`] snapshot to a Parquet file.

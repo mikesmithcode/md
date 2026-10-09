@@ -14,7 +14,7 @@ def main():
     # Load configuration and get standardized destination paths via get_config()
     # Expects a command line argument like: python benchmark.py benchmark
     try:
-        config, particles_filepath, objects_filepath, var_dir = get_config()
+        config, particles_filepath, objects_filepath = get_config()
     except IndexError:
         print("[Error] Please provide a run name argument (e.g., python benchmark.py benchmark)")
         sys.exit(1)
@@ -29,19 +29,14 @@ def main():
     
     src_dir = Path("output") / source_target / source_input / "particles"
     
-    latest_particles_file = get_latest_file(src_dir, prefix="particles",extension=".parquet") 
+    latest_particles_file = get_latest_file(src_dir, prefix="particles",extension="parquet") 
+
 
     if latest_particles_file is None:
         print(f"[Error] No valid particle parquet files found in {src_dir}")
         return
 
-    latest_particles_file = get_latest_file(src_dir, prefix="particles",extension=".parquet") 
-    
-    if latest_particles_file is None:
-        print(f"[Error] No valid variables files found in {src_dir}")
-        return
-    
-    latest_var_file = get_latest_file(var_dir, prefix="particles",extension=".parquet") 
+
 
     # Ensure destination directory exists and copy the file using the path from get_config
     particles_filepath.parent.mkdir(parents=True, exist_ok=True)
