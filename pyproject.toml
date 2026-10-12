@@ -11,4 +11,5 @@ dependencies = [
     "matplotlib",
     "pyqt6>=6.11.0",
     "pyarrow>=25.0.1",
+    "scipy>=1.17.1",
 ]

@@ -96,6 +96,5 @@ df.write_parquet(particles_filepath)
 #========================================================================
 # Summarise
 #========================================================================
-print(f"Successfully initialised {len(df)} particles for a {box[0]}x{box[2]} box.")
-print(df['ptype', 'r', 'g', 'b'].head(10))
+print(f"Successfully initialised {len(df)} particles for a {box[0]}x{box[2]} box.\n================================================================================")
 display(df, box, objects_df=None)

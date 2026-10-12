@@ -61,7 +61,7 @@ def get_config(*args, **kwargs):
     # Extract target name (everything before the first underscore, or the whole thing if no underscore)
     target_name = input_name.split('_', 1)[0]
     
-    print(target_name)
+    print(f"\n===================================================================================\nSetup script for {target_name}\n===================================================================================")
     
     # Construct exact nested folder path:
     # output/<target_name>/<input_name>/particles/
@@ -86,7 +86,7 @@ def get_config(*args, **kwargs):
     config_dir.mkdir(parents=True, exist_ok=True)
     config_path = config_dir / "sim.json"
     
-    print("\n===================================================================================\nget_config is copying model.json from input to your output folder\n===================================================================================\n")
+    print("\nget_config is copying model.json from input to your output folder\n")
     shutil.copy(str(config_dir / 'model.json'), str(output_config_dir / 'model_0000000000.json'))
     
     

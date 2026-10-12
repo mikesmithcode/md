@@ -21,6 +21,7 @@ use regex::Regex;
 use std::io::{BufReader, Error};
 use std::{fs, io, path::Path, path::PathBuf};
 use three_d::Srgba;
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::md_sim::{LineSpec, ObjectSpec, Particle, ParticleVec, RectSpec, SimulationSettings, TriSpec};
 use crate::md_viz::SceneSettings;
@@ -100,10 +101,10 @@ fn validate_simulation_inputs(dir_path: &Path, required_files: &[&str]) -> io::R
 /// **How:** Groups configuration file paths, output directories, particle snapshots, and video destinations into a unified record.  
 /// **Why:** Simplifies path management and directory creation workflows across the simulation runner.
 /// ====================================================================================================================
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Serialize)]
 pub struct SimulationPaths {
     pub output: PathBuf,
-    pub sim_config: PathBuf,
+    pub sim_config: PathBuf, //path in input directory
     pub scene_config: PathBuf,
     pub model_config: PathBuf,
     pub object: PathBuf,
@@ -116,7 +117,7 @@ pub struct SimulationPaths {
 /// **How:** Stores boolean flags dictating headless execution, video recording, and state snapshot frequency.  
 /// **Why:** Allows flexible command-line configuration of simulation outputs and performance modes.
 /// ====================================================================================================================
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct OutputSettings {
     pub headless: bool,
     pub record_video: bool,
@@ -129,7 +130,7 @@ pub struct OutputSettings {
 /// **How:** Aggregates `SimulationPaths` and `OutputSettings` into a single structure initialized at startup.  
 /// **Why:** Streamlines parameter passing to execution loops, renderers, and serialization handlers.
 /// ====================================================================================================================
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize)]
 pub struct SimulationContext {
     pub paths: SimulationPaths,
     pub output_settings: OutputSettings,
@@ -241,6 +242,18 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
     Ok(sim_settings)
 }
 
+pub fn load_model_settings<T>(dir_path: &PathBuf) -> Result<T, Error>
+where T: DeserializeOwned,
+{       let path = get_latest_file(dir_path, "model", "json").expect("Error getting latest file");
+        
+        let file = fs::File::open(&path).expect("Error opening file");
+        let reader = BufReader::new(file);
+        
+        let model: T = serde_json::from_reader(reader).expect("Error creating struct from file");
+        
+        Ok(model)
+}
+
 /// Saves a JSON representation of the current [`SimulationSettings`]. 
 /// 
 /// The configuration is serialized and saved into the provided path directory.
@@ -255,27 +268,36 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
 pub fn save_sim_settings(sim_settings: &SimulationSettings, sim_paths: &SimulationPaths, step:usize) -> Result<(), Error> 
 {
     let sim_filename = format!("sim_{:010}.json", step);
-    let model_filename = format!("model_{:010}.json", step);
-
     let full_sim_filename = Path::new(&sim_paths.output).join("config").join(sim_filename);
-    let input_model_filename = Path::new(&sim_paths.model_config);
-    let output_model_filename = Path::new(&sim_paths.output).join("config").join(model_filename);
 
     let json = serde_json::to_string_pretty(sim_settings)
         .expect("Error serializing metadata");
     fs::write(full_sim_filename, json)?;
 
-    //Copies the model file to output directory
-    fs::copy(input_model_filename, &output_model_filename)
-    .expect("Failed to copy model.json to output config directory");
-
     Ok(())
 }
 
-pub fn save_model_settings(){
-    
-}
+pub fn save_model_settings<T>(model: &T, sim_paths: &SimulationPaths, step: usize) -> Result<(), std::io::Error>
+where 
+    T: Serialize,
+{
+    let model_filename = format!("model_{:010}.json", step);
+    let output_model_filename = Path::new(&sim_paths.output).join("config").join(model_filename);
 
+    // Ensure the parent directory exists before writing
+    if let Some(parent) = output_model_filename.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Serialize the model to a pretty JSON string
+    let json = serde_json::to_string_pretty(model)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+    // Write the serialized json to the target path
+    fs::write(&output_model_filename, json)?;
+
+    Ok(())
+}
 //--------------------------------------------------------
 // Graphics config
 //--------------------------------------------------------
@@ -526,9 +548,9 @@ pub fn load_latest_particles(
 /// * `particles` - Reference to the [`ParticleVec`] collection.
 /// * `time` - Current simulation time timestamp.
 pub fn save_particles(
+    particles: &ParticleVec,
     sim_paths: &SimulationPaths,
     step: usize,
-    particles: &ParticleVec,
     time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(&sim_paths.particle)?;
@@ -724,9 +746,9 @@ pub fn load_latest_objects(
 }
 
 pub fn save_objects(
+    objects: Option<&[ObjectSpec]>,
     sim_paths: &SimulationPaths,
     step: usize,
-    objects: Option<&[ObjectSpec]>,
     time: f64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(all_objects) = objects { 

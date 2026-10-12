@@ -8,6 +8,7 @@ pub use file_io::{parse_simulation_args, save_sim_settings, load_sim_settings, s
 pub use test_utils::{assert_dvec3_near,setup_single_molecule_data, create_grid_and_settings};
 pub use crate::md_sim::{SimulationSettings, Forces, Motion, ObjectSpec, ParticleVec};
 use crate::md_viz::actions::UserAction;
+use crate::md_sim::utils::file_io::SimulationContext;
 
 #[cfg(test)]
 mod tests;
@@ -65,6 +66,13 @@ pub trait Interactivity {
 
         println!("No keys implemented: You pressed {:?}", key);
     }
+
+
+    // impl Interactivity for SimUpdate
+    // fn ctx(&self)-> &SimulationContext{
+    // &self.ctx
+    //}
+    fn ctx(&self) -> &SimulationContext; 
 
     fn do_stuff(&mut self, _particles: &mut ParticleVec, _objects: Option<&mut Vec<ObjectSpec>>, _step: usize){
         

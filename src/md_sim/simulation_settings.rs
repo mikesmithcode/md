@@ -63,7 +63,7 @@ impl SimulationSettings {
     pub fn new(sim_paths: &SimulationPaths, start_step: usize) -> Result<SimulationSettings, Box<dyn std::error::Error>> {
         let mut settings = load_sim_settings(sim_paths, start_step)?;
         // Save a copy of config to output with simulation index as suffix.
-        save_sim_settings(&settings, sim_paths)?;
+        save_sim_settings(&settings, sim_paths, start_step)?;
 
         settings.init();
         

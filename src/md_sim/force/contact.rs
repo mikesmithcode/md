@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use dashmap::DashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
-use std::path::{Path, PathBuf};
 
 
 use crate::md_sim::utils::file_io::get_latest_file;
@@ -17,6 +16,7 @@ use crate::md_sim::utils::check_delta;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::{SurfaceKinematics, ObjectSpec};
+use crate::md_sim::utils::file_io::SimulationContext;
 
 ///------------------------------------------------------------------------------
 /// Contact
@@ -101,8 +101,6 @@ pub struct ContactManager {
     // avoids JSON key serialization errors for `(usize, usize)`.
     #[serde(with = "tuple_map_as_vec")]
     pub states: DashMap<(usize, usize), ContactState>,
-    #[serde(skip)]
-    pub source_path: PathBuf,
 }
 
 impl ContactManager {
@@ -110,10 +108,9 @@ impl ContactManager {
     /// new
     /// ==============================================================================
     /// Inititialises a fresh contact manager
-    pub fn new(source_path: PathBuf) -> Self {
+    pub fn new() -> Self {
         Self {
             states: DashMap::new(),
-            source_path,
         }
     }
 
@@ -122,14 +119,14 @@ impl ContactManager {
     ///------------------------------------------------------------------------------
     /// Locates and deserializes the latest contact state file matching the prefix 
     /// from the given directory.
-    pub fn load_latest(dir_path: &Path) -> Option<Self> {
-        let path = get_latest_file(dir_path, "contacts", "json")?;
+    pub fn load_latest(ctx: &SimulationContext) -> Option<Self> {
+        let config_dir = ctx.paths.output.join("config");
+        let path = get_latest_file(&config_dir, "contacts", "json")?;
         
         let file = File::open(&path).ok()?;
         let reader = BufReader::new(file);
         
-        let mut manager: ContactManager = serde_json::from_reader(reader).ok()?;
-        manager.source_path = path.parent().unwrap().to_path_buf();
+        let manager: ContactManager = serde_json::from_reader(reader).ok()?;
         
         Some(manager)
     }
@@ -138,12 +135,9 @@ impl ContactManager {
     /// save_at_step
     ///------------------------------------------------------------------------------
     /// Saves contact states to a 10-digit zero-padded step file
-    pub fn save_at_step(&self, step: usize) -> Option<()> {
-        
-        let source_path = self.source_path.clone();
-        let target_path = source_path.join(format!("contacts_{:010}.json", step));
-        println!("Saving contacts {:?}", &target_path);
-
+    pub fn save_at_step(&self, ctx :&SimulationContext, step: usize) -> Option<()> {
+        let config_dir = ctx.paths.output.join("config");
+        let target_path = config_dir.join(format!("contacts_{:010}.json", step));
         let file = File::create(target_path).ok()?;
         let writer = BufWriter::new(file);
         serde_json::to_writer_pretty(writer, self).ok()?;

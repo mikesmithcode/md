@@ -1,6 +1,7 @@
 
 import polars as pl
 import numpy as np
+from scipy.optimize import minimize
 
 from typing import Sequence, Tuple, Union, Optional, Dict, Any, cast,  Iterator
 
@@ -237,6 +238,92 @@ def generate_dipoles(
 
         yield df
 
+def generate_charged_sphere(
+    position: Tuple[float, float, float],
+    surface_points: np.ndarray,
+    w: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    v: Tuple[float, float, float] = (0.0, 0.0, 0.0),
+    rad: float = 0.005,
+    density: float = 1200,
+    main_ptype: int = 0,
+    charge_ptype: int = 1,
+    ptype_colours: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
+):
+    """Yields a Polars DataFrame containing a central sphere particle and 
+    its n surface charge nodes (with charge=0.0) distributed via pre-calculated surface_points.
+    """
+    colours = DEFAULT_PTYPE_COLOURS.copy()
+    if ptype_colours is not None:
+        colours.update(ptype_colours)
+
+    cx, cy, cz = position
+    wx, wy, wz = w
+    vx, vy, vz = v
+    
+    main_col = colours[main_ptype]
+    charge_col = colours[charge_ptype]
+
+    # Mass of the main central sphere
+    mass = (4.0 / 3.0) * np.pi * (rad ** 3) * density
+
+    # 1. Main central particle row
+    particle = {
+        "t": 0.0,
+        "id": 0,
+        "molecule_id": 0,
+        "ptype": int(main_ptype),
+        "x": float(cx), "y": float(cy), "z": float(cz),
+        "rel_x": 0.0, "rel_y": 0.0, "rel_z": 0.0,
+        "vx": float(vx), "vy": float(vy), "vz": float(vz),
+        "wx": float(wx), "wy": float(wy), "wz": float(wz),
+        "radius": float(rad),
+        "mass": float(mass),
+        "charge": 0.0,
+        "r": float(main_col[0]), "g": float(main_col[1]),
+        "b": float(main_col[2]), "a": float(main_col[3])
+    }
+
+    # 2. Surface charge nodes mapped to the pre-calculated unit vectors
+    charge_rows = []
+    for idx, pt in enumerate(surface_points, start=1):
+        # Scale unit point by radius to place on the sphere's surface
+        rx, ry, rz = pt * rad
+        
+        charge_rows.append({
+            "t": 0.0,
+            "id": int(idx),
+            "molecule_id": 0,
+            "ptype": int(charge_ptype),
+            "x": float(cx + rx),
+            "y": float(cy + ry),
+            "z": float(cz + rz),
+            "rel_x": float(rx),
+            "rel_y": float(ry),
+            "rel_z": float(rz),
+            "vx": float(vx), "vy": float(vy), "vz": float(vz),
+            "wx": float(wx), "wy": float(wy), "wz": float(wz),
+            "radius": float(0.05 * rad),  # Smaller nodes for surface points
+            "mass": 0.0,
+            "charge": 0.0,  # Set all charges to 0.0 as requested
+            "r": float(charge_col[0]), "g": float(charge_col[1]),
+            "b": float(charge_col[2]), "a": float(charge_col[3])
+        })
+
+    # Combine into a single Polars DataFrame
+    df = pl.concat([
+        pl.DataFrame(particle), 
+        pl.DataFrame(charge_rows)
+    ])
+
+    df = df.with_columns(
+        pl.col("ptype").cast(pl.UInt64),
+        pl.col("id").cast(pl.UInt64),
+        pl.col("molecule_id").cast(pl.UInt64)
+    )
+
+    return df
+
+
 
 def _base_object_df(id_val, time, velocity, omega, colour, visible, thickness):
     """Internal helper to generate the common columns for any object."""
@@ -249,6 +336,54 @@ def _base_object_df(id_val, time, velocity, omega, colour, visible, thickness):
         "r": [float(colour[0])], "g": [float(colour[1])], "b": [float(colour[2])], "a": [float(colour[3])],
         "visible": [bool(visible)],
     }
+
+def generate_charge_points(n, iterations=5):
+    """
+    Distributes n charges evenly on a unit sphere using electrostatic repulsion (Thomson problem).
+    """
+    # Initialise with random points on the unit sphere (spherical coordinates to avoid bunching at poles)
+    phi = np.random.uniform(0, 2 * np.pi, n)
+    costheta = np.random.uniform(-1, 1, n)
+    theta = np.arccos(costheta)
+    
+    x = np.sin(theta) * np.cos(phi)
+    y = np.sin(theta) * np.sin(phi)
+    z = np.cos(theta)
+    initial_coords = np.column_stack((x, y, z)).flatten()
+
+    # Define the potential energy (sum of 1/r repulsive forces)
+    def potential_energy(coords):
+        pts = coords.reshape((-1, 3))
+        # Compute pairwise Euclidean distances between all charges
+        diff = pts[:, np.newaxis, :] - pts[np.newaxis, :, :]
+        dist = np.linalg.norm(diff, axis=-1)
+        
+        # Mask out self-interaction (diagonal elements)
+        np.fill_diagonal(dist, np.inf)
+        
+        # Coulomb potential energy = sum(1 / distance)
+        return np.sum(1.0 / dist)
+
+    # Define constraints: every point must stay on the surface of the unit sphere (norm = 1)
+    constraints = [
+        {
+            'type': 'eq',
+            'fun': lambda coords: np.linalg.norm(coords.reshape((-1, 3)), axis=1) - 1.0
+        }
+    ]
+
+    # Run optimization (L-BFGS-B or SLSQP work well with constraints)
+    result = minimize(
+        potential_energy, 
+        initial_coords, 
+        method='SLSQP', 
+        constraints=constraints,
+        options={'maxiter': 500, 'disp': False}
+    )
+
+    # Reshape back to (n, 3) coordinates
+    optimized_pts = result.x.reshape((-1, 3))
+    return optimized_pts
 
 def create_rectangle(
     vertices, 

@@ -25,16 +25,17 @@ pub mod md_sim;
 use crate::md_sim::{Forces, Motion, Interactivity, Simulation, SimulationSettings};
 use crate::md_sim::utils::{save_particles, save_objects, load_latest_particles, load_latest_objects};
 use crate::md_viz::{init_scene, actions::UserAction};
-use crate::md_sim::utils::file_io::SimulationContext;
 
 
-pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, ctx: SimulationContext) {
-    let sim_filepaths = ctx.paths;
-    let output_settings = ctx.output_settings;
+
+pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U) {
+    let sim_filepaths = sim_update.ctx().paths.clone();
+    let output_settings = sim_update.ctx().output_settings.clone();
     
     let (particles, start_step, time) = load_latest_particles(&sim_filepaths).expect("Failed snapshot");
-    let sim_settings = SimulationSettings::new(&sim_filepaths, start_step).expect("settings failed"); 
     let objects = load_latest_objects(&sim_filepaths).expect("objects failed");
+    
+    let sim_settings = SimulationSettings::new(&sim_filepaths, start_step).expect("settings failed"); 
 
     let mut sim = Simulation::new(particles, objects, sim_update, sim_settings.clone(), time);
 
@@ -82,20 +83,19 @@ pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U, 
         // Write particles and / or objects to parquet files
         if step % sim.settings.dump == 0 {
             if output_settings.save_particles {
-                save_particles(&sim_filepaths, step, sim.get_particles(), sim.time).expect("Error saving particles");
+                save_particles( sim.get_particles(), &sim_filepaths, step,sim.time).expect("Error saving particles");
             }
 
             if output_settings.save_objects {
-                save_objects(&sim_filepaths, step, sim.get_objects(), sim.time).expect("Error saving objects");
+                save_objects(sim.get_objects(),&sim_filepaths, step,  sim.time).expect("Error saving objects");
             }
         }
     }
 
     // Guaranteed final backup save on exit/completion
     println!("Saving final state at step {}...", final_step);
-    save_particles(&sim_filepaths, final_step, sim.get_particles(), sim.time).expect("Error saving final particles");
-    save_objects(&sim_filepaths, final_step, sim.get_objects(), sim.time).expect("Error saving final objects");
-    save_setings
+    save_particles(sim.get_particles(),&sim_filepaths, final_step,  sim.time).expect("Error saving final particles");
+    save_objects(sim.get_objects(),&sim_filepaths, final_step, sim.time).expect("Error saving final objects");
     sim.sim_update.save_on_exit(final_step).expect("Error saving contacts.json");
 
     if let Some(mut scene) = scene_opt {
