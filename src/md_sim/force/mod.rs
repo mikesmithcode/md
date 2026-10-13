@@ -17,6 +17,7 @@ pub use single::{add_gravity, Gravity, add_viscous_drag, ViscousDrag};
 
 
 
+
 use glam::DVec3;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::{ObjectSpec, SimulationSettings};
@@ -119,7 +120,7 @@ pub trait Forces {
         force: DVec3,
         torque: DVec3,
         _particles: &ParticleVec, 
-        _objects: &ObjectSpec,
+        _object_spec: &ObjectSpec,
         _settings: &SimulationSettings
     ) -> (DVec3, DVec3) {
         (force, torque)

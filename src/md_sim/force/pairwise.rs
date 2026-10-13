@@ -52,8 +52,8 @@ pub fn normal_hertzian(
 ) -> (f64, DVec3) {
     // Select the appropriate precomputed material constants based on contact type
     let (e_star, beta) = match contact.contact_type {
-        ContactType::Particle => (model.particle_estar, model.particle_beta),
-        ContactType::Plane => (model.plane_estar, model.plane_beta),
+        ContactType::Particle{i:_,j:_} => (model.particle_estar, model.particle_beta),
+        ContactType::Plane{i:_, plane_id:_} => (model.plane_estar, model.plane_beta),
     };
 
     // Compute local effective stiffness and damping using geometry/mass from Contact
@@ -100,8 +100,8 @@ pub fn normal_linear(
 ) -> (f64, DVec3) {
     // Select the appropriate precomputed material constants based on contact type
     let (e_star, beta) = match contact.contact_type {
-        ContactType::Particle => (model.particle_estar, model.particle_beta),
-        ContactType::Plane => (model.plane_estar, model.plane_beta),
+        ContactType::Particle{i:_,j:_} => (model.particle_estar, model.particle_beta),
+        ContactType::Plane{i:_, plane_id:_} => (model.plane_estar, model.plane_beta),
     };
 
     // Correct dimensional linear stiffness: 
@@ -336,15 +336,13 @@ impl Default for FrictionViscous {
 ///
 /// A `DVec3` representing the resolved tangential force vector acting on the particle.
 pub fn friction_cundall_strack(
-    i: usize,
-    j: usize,
     f_normal_mag: f64,
     contact: &Contact,
+    contact_type: &ContactType,
     contact_manager: &ContactManager,
     model: &FrictionCundallStrack,
     dt: f64,
 ) -> DVec3 {
-    let pair = (i, j);
 
     // Extract tangential relative velocity component (reusing your clean vector projection)
     let v_tang = contact.rel_vel - contact.rel_vel.dot(contact.normal) * contact.normal;
@@ -352,10 +350,10 @@ pub fn friction_cundall_strack(
     // Compute incremental tangential displacement and update history in the manager
     let delta_tangential = v_tang * dt;
     
-    contact_manager.check_or_add(pair, delta_tangential);
+    contact_manager.check_or_add(*contact_type, delta_tangential);
 
     // Retrieve accumulated tangential displacement
-    let full_tang_disp = contact_manager.states.get(&pair).unwrap().tangential_disp;
+    let full_tang_disp = contact_manager.states.get(&contact_type).unwrap().tangential_disp;
 
     // Calculate trial tangential force (Elastic Spring + Viscous Damping)
     let mut f_t_ideal = -model.tang_stiffness * full_tang_disp - model.tang_damping * v_tang;
@@ -370,7 +368,7 @@ pub fn friction_cundall_strack(
 
         // Back-correct stored tangential displacement so history doesn't 
         // falsely over-accumulate while sliding under the friction limit
-        if let Some(mut state) = contact_manager.states.get_mut(&pair) {
+        if let Some(mut state) = contact_manager.states.get_mut(&contact_type) {
             state.tangential_disp = -f_t_ideal / model.tang_stiffness;
         }
     }

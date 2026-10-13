@@ -6,7 +6,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 from scipy.optimize import minimize
-from utils.particles_objects import generate_charged_sphere, generate_charge_points
+from utils.particles_objects import generate_charged_sphere, generate_charge_points, create_rectangle
 from utils.graphics import display
 from utils.file_io import get_config
 import polars as pl
@@ -26,6 +26,10 @@ if __name__ == '__main__':
     
     print('box', box)
     
+    #========================================================================
+    # Create patchy particles
+    #========================================================================
+    
         # Define colour dictionary mapping ptype to (R, G, B, A)
     ptype_colours = {
         0: (255.0, 255.0, 255.0, 250.0), # Positive main particle (White alpha=150)
@@ -36,16 +40,76 @@ if __name__ == '__main__':
         5: (0.0, 255.0, 255.0, 250.0),    # Charges on static particles
     }
     
-    positions = [(0.008,0.0,0.01),(0.012,0.0,0.03)]
+    positions = [(0.008,0.0,0.01)]
     
     n_charges = 32 
     charges = generate_charge_points(n_charges)
     
     
-    p = [generate_charged_sphere(positions[i], charges) for i in range(2)]
+    p = [generate_charged_sphere(positions[i], charges) for i in range(len(positions))]
     
     df = pl.concat(p)
+    
+    df.write_parquet(particles_filepath)
+    
+    #========================================================================
+    # Create vibrating box
+    #========================================================================
+    
+    base_height = 0.01*h
+    
+    
+
+    cell = []
+
+    #Base plate
+    rect = [(0.0, 0.0, base_height), (0.0, d, base_height), (w, d, base_height), (w, 0.0, base_height)]
+    left_rect = [(0.0, 0.0, base_height), (0.0, 0.0, h-2*base_height), (0.0, d, h-2*base_height), (0.0, d, base_height)]
+    back_rect = [(0.0, d, base_height), (0.0, d, h-2*base_height), (w, d, h-2*base_height), (w, d, base_height)]
+    right_rect = [(w, 0.0, base_height), (w, 0.0, h-2*base_height), (w, d, h-2*base_height), (w, d, base_height)]
+    front_rect = [(0.0, 0.0, base_height), (0.0, 0.0, h-2*base_height), (w, 0.0, h-2*base_height), (w, 0.0, base_height)]
+    
+    base_df = create_rectangle(
+        vertices=rect, 
+        id_val=0, 
+        colour=(0, 255, 0, 254)
+    )
+    
+    left_df = create_rectangle(
+        vertices=left_rect, 
+        id_val=0, 
+        colour=(0, 255, 0, 254)
+    )
+    
+    back_df = create_rectangle(
+            vertices=back_rect, 
+            id_val=0, 
+            colour=(0, 255, 0, 254)
+    )
+    
+    right_df = create_rectangle(
+            vertices=right_rect, 
+            id_val=0, 
+            colour=(0, 255, 0, 254)
+    )
+    
+    front_df = create_rectangle(
+            vertices=front_rect, 
+            id_val=0, 
+            colour=(0, 255, 0, 40),
+    )
+        
+    cell.append(base_df)
+    cell.append(left_df)
+    cell.append(back_df)
+    cell.append(right_df)
+    cell.append(front_df)
+    
+    objects = pl.concat(cell)
+    objects.write_parquet(objects_filepath)
+    
+        
     print(df)
     
-    display(df, box, objects_df=None)
+    display(df, box, objects_df=objects)
 

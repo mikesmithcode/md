@@ -5,10 +5,11 @@
 //! physical contacts between particles and surfaces in the simulation.
 
 use glam::DVec3;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Deserializer, Serializer};
 use dashmap::DashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
+use std::hash::Hash;
 
 
 use crate::md_sim::utils::file_io::get_latest_file;
@@ -51,14 +52,15 @@ impl Default for Contact{
             rel_vel: DVec3::new(0.0, 0.0, 0.0),
             r_eff: 0.0,
             m_eff: 0.0,
-            contact_type: ContactType::Particle,
+            contact_type: ContactType::Particle{i:0,j:1},
         }
     }
 }
 
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ContactType{
-    Particle,
-    Plane,
+    Particle{i:usize,j:usize},
+    Plane{i:usize,plane_id: usize},
 }
 
 ///------------------------------------------------------------------------------
@@ -99,8 +101,9 @@ pub struct ContactManager {
     // We store states as a vector of pairs or use a custom serializer if keeping a HashMap, 
     // because JSON objects require string keys. Storing as a Vec or serializing via sequence 
     // avoids JSON key serialization errors for `(usize, usize)`.
-    #[serde(with = "tuple_map_as_vec")]
-    pub states: DashMap<(usize, usize), ContactState>,
+    
+    #[serde(with = "dashmap_as_vec")]
+    pub states: DashMap<ContactType, ContactState>,
 }
 
 impl ContactManager {
@@ -145,10 +148,10 @@ impl ContactManager {
         Some(())
     }
 
-    pub fn check_or_add(&self, pair: (usize, usize), displacement: DVec3) {
+    pub fn check_or_add(&self, contact_type: &ContactType, displacement: DVec3) {
         // Try to find and update the existing state
         let mut updated = false;
-        if let Some(mut state) = self.states.get_mut(&pair) {
+        if let Some(mut state) = self.states.get_mut(contact_type) {
             state.tangential_disp += displacement;
             state.is_active = true;
             updated = true;
@@ -157,7 +160,7 @@ impl ContactManager {
         // If it wasn't found, insert a new one in a separate operation
         if !updated {
             self.states.insert(
-                pair,
+                contact_type.clone(),
                 ContactState {
                     tangential_disp: displacement,
                     is_active: true,
@@ -175,44 +178,36 @@ impl ContactManager {
     }
 }
 
-/*
-impl Default for ContactManager {
-    fn default() -> Self {
-        let states = DashMap::new();
-        states.insert((0, 1), ContactState::default());
-
-        Self { 
-            states, 
-            source_path: PathBuf::new(),
-        }
-    }
-}*/
-
-/// Helper module to serialize `DashMap<(usize, usize), ContactState>` as a list of entries 
-/// so serde/JSON doesn't crash over non-string map keys.
-mod tuple_map_as_vec {
+// Helper method for serializing and deserializing Contactmanager's states field.
+pub mod dashmap_as_vec {
     use super::*;
-    use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S>(map: &DashMap<(usize, usize), ContactState>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S, K, V>(map: &DashMap<K, V>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
+        K: Serialize + Clone + Eq + Hash, // <- Added Eq + Hash here
+        V: Serialize + Clone,
     {
-        // ✅ Map the reference guards into owned tuples so they implement Serialize
-        let vec: Vec<((usize, usize), ContactState)> = map
-            .iter()
-            .map(|entry| (*entry.key(), entry.value().clone())) // Use *entry.value() if ContactState is Copy
+        // Collect dashmap entries into a vector of key-value pairs
+        let vec: Vec<(K, V)> = map.iter()
+            .map(|item| (item.key().clone(), item.value().clone()))
             .collect();
-            
         vec.serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<DashMap<(usize, usize), ContactState>, D::Error>
+    pub fn deserialize<'de, D, K, V>(deserializer: D) -> Result<DashMap<K, V>, D::Error>
     where
         D: Deserializer<'de>,
+        K: Deserialize<'de> + Eq + Hash,
+        V: Deserialize<'de>,
     {
-        let vec: Vec<((usize, usize), ContactState)> = Vec::deserialize(deserializer)?;
-        Ok(vec.into_iter().collect())
+        // Deserialize into a vector of pairs, then insert into a new DashMap
+        let vec: Vec<(K, V)> = Vec::deserialize(deserializer)?;
+        let map = DashMap::new();
+        for (k, v) in vec { 
+            map.insert(k, v);
+        }
+        Ok(map)
     }
 }
 

@@ -2,9 +2,10 @@ use glam::DVec3;
 use itertools::izip;
 use three_d::Srgba;
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 
 use crate::md_sim::{SimulationSettings, particle::ParticleVec};
-use crate::md_sim::particle::{calculate_molecule_com,MoleculeData};
+use crate::md_sim::particle::{calculate_molecule_com, MoleculeData};
 
 //-------------------------------------------------------------------------------------------------------
 // Special functions
@@ -45,7 +46,15 @@ pub fn periodic_wrap_molecules(
     }
 }
 
-
+/// Vibration of a surface.
+/// 
+/// If surface is vibrating sinusoidally use velocity as the velocity amplitude.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Vibration{
+    pub ang_freq: f64,
+    pub velocity: DVec3,
+    pub omega: DVec3
+}
 
 /// Enforces boundary conditions (periodic wrapping or elastic reflection) dimension by dimension.
 /// 
