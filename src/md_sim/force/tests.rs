@@ -2,13 +2,12 @@
 
 use glam:: DVec3;
 use three_d::Srgba;
-use std::path::PathBuf;
 
 use crate::md_sim::force::{check_particle_contact, check_object_contact};
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::{Particle, RectSpec, ObjectSpec, ParticleVec};
 use crate::md_sim::utils::create_grid_and_settings;
-use crate::md_sim::force::contact::{Contact, ContactState, ContactManager};
+use crate::md_sim::force::contact::{Contact, ContactState, ContactManager, ContactType};
 use crate::md_sim::force::{add_gravity,Gravity, add_viscous_drag, ViscousDrag, FrictionViscous, friction_cundall_strack, FrictionCundallStrack, NormalForce, add_coulomb, CoulombParams};
 use crate::md_sim::force::{normal_hertzian, normal_linear, friction_viscous_damping};
 use super::neighbours::CellGrid;
@@ -161,9 +160,10 @@ fn test_friction_viscous_damping_zero_tangent() {
     let model = FrictionViscous::default();
     let f_normal_mag = 100.0;
     
-    let f_t = friction_viscous_damping(f_normal_mag, &contact, &model);
+    let (f_t, torque) = friction_viscous_damping(f_normal_mag, &contact, &model);
     
     assert_eq!(f_t, DVec3::ZERO);
+    assert_eq!(torque, DVec3::ZERO);
 }
 
 /// ====================================================================================================================
@@ -188,11 +188,12 @@ fn test_friction_viscous_damping_within_limit() {
     let f_normal_mag = 100.0; // Coulomb limit = 0.5 * 100 = 50.0
     
     // v_tang = (1.0, 0.0, 0.0) with damping_coeff = 10.0 -> f_t = (-10.0, 0.0, 0.0)
-    let f_t = friction_viscous_damping(f_normal_mag, &contact, &model);
+    let (f_t, torque) = friction_viscous_damping(f_normal_mag, &contact, &model);
     
     assert!((f_t.x - (-10.0)).abs() < 1e-6);
     assert_eq!(f_t.y, 0.0);
     assert_eq!(f_t.z, 0.0);
+    assert_eq!(torque, contact.r_contact.cross(f_t));
 }
 
 /// ====================================================================================================================
@@ -214,62 +215,62 @@ fn test_friction_viscous_damping_exceeds_limit() {
     model.mu = 0.2;
     model.damping_coeff = 20.0; // Adjust field name if your struct uses `viscosity` or similar
 
-    let f_t = friction_viscous_damping(f_normal_mag, &contact, &model);
+    let (f_t, torque) = friction_viscous_damping(f_normal_mag, &contact, &model);
     
     // Should clamp to magnitude = 20.0 in the direction opposite to v_tang
     assert!((f_t.length() - 20.0).abs() < 1e-6);
     assert!(f_t.x < 0.0);
+    assert_eq!(torque, contact.r_contact.cross(f_t));
 }
 
 
 
 #[test]
 fn test_cundall_strack_spring_stretch() {
-    let manager = ContactManager::new(PathBuf::from("dummy/path"));
+    let manager = ContactManager::new();
     let model = FrictionCundallStrack::default(); // modulus = 1000.0, mu = 0.3
-    let i=0;
-    let j=1;
     let dt = 0.01;
 
     // v_tang should be (1.0, 0.0, 0.0) since rel_vel is orthogonal to normal
     let contact = Contact {
         rel_vel: DVec3::new(1.0, 0.0, 0.0), // Pure X-direction sliding velocity
         normal: DVec3::new(0.0, 1.0, 0.0),  // Normal pointing along Y
+        r_contact: DVec3::new(0.0, -0.5, 0.0),
+        contact_type: ContactType::Particle { i: 0, j: 1 },
         ..Contact::default()
     };
     
 
     let f_normal_mag = 1000.0; // limit = mu * f_normal_mag = 0.3 * 100.0 = 300.0
-    println!("FEBUG: {:?}", manager.states);
     // First step
-    let _force_1 = friction_cundall_strack(i, j, f_normal_mag, &contact, &manager, &model, dt);
+    let (force_1, torque_1) = friction_cundall_strack(f_normal_mag, &contact, &manager, &model, dt);
 
-    println!("FEBUG: {:?}", manager.states);
-    
+    assert_eq!(torque_1, contact.r_contact.cross(force_1));
 
     // Verify state was created and force was calculated
-    assert!(manager.states.contains_key(&(i,j)));
+    assert!(manager.states.contains_key(&contact.contact_type));
     
     // get accumulated displacement
     let disp_x = {
-        manager.states.get(&(i,j)).unwrap().tangential_disp.x
+        manager.states.get(&contact.contact_type).unwrap().tangential_disp.x
     };
     
     // delta_tangential = v_tang * dt = (1.0, 0.0, 0.0) * 0.01 = 0.01
     assert!((disp_x - 0.01).abs() < 1e-6);
 
     // Second step: accumulate more displacement
-    let _force_2 = friction_cundall_strack(i, j, f_normal_mag, &contact, &manager, &model, dt);
+    let (force_2, torque_2) = friction_cundall_strack(f_normal_mag, &contact, &manager, &model, dt);
     
+    assert_eq!(torque_2, contact.r_contact.cross(force_2));
     let disp_x_2 = {
-        manager.states.get(&(i,j)).unwrap().tangential_disp.x
+        manager.states.get(&contact.contact_type).unwrap().tangential_disp.x
     };
     assert!((disp_x_2 - 0.02).abs() < 1e-6);
 }
 
 #[test]
 fn test_cundall_strack_coulomb_friction_limit() {
-    let manager = ContactManager::new(PathBuf::from("dummy/path"));
+    let manager = ContactManager::new();
     let model = FrictionCundallStrack {
         modulus: 10000.0, // High stiffness to quickly exceed limit
         restitution: 0.0,
@@ -277,28 +278,29 @@ fn test_cundall_strack_coulomb_friction_limit() {
         tang_stiffness: 10000.0,
         tang_damping: 0.0,
     };
-    let i=0;
-    let j=1;
     let dt = 0.1;
 
     let contact = Contact {
         rel_vel: DVec3::ZERO,
         normal: DVec3::Z,
+        r_contact: DVec3::new(0.0, 0.0, -0.5),
+        contact_type: ContactType::Particle { i: 0, j: 1 },
         ..Contact::default()
     };
 
     // Seed an artificially large displacement to force yielding (0.05*model.tang_stiffness)
-    manager.check_or_add((i,j), DVec3::new(0.05, 0.0, 0.0));
+    manager.check_or_add(&contact.contact_type, DVec3::new(0.05, 0.0, 0.0));
 
     let f_normal_mag = 100.0; // Friction limit = 0.1 * 100.0 = 10.0
-    let force = friction_cundall_strack(i, j, f_normal_mag, &contact, &manager, &model, dt);
+    let (force, torque) = friction_cundall_strack(f_normal_mag, &contact, &manager, &model, dt);
 
+    assert_eq!(torque, contact.r_contact.cross(force));
     // Force magnitude should be clipped exactly to the friction limit (10.0)
     assert!((force.length() - 10.0).abs() < 1e-6, "Force should be clipped to Coulomb limit");
 
     // Stored displacement should be back-corrected: state.tangential_disp = -f_t_ideal / tang_stiffness
     let corrected_disp_x = {
-        manager.states.get(&(i,j)).unwrap().tangential_disp.x
+        manager.states.get(&contact.contact_type).unwrap().tangential_disp.x
     };
     
     // Expected clipped force vector points in -X direction based on initial positive displacement
@@ -857,12 +859,12 @@ fn test_check_object_contact_rectangle() {
 /// ====================================================================================================================
 #[test]
 fn test_contact_manager_check_or_add() {
-    let manager = ContactManager::new(PathBuf::from("dummy/path"));
+    let manager = ContactManager::new();
     
     // Should insert default state, add displacement, and mark active
-    let pair = (0, 1);
+    let pair = ContactType::Particle { i: 0, j: 1 };
     let displacement = DVec3::new(0.1, 0.0, 0.0);
-    manager.check_or_add(pair, displacement);
+    manager.check_or_add(&pair, displacement);
     
     assert!(manager.states.contains_key(&pair), "Contact pair should be registered in the manager");
     
@@ -877,7 +879,7 @@ fn test_contact_manager_check_or_add() {
 
     // Second encounter: now the shard is unlocked, so this will succeed cleanly
     let additional_displacement = DVec3::new(0.05, 0.0, 0.0); 
-    manager.check_or_add(pair, additional_displacement);
+    manager.check_or_add(&pair, additional_displacement);
     
     let (updated_is_active, updated_disp_x) = {
         let updated_state = manager.states.get(&pair).unwrap();
@@ -896,19 +898,19 @@ fn test_contact_manager_check_or_add() {
 /// ====================================================================================================================
 #[test]
 fn test_contact_manager_remove_old_contacts() {
-    let manager = ContactManager::new(PathBuf::from("dummy/path"));
+    let manager = ContactManager::new();
     
-    let active_pair = (0, 1);
-    let expired_pair = (2, 3);
+    let active_pair = ContactType::Particle { i: 0, j: 1 };
+    let expired_pair = ContactType::Particle { i: 2, j: 3 };
 
     // Manually seed an expired pair (simulating a contact that is no longer colliding this step)
-    manager.states.insert(expired_pair, ContactState {
+    manager.states.insert(expired_pair.clone(), ContactState {
         is_active: false,
         ..ContactState::default()
     });
 
     // Encounter and touch the active pair during the current step sweep
-    manager.check_or_add(active_pair, DVec3::ZERO);
+    manager.check_or_add(&active_pair, DVec3::ZERO);
 
     assert_eq!(manager.states.len(), 2, "Manager should contain both contacts prior to cleanup");
 

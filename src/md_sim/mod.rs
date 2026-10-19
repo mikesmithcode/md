@@ -15,7 +15,7 @@ pub use self::simulation_settings::{SimulationSettings, Dimensions};
 //Reexport Traits
 pub use self::force::Forces;
 pub use self::motion::Motion;
-pub use self::utils::Interactivity;
+pub use self::utils::InputOutput;
 
 
 

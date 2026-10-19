@@ -40,7 +40,7 @@ use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::force::CellGrid;
 use crate::md_sim::Forces;
 use crate::md_sim::Motion;
-use crate::md_sim::Interactivity;
+use crate::md_sim::InputOutput;
 use crate::md_sim::{SimulationSettings, Dimensions};
 use crate::md_viz::actions::UserAction;
 use crate::md_sim::motion::periodic_wrap_molecules;
@@ -52,7 +52,7 @@ use crate::md_sim::motion::periodic_wrap_molecules;
 #[derive(Debug)]
 pub struct Simulation<S> 
     where 
-        S: Forces + Motion + Interactivity,
+        S: Forces + Motion + InputOutput,
 {
     pub particles: ParticleVec,
     pub objects: Option<Vec<ObjectSpec>>,
@@ -68,7 +68,7 @@ pub struct Simulation<S>
 
 impl<S> Simulation<S> 
     where 
-        S: Forces + Motion + Interactivity + Sync,
+        S: Forces + Motion + InputOutput + Sync,
 {
     /// Creates and initializes a new simulation instance, building molecule groupings and setting up the spatial cell grid.
     pub fn new(mut particles: ParticleVec, objects: Option<Vec<ObjectSpec>>, sim_update: S, settings: SimulationSettings, time: f64) -> Self {

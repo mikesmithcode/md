@@ -301,7 +301,7 @@ pub fn check_particle_contact(
             rel_vel, 
             r_eff,
             m_eff,
-            contact_type: ContactType::Particle,
+            contact_type: ContactType::Particle { i, j },
         };
         
         Some(contact)
@@ -393,7 +393,7 @@ fn check_surface_contact<S: SurfaceKinematics>(
             rel_vel,
             r_eff,
             m_eff,
-            contact_type: ContactType::Plane,
+            contact_type: ContactType::Plane { i, plane_id: surface.id() },
         };
 
         Some(contact)

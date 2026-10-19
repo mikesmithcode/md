@@ -22,13 +22,13 @@ pub mod md_sim;
 /// Silo consists of a 2D hopper with diagonal walls and a flat bottom. We then drop a square lattice
 /// of balls from above into it and watch everything slosh around.
 
-use crate::md_sim::{Forces, Motion, Interactivity, Simulation, SimulationSettings};
+use crate::md_sim::{Forces, Motion, InputOutput, Simulation, SimulationSettings};
 use crate::md_sim::utils::{save_particles, save_objects, load_latest_particles, load_latest_objects};
 use crate::md_viz::{init_scene, actions::UserAction};
 
 
 
-pub fn run_simulation<U: Forces + Motion + Interactivity + Sync>(sim_update: U) {
+pub fn run_simulation<U: Forces + Motion + InputOutput + Sync>(sim_update: U) {
     let sim_filepaths = sim_update.ctx().paths.clone();
     let output_settings = sim_update.ctx().output_settings.clone();
     

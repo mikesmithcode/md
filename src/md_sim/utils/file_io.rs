@@ -220,6 +220,19 @@ pub fn parse_simulation_args() -> SimulationContext {
     }
 }
 
+impl SimulationContext {
+    /// Loads the latest model configuration from `output/config/model_*.json`.
+    pub fn load_model<M: DeserializeOwned>(&self) -> Result<M, io::Error> {
+        let config_dir = self.paths.output.join("config");
+        load_model_settings(&config_dir)
+    }
+
+    /// Saves the model configuration to `output/config/model_<step:010>.json`.
+    pub fn save_model<M: Serialize>(&self, model: &M, step: usize) -> Result<(), io::Error> {
+        save_model_settings(model, &self.paths, step)
+    }
+}
+
 
 
 //-------------------------------------------------------------
@@ -242,16 +255,19 @@ pub fn load_sim_settings(sim_paths: &SimulationPaths, index: usize) -> Result<Si
     Ok(sim_settings)
 }
 
-pub fn load_model_settings<T>(dir_path: &PathBuf) -> Result<T, Error>
+pub fn load_model_settings<T>(dir_path: &Path) -> Result<T, Error>
 where T: DeserializeOwned,
-{       let path = get_latest_file(dir_path, "model", "json").expect("Error getting latest file");
+{
+    let path = get_latest_file(dir_path, "model", "json")
+        .ok_or_else(|| Error::new(io::ErrorKind::NotFound, format!("Error getting latest model file in {}", dir_path.display())))?;
         
-        let file = fs::File::open(&path).expect("Error opening file");
-        let reader = BufReader::new(file);
-        
-        let model: T = serde_json::from_reader(reader).expect("Error creating struct from file");
-        
-        Ok(model)
+    let file = fs::File::open(&path)?;
+    let reader = BufReader::new(file);
+    
+    let model: T = serde_json::from_reader(reader)
+        .map_err(|e| Error::new(io::ErrorKind::InvalidData, format!("Error deserializing model from {}: {}", path.display(), e)))?;
+    
+    Ok(model)
 }
 
 /// Saves a JSON representation of the current [`SimulationSettings`]. 

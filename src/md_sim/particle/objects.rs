@@ -59,6 +59,7 @@ impl ObjectSpec {
 }
 
 pub trait SurfaceKinematics {
+    fn id(&self) -> usize;
     fn closest_point(&self, particle_pos: DVec3) -> DVec3;
     fn velocity_at_point(&self, point: DVec3) -> DVec3;
     fn normal(&self) -> DVec3;
@@ -474,6 +475,10 @@ impl RectSpec {
 
 
 impl SurfaceKinematics for RectSpec {
+    fn id(&self) -> usize {
+        self.id
+    }
+
     fn closest_point(&self, particle_pos: DVec3) -> DVec3 {
         let local_pos = self.orientation.inverse() * (particle_pos - self.centre);
         let clamped_local = DVec3::new(
@@ -688,6 +693,10 @@ impl TriSpec {
 }
 
 impl SurfaceKinematics for TriSpec {
+    fn id(&self) -> usize {
+        self.id
+    }
+
     fn closest_point(&self, particle_pos: DVec3) -> DVec3 {
         let [a, b, c] = self.vertices;
         closest_point_on_triangle(particle_pos, a, b, c)

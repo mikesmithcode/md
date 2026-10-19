@@ -11,7 +11,7 @@ use std::fs::File;
 
 
 // Imports from simulation library
-use md::md_sim::{Forces, Interactivity, Motion, ParticleVec, SimulationSettings};
+use md::md_sim::{Forces, InputOutput, Motion, ParticleVec, SimulationSettings};
 use md::md_sim::force::{FrictionCundallStrack, NormalForce, Gravity, add_gravity, check_particle_contact, };
 use md::md_sim::force::{normal_linear, friction_cundall_strack, ContactManager};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
@@ -131,16 +131,12 @@ impl Forces for SimUpdate{
             // Calculate geometry and params of contact
             if let Some(contact)=check_particle_contact(i, j, particles, settings){
                 //Normal and tangential forces
-                //at the end of every timestep we set all ContactState.is_active to false
-                self.contact_manager.check_or_add((i,j), DVec3::ZERO);
-                let (fn_mag, fn_vec)=normal_linear(&contact, &self.model.normal_force);
-                //let ft_vec = friction_viscous_damping(fn_mag, &contact, &self.model.friction);
-                let ft_vec = friction_cundall_strack(i,j,fn_mag, &contact, &self.contact_manager, &self.model.friction, settings.dt);
+                let (fn_mag, fn_vec) = normal_linear(&contact, &self.model.normal_force);
+                let (ft_vec, tt_vec) = friction_cundall_strack(fn_mag, &contact, &self.contact_manager, &self.model.friction, settings.dt);
 
                 //Add to accumulators
-                force += fn_vec;
-                force += ft_vec;
-                torque += contact.r_contact.cross(ft_vec);
+                force += fn_vec + ft_vec;
+                torque += tt_vec;
 
 
             }
@@ -164,17 +160,17 @@ impl Motion for SimUpdate{
 
 
 // In SimUpdate :
-impl Interactivity for SimUpdate {
+impl InputOutput for SimUpdate {
 
     fn ctx(&self)-> &SimulationContext{
         &self.ctx
     }
 
     //particles and objects are saved but if you need model params or contacts saved add here.
-    fn save_on_exit(&self, step:usize)-> Option<()>{
+    fn save_on_exit(&self, step: usize) -> Result<(), std::io::Error> {
         self.contact_manager.save_at_step(self.ctx(), step);
-        self.model.save_at_step(self.ctx(), step);
-        Some(())
+        self.ctx.save_model(&self.model, step)?;
+        Ok(())
     }
 
     //For implementing actions when key is pressed.

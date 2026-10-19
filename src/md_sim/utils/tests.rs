@@ -76,7 +76,7 @@ fn test_save_and_load_particles() -> Result<(), Box<dyn std::error::Error>> {
     let time = 0.5;
 
     // Test saving
-    save_particles(&sim_paths, step, &particles, time)?;
+    save_particles(&particles, &sim_paths, step, time)?;
 
     // Test loading specific file
     let file_name = format!("particles_{:010}.parquet", step);
@@ -122,8 +122,8 @@ fn test_load_latest_particles() -> Result<(), Box<dyn std::error::Error>> {
             ref_pos: DVec3::ZERO,
         });
 
-    save_particles(&sim_paths, 1, &particles, 0.1)?;
-    save_particles(&sim_paths, 10, &particles, 1.0)?; 
+    save_particles(&particles, &sim_paths, 1, 0.1)?;
+    save_particles(&particles, &sim_paths, 10, 1.0)?; 
 
     let (_, latest_step, latest_time) = load_latest_particles(&sim_paths)?;
 

@@ -39,21 +39,28 @@ mod tests;
 ///}
 /// '''
 /// 
-/// If you don't want this trait you must write a default impl for Interactivity trait in your script.
-/// 
 /// '''rust
-/// impl<T: Forces + Motion> Interactivity for T {}
+/// impl<T: Forces + Motion> InputOutput for T {}
 /// '''
 /// 
-pub trait Interactivity {
-    // Default implementation does nothing for types that don't have model changes
-    fn save_changes_model(&self, _step: usize) {}
+/// Handles simulation boundary input and output, including keyboard interaction,
+/// model configuration persistence, and lifecycle checkpointing.
+pub trait InputOutput {
+    /// Reference to the global simulation context (managing paths, runtime flags, etc.).
+    fn ctx(&self) -> &SimulationContext;
 
-     fn save_on_exit(&self, _step:usize)->Option<()>{
-        println!("Contact saving not implemented by default. impl Interactivity for SimUpdate with function save_on_exit(&self, step: usize)->Option<()>");   
-        Some(())
+    /// Called at the end of simulation execution (or on user abort) to save
+    /// persistent contact states, final model parameters, or checkpoints.
+    fn save_on_exit(&self, _step: usize) -> Result<(), std::io::Error> {
+        Ok(())
     }
 
+    /// Called whenever dynamic model parameters are updated during execution.
+    fn save_changes_model(&self, _step: usize) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+
+    /// Handles keyboard events triggered in interactive visual scenes.
     fn handle_key(
         &mut self, 
         key: UserAction, 
@@ -61,23 +68,11 @@ pub trait Interactivity {
         _objects: &mut Option<Vec<ObjectSpec>>, 
         step: usize
     ) {
-        // Call the trait method; SimUpdate will override this to do the actual save
-        self.save_changes_model(step);
-
+        let _ = self.save_changes_model(step);
         println!("No keys implemented: You pressed {:?}", key);
     }
-
-
-    // impl Interactivity for SimUpdate
-    // fn ctx(&self)-> &SimulationContext{
-    // &self.ctx
-    //}
-    fn ctx(&self) -> &SimulationContext; 
-
-    fn do_stuff(&mut self, _particles: &mut ParticleVec, _objects: Option<&mut Vec<ObjectSpec>>, _step: usize){
-        
-    }
 }
+
 
 
 
