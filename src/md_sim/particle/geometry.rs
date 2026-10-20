@@ -105,3 +105,23 @@ pub fn calculate_molecule_inertia(pids: &[usize], particles: &ParticleVec) -> DM
     }
     total_inertia
 }
+
+
+pub fn find_closest_charge(idx: usize, particles: &ParticleVec, molecule: &MoleculeData)-> usize{
+    let position_idx = particles.position[idx];
+    let mut min_id = usize::MAX;
+    let mut min_dist = f64::MAX;
+
+
+    for &pid in &molecule.pids{
+        if pid != idx{
+            let dist = (position_idx - particles.position[pid]).length();
+            if dist < min_dist{
+                min_dist = dist;
+                min_id = pid;
+            }
+        }
+    }
+    min_id
+}
+

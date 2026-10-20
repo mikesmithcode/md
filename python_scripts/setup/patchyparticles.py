@@ -40,7 +40,7 @@ if __name__ == '__main__':
         5: (0.0, 255.0, 255.0, 250.0),    # Charges on static particles
     }
     
-    positions = [(0.008,0.0,0.01)]
+    positions = [(0.01,0.01,0.02)]
     
     n_charges = 32 
     charges = generate_charge_points(n_charges)
@@ -56,7 +56,7 @@ if __name__ == '__main__':
     # Create vibrating box
     #========================================================================
     
-    base_height = 0.01*h
+    base_height = 0.1*h
     
     
 

@@ -349,12 +349,12 @@ pub fn friction_cundall_strack(
 ) -> (DVec3, DVec3) {
 
     // Extract tangential relative velocity component (reusing your clean vector projection)
-    let v_tang = contact.rel_vel - contact.rel_vel.dot(contact.normal) * contact.normal;
+    //let v_tang = contact.rel_vel - contact.rel_vel.dot(contact.normal) * contact.normal;
 
     // Compute incremental tangential displacement and update history in the manager
-    let delta_tangential = v_tang * dt;
+    //let delta_tangential = v_tang * dt;
     
-    contact_manager.check_or_add(&contact.contact_type, delta_tangential);
+    //contact_manager.check_or_add(&contact.contact_type, delta_tangential);
 
     // Retrieve accumulated tangential displacement
     let full_tang_disp = contact_manager.states.get(&contact.contact_type).unwrap().tangential_disp;

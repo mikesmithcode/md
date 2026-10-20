@@ -6,21 +6,25 @@ mod objects;
 mod contact;
 
 
+use glam::DVec3;
+use crate::md_sim::particle::ParticleVec;
+use crate::md_sim::{ObjectSpec, Simulation, SimulationSettings};
+use std::collections::HashMap;
+
+
 // Re-export the traits and key functions for easier access
 // This allows you to call forces::Force instead of forces::force::Force
-pub use contact::{check_particle_contact,check_object_contact, ContactManager};
+pub use contact::{check_particle_contact,check_object_contact, ContactManager, ContactType, Contact};
 pub use neighbours::CellGrid;
 pub use objects::{check_surface_contact};
 pub use pairwise::{normal_linear, normal_hertzian, friction_viscous_damping, friction_cundall_strack, FrictionCundallStrack, FrictionViscous, NormalForce, add_coulomb, CoulombParams};
 pub use single::{add_gravity, Gravity, add_viscous_drag, ViscousDrag};
+use crate::md_sim::particle::MoleculeData;
 
 
 
 
 
-use glam::DVec3;
-use crate::md_sim::particle::ParticleVec;
-use crate::md_sim::{ObjectSpec, SimulationSettings};
 
 #[cfg(test)]
 mod tests;
@@ -58,7 +62,7 @@ pub trait Forces {
     /// Indicates whether the simulation includes interactions between particles and geometric objects.
     ///
     /// Disabled (`false`) by default to avoid unnecessary evaluation overhead.
-    fn has_object_forces(&self) -> bool { false }
+    fn has_object_forces(&self) -> bool { true }
 
 
     ///------------------------------------------------------------------------------
@@ -160,33 +164,31 @@ pub trait Forces {
     }
 
 
-   
-
 
     ///------------------------------------------------------------------------------
-    /// update_internal_forces
+    /// handle_contact_separation
     ///------------------------------------------------------------------------------
-    /// Calculates internal forces for molecules composed of multiple particles.
-    ///
-    /// # Arguments
-    ///
-    /// * `_particles` - Mutable or immutable reference to particle data.
-    /// * `_force` - Base force vector buffer.
-    /// * `_torque` - Base torque vector buffer.
-    /// * `_settings` - Global simulation parameters.
-    fn update_internal_forces(
-        &self,
-        _particles: &ParticleVec, 
-        _force: DVec3, 
-        _torque: DVec3,
+    /// 1. Performs cleanup tasks for contact managers or state caches at the end of an integration step.
+    /// 2. Can also be used to add charges to particles as they are separated
+    /// /// ```rust
+    /// fn handle_contact_separation(&mut self, particles: &mut ParticleVec) {
+    ///     self.contact_manager.prune_separated_contacts(|contact_type, state| {
+    ///         // `contact_type` tells you which two particles were in contact.
+    ///         // `state` gives you the last known state of that contact.
+    ///         // Example: add a unit of charge to each particle when they separate.
+    ///         let (i, j) = contact_type.pair_indices();
+    ///         particles[i].charge += 1.0;
+    ///         particles[j].charge += 1.0;
+    ///         // You can also log, emit events, etc.
+    ///         println!("Contact between {} and {} ended; charge transferred.", i, j);
+    ///      });
+    /// }
+    /// ```
+    fn handle_contact_separation(&mut self,
+        _particles: &mut ParticleVec, 
+        _molecule_map: &HashMap<usize, MoleculeData>,
         _settings: &SimulationSettings
-    ) {
-        // Optional: No internal forces by default.
-    }
-
-    ///------------------------------------------------------------------------------
-    /// cleanup_contacts
-    ///------------------------------------------------------------------------------
-    /// Performs cleanup tasks for contact managers or state caches at the end of an integration step.
-    fn cleanup_contacts(&mut self) {}
+        ) {
+            
+        }
 }

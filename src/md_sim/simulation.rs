@@ -119,7 +119,9 @@ impl<S> Simulation<S>
         //----------------------------------------------------------------------------
         self.reset_forces();
         // --- CLEAN UP EXPIRED CONTACTS ONCE PER STEP ---
-        self.sim_update.cleanup_contacts();
+        self.sim_update.handle_contact_separation(&mut self.particles, &self.molecule_map, &self.settings);
+
+        // Do field calculations.
 
         if self.sim_update.has_single_forces() {
             let (mut force, mut torque);

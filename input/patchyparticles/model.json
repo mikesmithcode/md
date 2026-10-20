@@ -16,7 +16,12 @@
   },
   "vibration":{
     "ang_freq": 500.0,
-    "velocity": [0.0,0.0,1.0],
+    "velocity": [0.0,0.0,0.02],
     "omega":[0.0,0.0,0.0]
+  },
+  "charging":{
+    "dq_pp":1e-11,
+    "dq_ps":1e-11,
+    "q_max": 1e-9
   }
 }

@@ -240,24 +240,11 @@ impl CellGrid {
                     .for_each(process_particle);
             });
         } else {
-            for i in 0..f_buf.len() {
-                let mut local_force = DVec3::ZERO;
-                let mut local_torque = DVec3::ZERO;
-
-                let start = self.verlet_offsets[i];
-                let end = self.verlet_offsets[i + 1];
-
-                for &j in &self.verlet_particle_ids[start..end] {
-                    let (f, t) = user_impl.update_pair_forces(
-                        i, j, DVec3::ZERO, DVec3::ZERO, particles, settings
-                    );
-                    local_force += f;
-                    local_torque += t;
-                }
-
-                f_buf[i] += local_force;
-                t_buf[i] += local_torque;
-            }
+            // Single threaded version
+            f_buf.iter_mut()
+                .zip(t_buf.iter_mut())
+                .enumerate()
+                .for_each(process_particle);
         }
     }
 
@@ -483,11 +470,16 @@ impl CellGrid {
         let ptype_i = p.ptype[i];
         let ptype_j = p.ptype[j];
 
+        // exclude if outside interaction cutoff radius
         let search_radius_sq = self.int_context.search_radius_sq_matrix[ptype_i][ptype_j];
+
+        // exclude if [i_ptype,j_ptype] in that order not in the interaction_ptypes
         if search_radius_sq == 0.0 { return false; }
 
+        // exclude particles in same molecule
         if p.molecule_id[i] == p.molecule_id[j] { return false; }
 
+        // consider possible wrapping due to periodic bc
         let mut delta = p.position[i] - p.position[j];
         check_delta(&mut delta, self.int_context.sim_box_size, self.int_context.periodic);
 

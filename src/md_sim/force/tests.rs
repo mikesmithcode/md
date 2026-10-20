@@ -7,7 +7,7 @@ use crate::md_sim::force::{check_particle_contact, check_object_contact};
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::particle::{Particle, RectSpec, ObjectSpec, ParticleVec};
 use crate::md_sim::utils::create_grid_and_settings;
-use crate::md_sim::force::contact::{Contact, ContactState, ContactManager, ContactType};
+use crate::md_sim::force::contact::{Contact, ContactManager, ContactType};
 use crate::md_sim::force::{add_gravity,Gravity, add_viscous_drag, ViscousDrag, FrictionViscous, friction_cundall_strack, FrictionCundallStrack, NormalForce, add_coulomb, CoulombParams};
 use crate::md_sim::force::{normal_hertzian, normal_linear, friction_viscous_damping};
 use super::neighbours::CellGrid;
@@ -904,9 +904,9 @@ fn test_contact_manager_remove_old_contacts() {
     let expired_pair = ContactType::Particle { i: 2, j: 3 };
 
     // Manually seed an expired pair (simulating a contact that is no longer colliding this step)
-    manager.states.insert(expired_pair.clone(), ContactState {
+    manager.states.insert(expired_pair.clone(), Contact {
         is_active: false,
-        ..ContactState::default()
+        ..Contact::default()
     });
 
     // Encounter and touch the active pair during the current step sweep
