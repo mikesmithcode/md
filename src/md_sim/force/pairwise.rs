@@ -343,24 +343,11 @@ impl Default for FrictionViscous {
 pub fn friction_cundall_strack(
     f_normal_mag: f64,
     contact: &Contact,
-    contact_manager: &ContactManager,
     model: &FrictionCundallStrack,
     dt: f64,
 ) -> (DVec3, DVec3) {
-
-    // Extract tangential relative velocity component (reusing your clean vector projection)
-    //let v_tang = contact.rel_vel - contact.rel_vel.dot(contact.normal) * contact.normal;
-
-    // Compute incremental tangential displacement and update history in the manager
-    //let delta_tangential = v_tang * dt;
-    
-    //contact_manager.check_or_add(&contact.contact_type, delta_tangential);
-
-    // Retrieve accumulated tangential displacement
-    let full_tang_disp = contact_manager.states.get(&contact.contact_type).unwrap().tangential_disp;
-
     // Calculate trial tangential force (Elastic Spring + Viscous Damping)
-    let mut f_t_ideal = -model.tang_stiffness * full_tang_disp - model.tang_damping * v_tang;
+    let mut f_t_ideal = -model.tang_stiffness * contact.tangential_disp - model.tang_damping * contact.v_tang();
 
     // Apply Coulomb friction yield limit (||F_t|| <= mu * F_n)
     let limit = model.mu * f_normal_mag;

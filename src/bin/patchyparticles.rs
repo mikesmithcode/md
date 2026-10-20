@@ -90,8 +90,8 @@ impl Forces for SimUpdate{
              // `state` gives you the last known state of that contact.
              match contact_type{
                 ContactType::Particle{i,j} =>{
-                    let molecule_i = molecule_map.get(i).unwrap();
-                    let i_q = find_closest_charge(*i, particles, molecule_i);
+                    let molecule_i = molecule_map.get(&i).unwrap();
+                    let i_q = find_closest_charge(i, particles, molecule_i);
                     if particles.ptype[i] == particles.ptype[j]{
                         particles.charge[i_q] += self.model.charging.dq_pp;
                     }
@@ -126,9 +126,7 @@ impl Forces for SimUpdate{
     /// as collision_ptypes get passed
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
         //Only main particles have granular collisions.
-        if let Some(contact) = self.contact_manager.check_particle_contact(contact_type, displacement){
-        // Calculate geometry and params of contact
-        if let Some(contact)=check_particle_contact(i, j, particles, settings){
+        if let Some(contact) = self.contact_manager.analyse_particle_contact(i,j,particles, settings){
             //Normal and tangential forces
             let (fn_mag, fn_vec)=normal_linear(&contact, &self.model.normal_force);
             //let (ft_vec, tt_vec) = friction_viscous_damping(fn_mag, &contact, &self.model.friction);
@@ -140,6 +138,7 @@ impl Forces for SimUpdate{
         }
     
         (force, torque)
+    
     }
 
     fn update_object_forces(&self,i: usize,mut force: DVec3,mut torque: DVec3,particles: &ParticleVec,object_spec: &ObjectSpec,settings: &SimulationSettings) -> (DVec3, DVec3) {

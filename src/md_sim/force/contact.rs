@@ -13,6 +13,7 @@ use std::io::{BufReader, BufWriter};
 use std::hash::Hash;
 
 
+use crate::md_sim::force::contact;
 use crate::md_sim::motion::MoleculeData;
 use crate::md_sim::utils::file_io::get_latest_file;
 use crate::md_sim::utils::check_delta;
@@ -46,6 +47,13 @@ pub struct Contact{
     pub m_eff: f64,
     pub contact_type: ContactType,
     pub is_active: bool,
+}
+
+impl Contact  {
+    pub fn v_tang(&self)-> DVec3{
+        self.rel_vel - self.rel_vel.dot(self.normal) * self.normal
+    }
+    
 }
 
 impl Default for Contact{
@@ -144,232 +152,47 @@ impl ContactManager {
         Some(())
     }
 
-    ///------------------------------------------------------------------------------
-    /// check_particle_contact
-    ///------------------------------------------------------------------------------
-    /// Calculates collision geometry, relative kinematics, and effective contact properties 
-    /// between two particles. 
-    /// 
-    /// N.B. Because each particle is stored in each other's Verlet list (i.e., $i$ knows about $j$ 
-    /// and $j$ knows about $i$), Newton's third law ($\mathbf{F}_{ij} = -\mathbf{F}_{ji}$) is handled 
-    /// by evaluating this function symmetrically for both $(i, j)$ and $(j, i)$ pairs.
-    /// 
-    /// # Physical Model & Processing Steps
-    /// 
-    /// 1. **Collision Mask Filtering**:
-    ///    - Exits early if particle $i$'s type is excluded by `settings.collision_mask`.
-    /// 2. **Geometry & Overlap**:
-    ///    - Position delta with periodic boundary handling: $\boldsymbol{\delta} = \mathbf{p}_i - \mathbf{p}_j$
-    ///    - Center-to-center distance: $\text{dist} = \Vert{}\boldsymbol{\delta}\Vert{}$
-    ///    - Overlap: $\text{overlap} = (R_i + R_j) - \text{dist}$
-    ///    - Unit normal vector (pointing from $j$ to $i$): $\mathbf{n} = \frac{\boldsymbol{\delta}}{\text{dist}}$
-    /// 3. **Effective Properties & Hertzian Contact Parameters**:
-    ///    - Reduced mass: $m_{\text{eff}} = \begin{cases} \frac{m_i m_j}{m_i + m_j} & \text{if } j \text{ is a collision object} \\ m_i & \text{otherwise} \end{cases}$
-    ///    - Effective radius: $r_{\text{eff}} = \frac{R_i R_j}{R_i + R_j}$
-    ///    - Contact stiffness ($k_n$): $k_n = \frac{4}{3} E^* \sqrt{r_{\text{eff}}}$
-    ///    - Damping coefficient ($\gamma_n$): $\gamma_n = 2 \beta \sqrt{m_{\text{eff}} k_n}$
-    /// 4. **Kinematics & Contact Points**:
-    ///    - Contact offset vectors: $\mathbf{r}_i = \mathbf{n} \left(-R_i + \frac{\text{overlap} \cdot R_j}{R_i + R_j}\right)$, $\mathbf{r}_j = \mathbf{n} \left(R_j - \frac{\text{overlap} \cdot R_i}{R_i + R_j}\right)$
-    ///    - Relative surface velocity: $\mathbf{v}_{\text{rel}} = (\mathbf{v}_i + \boldsymbol{\omega}_i \times \mathbf{r}_i) - (\mathbf{v}_j + \boldsymbol{\omega}_j \times \mathbf{r}_j)$
-    /// 
-    /// # Arguments
-    /// 
-    /// * `i`, `j` - Indices of the interacting particles.
-    /// * `particles` - Reference to the particle data structure (position, velocity, omega, radius, mass, type).
-    /// * `model` - Collision parameter set (`CollisionParams`) containing elastic modulus, damping factors, and friction coefficients.
-    /// * `settings` - Global simulation configuration (`SimulationSettings`) for box size and periodicity.
-    /// 
-    /// # Returns
-    /// 
-    /// * `Some(Contact)` containing the resolved geometry, kinematics, and material properties if overlapping.
-    /// * `None` if particles are separated or filtered out by collision masks.
-    pub fn check_particle_contact(
-        &self,
-        i: usize, 
-        j: usize, 
-        particles: &ParticleVec, 
-        settings: &SimulationSettings
-    ) -> Option<Contact> { 
-        
-        // exit if not a collision type
-        if !settings.collision_mask[particles.ptype[i]] {
-            return None;
-        }
-
-        let mut delta = particles.position[i] - particles.position[j];
-        check_delta(&mut delta, settings.sim_box_size, settings.periodic);
-
-        let rad_i = particles.radius[i];
-        let rad_j = particles.radius[j];
-        let combined_rad = rad_i + rad_j;
-        let dist_sq = delta.length_squared();
-
-        if dist_sq < combined_rad * combined_rad {
-            let dist = dist_sq.sqrt();
-            let normal = delta / dist; 
-            let overlap = combined_rad - dist; 
-
-            let is_j_coll = settings.collision_mask[particles.ptype[j]];      
-            
-            let m_i = particles.mass[i];
-            let m_eff = if is_j_coll {
-                let m_j = particles.mass[j];
-                (m_i * m_j) / (m_i + m_j)
-            } else {
-                m_i
-            };
-
-            let r_eff = (rad_i * rad_j) / combined_rad;
-
-            let r_i = normal * (-rad_i + overlap * rad_j / combined_rad);
-            let r_j = normal * (rad_j - overlap * rad_i / combined_rad);
-
-            let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
-                                - (particles.velocity[j] + particles.omega[j].cross(r_j));
-
-
-            // Extract tangential relative velocity component (reusing your clean vector projection)
-            let v_tang = rel_vel - rel_vel.dot(normal) * normal;
-
-            // Compute incremental tangential displacement and update history in the manager
-            let delta_tangential = v_tang * settings.dt;
-            
-            self.check_or_add(&ContactType::Particle{i,j}, delta_tangential);
-
-
-            let contact = Contact {
-                overlap,
-                tangential_disp,
-                normal,
-                r_contact: r_i,
-                rel_vel, 
-                r_eff,
-                m_eff,
-                contact_type: ContactType::Particle { i, j },
-                is_active,
-            };
-            
-            Some(contact)
-        } else {
-            None
-        }
-    }
-
-
-
-
-    pub fn check_object_contact(
+    
+    pub fn analyse_particle_contact(&self,
         i: usize,
-        object: &ObjectSpec,
+        j: usize,
         particles: &ParticleVec,
         settings: &SimulationSettings,
     ) -> Option<Contact> {
-        // Exit early if particle type is excluded from collisions
-        if !settings.collision_mask[particles.ptype[i]] {
-            return None;
-        }
+        // Get geometry (returns None if no collision)
+        let contact = compute_particle_contact(i, j, particles, settings)?;
 
-        match object {
-            ObjectSpec::Rectangle(rect) => check_surface_contact(i, rect, particles),
-            ObjectSpec::Triangle(tri) => check_surface_contact(i, tri, particles),
-            ObjectSpec::WireBox(_box_spec) => {
-                // Not implemented since this is just a visual element
-                None 
+        // Compute incremental tangential displacement for this step
+        let delta_tangential = contact.v_tang() * settings.dt;
+
+        let contact = self.add_or_update_contact_history(contact, delta_tangential);
+
+        Some(contact)
+    
+    }
+
+    /// Adds a new contact or updates an existing one by calculating the tangential displacement and adding this
+    /// to the current total.
+    pub fn add_or_update_contact_history(&self, mut contact: Contact, delta_tangential: DVec3) -> Contact{
+        let c_type = contact.contact_type.clone();
+        
+        let entry = self.states.entry(c_type);
+        match entry {
+            dashmap::mapref::entry::Entry::Occupied(mut occ) => {
+                let existing = occ.get_mut();
+                existing.tangential_disp += delta_tangential;
+                existing.is_active = true;
+                contact.tangential_disp = existing.tangential_disp;
             }
-            ObjectSpec::Line(_line) => {
-                // Not implemented since this is just a visual element
-                None
+            dashmap::mapref::entry::Entry::Vacant(vac) => {
+                contact.tangential_disp = delta_tangential;
+                contact.is_active = true;
+                vac.insert(contact.clone());
             }
         }
+        contact
     }
-
-
-    ///------------------------------------------------------------------------------
-    /// check_surface_contact
-    ///------------------------------------------------------------------------------
-    /// Calculates collision geometry, relative kinematics, and effective contact properties 
-    /// between a particle and any rigid object implementing `SurfaceKinematics`.
-    /// 
-    /// # Arguments
-    /// 
-    /// * `i` - Index of the particle.
-    /// * `surface` - Reference to any boundary implementing `SurfaceKinematics` (e.g., `RectSpec`, `TriSpec`).
-    /// * `particles` - Reference to the particle data structure.
-    /// * `model` - Collision parameter set (`CollisionParams`).
-    /// * `settings` - Global simulation configuration (`SimulationSettings`).
-    /// 
-    /// # Returns
-    /// 
-    /// * `Some(Contact)` if the particle is penetrating the surface.
-    /// * `None` otherwise.
-    fn check_surface_contact<S: SurfaceKinematics>(
-        i: usize,
-        surface: &S,
-        particles: &ParticleVec
-    ) -> Option<Contact> {
-
-        let closest = surface.closest_point(particles.position[i]);
-        let delta = particles.position[i] - closest;
-        let dist_sq = delta.length_squared();
-        let rad_i = particles.radius[i];
-
-        if dist_sq < rad_i * rad_i {
-            let dist = dist_sq.sqrt();
-            let normal = if dist > 1e-12 {
-                delta / dist
-            } else {
-                surface.normal()
-            };
-            let overlap = rad_i - dist;
-
-            let m_eff = particles.mass[i];
-            let r_eff = rad_i; // Sphere-plane effective radius limit
-
-            // Radial vector from particle center to the contact point
-            let r_i = normal * (-rad_i + overlap);
-            let surface_vel = surface.velocity_at_point(closest);
-
-            let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) - surface_vel;
-
-            let contact = Contact {
-                overlap,
-                normal,
-                r_contact: r_i,
-                rel_vel,
-                r_eff,
-                m_eff,
-                contact_type: ContactType::Plane { i, plane_id: surface.id() },
-            };
-
-            Some(contact)
-        } else {
-            None
-        }
-    }
-
-    pub fn check_or_add(&self, contact_type: &ContactType, displacement: DVec3) {
-        // Try to find and update the existing state
-        let mut updated = false;
-        if let Some(mut state) = self.states.get_mut(contact_type) {
-            state.tangential_disp += displacement;
-            state.is_active = true;
-            updated = true;
-        }
-
-        // If it wasn't found, insert a new one in a separate operation
-        if !updated {
-            let contact = Contact {
-                    tangential_disp: displacement,
-                    is_active: true,
-
-                },
-            self.states.insert(
-                contact_type.clone(),
-                contact.clone(),
-                
-            );
-        }
-    }
+    
 
     /// if is_active has been set to false, contact has finished and needs cleaning up
     /// on_separation is a func describing what else to do at this point. You are passing
@@ -432,3 +255,198 @@ pub mod dashmap_as_vec {
 
 
 
+///------------------------------------------------------------------------------
+    /// compute_particle_contact
+    ///------------------------------------------------------------------------------
+    /// Calculates collision geometry, relative kinematics, and effective contact properties 
+    /// between two particles. 
+    /// 
+    /// N.B. Because each particle is stored in each other's Verlet list (i.e., $i$ knows about $j$ 
+    /// and $j$ knows about $i$), Newton's third law ($\mathbf{F}_{ij} = -\mathbf{F}_{ji}$) is handled 
+    /// by evaluating this function symmetrically for both $(i, j)$ and $(j, i)$ pairs.
+    /// 
+    /// # Physical Model & Processing Steps
+    /// 
+    /// 1. **Collision Mask Filtering**:
+    ///    - Exits early if particle $i$'s type is excluded by `settings.collision_mask`.
+    /// 2. **Geometry & Overlap**:
+    ///    - Position delta with periodic boundary handling: $\boldsymbol{\delta} = \mathbf{p}_i - \mathbf{p}_j$
+    ///    - Center-to-center distance: $\text{dist} = \Vert{}\boldsymbol{\delta}\Vert{}$
+    ///    - Overlap: $\text{overlap} = (R_i + R_j) - \text{dist}$
+    ///    - Unit normal vector (pointing from $j$ to $i$): $\mathbf{n} = \frac{\boldsymbol{\delta}}{\text{dist}}$
+    /// 3. **Effective Properties & Hertzian Contact Parameters**:
+    ///    - Reduced mass: $m_{\text{eff}} = \begin{cases} \frac{m_i m_j}{m_i + m_j} & \text{if } j \text{ is a collision object} \\ m_i & \text{otherwise} \end{cases}$
+    ///    - Effective radius: $r_{\text{eff}} = \frac{R_i R_j}{R_i + R_j}$
+    ///    - Contact stiffness ($k_n$): $k_n = \frac{4}{3} E^* \sqrt{r_{\text{eff}}}$
+    ///    - Damping coefficient ($\gamma_n$): $\gamma_n = 2 \beta \sqrt{m_{\text{eff}} k_n}$
+    /// 4. **Kinematics & Contact Points**:
+    ///    - Contact offset vectors: $\mathbf{r}_i = \mathbf{n} \left(-R_i + \frac{\text{overlap} \cdot R_j}{R_i + R_j}\right)$, $\mathbf{r}_j = \mathbf{n} \left(R_j - \frac{\text{overlap} \cdot R_i}{R_i + R_j}\right)$
+    ///    - Relative surface velocity: $\mathbf{v}_{\text{rel}} = (\mathbf{v}_i + \boldsymbol{\omega}_i \times \mathbf{r}_i) - (\mathbf{v}_j + \boldsymbol{\omega}_j \times \mathbf{r}_j)$
+    /// 
+    /// # Arguments
+    /// 
+    /// * `i`, `j` - Indices of the interacting particles.
+    /// * `particles` - Reference to the particle data structure (position, velocity, omega, radius, mass, type).
+    /// * `model` - Collision parameter set (`CollisionParams`) containing elastic modulus, damping factors, and friction coefficients.
+    /// * `settings` - Global simulation configuration (`SimulationSettings`) for box size and periodicity.
+    /// 
+    /// # Returns
+    /// 
+    /// * `Some(Contact)` containing the resolved geometry, kinematics, and material properties if overlapping.
+    /// * `None` if particles are separated or filtered out by collision masks.
+    pub fn compute_particle_contact(
+        i: usize, 
+        j: usize, 
+        particles: &ParticleVec, 
+        settings: &SimulationSettings
+    ) -> Option<Contact> { 
+        
+        // exit if not a collision type
+        if !settings.collision_mask[particles.ptype[i]] {
+            return None;
+        }
+
+        let mut delta = particles.position[i] - particles.position[j];
+        check_delta(&mut delta, settings.sim_box_size, settings.periodic);
+
+        let rad_i = particles.radius[i];
+        let rad_j = particles.radius[j];
+        let combined_rad = rad_i + rad_j;
+        let dist_sq = delta.length_squared();
+
+        if dist_sq < combined_rad * combined_rad {
+            let dist = dist_sq.sqrt();
+            let normal = delta / dist; 
+            let overlap = combined_rad - dist; 
+
+            let is_j_coll = settings.collision_mask[particles.ptype[j]];      
+            
+            let m_i = particles.mass[i];
+            let m_eff = if is_j_coll {
+                let m_j = particles.mass[j];
+                (m_i * m_j) / (m_i + m_j)
+            } else {
+                m_i
+            };
+
+            let r_eff = (rad_i * rad_j) / combined_rad;
+
+            let r_i = normal * (-rad_i + overlap * rad_j / combined_rad);
+            let r_j = normal * (rad_j - overlap * rad_i / combined_rad);
+
+            let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
+                                - (particles.velocity[j] + particles.omega[j].cross(r_j));
+
+            let contact_type = ContactType::particle(i, j);
+
+            let contact = Contact {
+                overlap,
+                tangential_disp: DVec3::ZERO,
+                normal,
+                r_contact: r_i,
+                rel_vel, 
+                r_eff,
+                m_eff,
+                contact_type,//Overwritten by impl ContactManager {fn check_or_add}
+                is_active: true,//Overwritten by impl ContactManager {fn check_or_add}
+            };
+            
+            Some(contact)
+        } else {
+            None
+        }
+    }
+
+
+
+
+    pub fn compute_object_contact(
+        i: usize,
+        object: &ObjectSpec,
+        particles: &ParticleVec,
+        settings: &SimulationSettings,
+    ) -> Option<Contact> {
+        // Exit early if particle type is excluded from collisions
+        if !settings.collision_mask[particles.ptype[i]] {
+            return None;
+        }
+
+        match object {
+            ObjectSpec::Rectangle(rect) => compute_surface_contact(i, rect, particles),
+            ObjectSpec::Triangle(tri) => compute_surface_contact(i, tri, particles),
+            ObjectSpec::WireBox(_box_spec) => {
+                // Not implemented since this is just a visual element
+                None 
+            }
+            ObjectSpec::Line(_line) => {
+                // Not implemented since this is just a visual element
+                None
+            }
+        }
+    }
+
+
+    ///------------------------------------------------------------------------------
+    /// check_surface_contact
+    ///------------------------------------------------------------------------------
+    /// Calculates collision geometry, relative kinematics, and effective contact properties 
+    /// between a particle and any rigid object implementing `SurfaceKinematics`.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `i` - Index of the particle.
+    /// * `surface` - Reference to any boundary implementing `SurfaceKinematics` (e.g., `RectSpec`, `TriSpec`).
+    /// * `particles` - Reference to the particle data structure.
+    /// * `model` - Collision parameter set (`CollisionParams`).
+    /// * `settings` - Global simulation configuration (`SimulationSettings`).
+    /// 
+    /// # Returns
+    /// 
+    /// * `Some(Contact)` if the particle is penetrating the surface.
+    /// * `None` otherwise.
+    fn compute_surface_contact<S: SurfaceKinematics>(
+        i: usize,
+        surface: &S,
+        particles: &ParticleVec
+    ) -> Option<Contact> {
+
+        let closest = surface.closest_point(particles.position[i]);
+        let delta = particles.position[i] - closest;
+        let dist_sq = delta.length_squared();
+        let rad_i = particles.radius[i];
+
+        if dist_sq < rad_i * rad_i {
+            let dist = dist_sq.sqrt();
+            let normal = if dist > 1e-12 {
+                delta / dist
+            } else {
+                surface.normal()
+            };
+            let overlap = rad_i - dist;
+
+            let m_eff = particles.mass[i];
+            let r_eff = rad_i; // Sphere-plane effective radius limit
+
+            // Radial vector from particle center to the contact point
+            let r_i = normal * (-rad_i + overlap);
+            let surface_vel = surface.velocity_at_point(closest);
+
+            let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) - surface_vel;
+
+            let contact = Contact {
+                overlap,
+                normal,
+                r_contact: r_i,
+                rel_vel,
+                r_eff,
+                m_eff,
+                contact_type: ContactType::Plane { i, plane_id: surface.id() },
+                tangential_disp: DVec3::ZERO, //Overwritten by impl ContactManager {fn check_or_add}
+                is_active: true, //Overwritten by impl ContactManager {fn check_or_add}
+            };
+
+            Some(contact)
+        } else {
+            None
+        }
+    }

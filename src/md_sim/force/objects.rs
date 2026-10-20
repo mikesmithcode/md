@@ -1,5 +1,5 @@
 
-
+use glam::DVec3;
 
 use crate::md_sim::{ObjectSpec, ParticleVec, SurfaceKinematics};
 use crate::md_sim::force::contact::{Contact, ContactType};
@@ -106,7 +106,7 @@ pub(crate) fn surface_contact<S: SurfaceKinematics>(
         let particle_contact_vel = particle_vel + particle_omega.cross(r_particle);
         let rel_vel = particle_contact_vel - surface_vel;
 
-        let contact = Contact{overlap,normal,r_contact: r_particle,rel_vel, r_eff: radius, m_eff, contact_type: ContactType::Plane { i, plane_id: surface.id() }};
+        let contact = Contact{overlap,normal,r_contact: r_particle,rel_vel, r_eff: radius, m_eff, contact_type: ContactType::Plane { i, plane_id: surface.id() }, is_active: true, tangential_disp: DVec3::ZERO};
         Some(contact)
         
     }
