@@ -118,9 +118,12 @@ impl Forces for SimUpdate{
 
     //Forces which apply to every particle individually, e.g. gravity
     fn update_single_forces(&self,i:usize, mut force:glam::DVec3, _torque: DVec3, particles: &ParticleVec, _settings: &SimulationSettings, _time: f64)->(DVec3, DVec3) {   
+        
         // Only the dynamic particle has weight
         if particles.ptype[i] == 0{
+            
             force = add_gravity(i, force, particles, &self.model.gravity);
+            println!("add_gravity: particle id : {}, ptype {}, force {:?}", i, &particles.ptype[i], force);
         }
         (force, _torque)
     }
@@ -141,7 +144,6 @@ impl Forces for SimUpdate{
             force += fn_vec + ft_vec;
             torque += tt_vec;
         }
-    
         (force, torque)
     
     }
@@ -169,6 +171,7 @@ impl Forces for SimUpdate{
             force += fn_vec + ft_vec;
             torque += tt_vec;
         }
+
         (force, torque)
     }
 
@@ -183,6 +186,7 @@ impl Motion for SimUpdate{
     // Optional depending on integration scheme.
     fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
         integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
+
     }
 
     fn update_objects(&mut self, object: &mut ObjectSpec, _particles: &mut ParticleVec,settings: &SimulationSettings, time: f64){

@@ -286,7 +286,7 @@ impl Scene {
         // Opaque Static/Dynamic Objects (Rectangles, Triangles, WireBoxes)
         for template in &resources.object_templates {
             if template.visible() & template.opaque(){
-                opaque_objects.push(template.get_mesh());
+                opaque_objects.push(template.get_mesh())
             }
         }
 

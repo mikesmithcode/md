@@ -40,13 +40,13 @@ if __name__ == '__main__':
         5: (0.0, 255.0, 255.0, 250.0),    # Charges on static particles
     }
     
-    positions = [(0.01,0.01,0.02)]
+    positions = [(0.008,0.008,0.01), (0.012,0.012,0.025)]
     
     n_charges = 32 
     charges = generate_charge_points(n_charges)
     
     
-    p = [generate_charged_sphere(positions[i], charges, w=(0.0,10.0,0.0),ptype_colours=ptype_colours) for i in range(len(positions))]
+    p = [generate_charged_sphere(positions[i], charges, mol_id=i, w=(0.0,10.0,0.0),ptype_colours=ptype_colours) for i in range(len(positions))]
     
     df = pl.concat(p)
     

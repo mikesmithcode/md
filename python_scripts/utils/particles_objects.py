@@ -241,6 +241,7 @@ def generate_dipoles(
 def generate_charged_sphere(
     position: Tuple[float, float, float],
     surface_points: np.ndarray,
+    mol_id: int = 0,
     w: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     v: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     rad: float = 0.005,
@@ -248,9 +249,9 @@ def generate_charged_sphere(
     main_ptype: int = 0,
     charge_ptype: int = 1,
     ptype_colours: Optional[Dict[int, Tuple[float, float, float, float]]] = None,
-):
-    """Yields a Polars DataFrame containing a central sphere particle and 
-    its n surface charge nodes (with charge=0.0) distributed via pre-calculated surface_points.
+) -> pl.DataFrame:
+    """Returns a Polars DataFrame containing a central sphere particle and 
+    its surface charge nodes for a given mol_id.
     """
     colours = DEFAULT_PTYPE_COLOURS.copy()
     if ptype_colours is not None:
@@ -270,7 +271,7 @@ def generate_charged_sphere(
     particle = {
         "t": 0.0,
         "id": 0,
-        "molecule_id": 0,
+        "molecule_id": mol_id,
         "ptype": int(main_ptype),
         "x": float(cx), "y": float(cy), "z": float(cz),
         "rel_x": 0.0, "rel_y": 0.0, "rel_z": 0.0,
@@ -286,13 +287,12 @@ def generate_charged_sphere(
     # 2. Surface charge nodes mapped to the pre-calculated unit vectors
     charge_rows = []
     for idx, pt in enumerate(surface_points, start=1):
-        # Scale unit point by radius to place on the sphere's surface
         rx, ry, rz = pt * rad
         
         charge_rows.append({
             "t": 0.0,
             "id": int(idx),
-            "molecule_id": 0,
+            "molecule_id": mol_id,
             "ptype": int(charge_ptype),
             "x": float(cx + rx),
             "y": float(cy + ry),
@@ -302,9 +302,9 @@ def generate_charged_sphere(
             "rel_z": float(rz),
             "vx": float(vx), "vy": float(vy), "vz": float(vz),
             "wx": float(wx), "wy": float(wy), "wz": float(wz),
-            "radius": float(0.1 * rad),  # Smaller nodes for surface points
+            "radius": float(0.1 * rad),
             "mass": 0.0,
-            "charge": 0.0,  # Set all charges to 0.0 as requested
+            "charge": 0.0,
             "r": float(charge_col[0]), "g": float(charge_col[1]),
             "b": float(charge_col[2]), "a": float(charge_col[3])
         })

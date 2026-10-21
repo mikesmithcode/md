@@ -149,7 +149,8 @@ pub fn integrate_rigid_bodies(
     let sim_box_size = settings.sim_box_size;
     let periodic = settings.periodic;
 
-    for (_mol_id, mol) in molecule_map { 
+    for (mol_id, mol) in molecule_map { 
+        println!("updating molecule {}", mol_id);
         let lead_idx = mol.pids[0];    
         
         // Calculate current COM and aggregate forces/torques via shared helper
@@ -157,7 +158,7 @@ pub fn integrate_rigid_bodies(
         let (total_force, total_torque) = compute_molecule_forces_and_torques(
                                                             &mol.pids, forces, torques, particles, com_pos
                                                             );
-
+        println!("total_force {}", total_force);
         // Update COM Velocity and Angular Velocity (Half-step predictor)
         let acc = total_force / total_mass;
         let new_com_vel = com_vel + (acc * half_dt);
