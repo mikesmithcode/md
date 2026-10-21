@@ -21,7 +21,7 @@
   },
   "charging":{
     "dq_pp":1e-11,
-    "dq_ps":1e-11,
-    "q_max": 1e-9
+    "dq_ps":-1e-11,
+    "q_max": -1e-9
   }
 }

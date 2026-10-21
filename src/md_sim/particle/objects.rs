@@ -12,6 +12,13 @@ pub fn next_id() -> usize {
     GLOBAL_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
 }
 
+pub trait SurfaceKinematics {
+    fn id(&self) -> usize;
+    fn closest_point(&self, particle_pos: DVec3) -> DVec3;
+    fn velocity_at_point(&self, point: DVec3) -> DVec3;
+    fn normal(&self) -> DVec3;
+}
+
 #[derive(Debug, Clone)]
 pub enum ObjectSpec {
     /// A line constructed from stretched cube
@@ -58,12 +65,42 @@ impl ObjectSpec {
     }
 }
 
-pub trait SurfaceKinematics {
-    fn id(&self) -> usize;
-    fn closest_point(&self, particle_pos: DVec3) -> DVec3;
-    fn velocity_at_point(&self, point: DVec3) -> DVec3;
-    fn normal(&self) -> DVec3;
+// Implement SurfaceKinematics for ObjectSpec by delegating to variants!
+impl SurfaceKinematics for ObjectSpec {
+    fn id(&self) -> usize {
+        match self {
+            ObjectSpec::Rectangle(rect) => rect.id(),
+            ObjectSpec::Triangle(tri) => tri.id(),
+            ObjectSpec::Line(_) | ObjectSpec::WireBox(_) => 0,
+        }
+    }
+
+    fn closest_point(&self, particle_pos: DVec3) -> DVec3 {
+        match self {
+            ObjectSpec::Rectangle(rect) => rect.closest_point(particle_pos),
+            ObjectSpec::Triangle(tri) => tri.closest_point(particle_pos),
+            ObjectSpec::Line(_) | ObjectSpec::WireBox(_) => particle_pos, // Not implemented
+        }
+    }
+
+    fn velocity_at_point(&self, point: DVec3) -> DVec3 {
+        match self {
+            ObjectSpec::Rectangle(rect) => rect.velocity_at_point(point),
+            ObjectSpec::Triangle(tri) => tri.velocity_at_point(point),
+            ObjectSpec::Line(_) | ObjectSpec::WireBox(_) => DVec3::ZERO, // Not implemented
+        }
+    }
+
+    fn normal(&self) -> DVec3 {
+        match self {
+            ObjectSpec::Rectangle(rect) => rect.normal(),
+            ObjectSpec::Triangle(tri) => tri.normal(),
+            ObjectSpec::Line(_) | ObjectSpec::WireBox(_) => DVec3::Z, // Not implemented
+        }
+    }
 }
+
+
 
 ///------------------------------------------------------------------------------
 /// LineSpec
@@ -182,6 +219,8 @@ impl LineSpec {
         );
     }
 }
+
+
 
 
 

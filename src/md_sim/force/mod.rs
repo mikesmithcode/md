@@ -4,22 +4,26 @@ mod pairwise;
 mod single;
 mod objects;
 mod contact;
+mod charge;
 
 
 use glam::DVec3;
 use crate::md_sim::particle::ParticleVec;
-use crate::md_sim::{ObjectSpec, Simulation, SimulationSettings};
+use crate::md_sim::{ObjectSpec, SimulationSettings};
 use std::collections::HashMap;
-
+use crate::md_sim::particle::MoleculeData;
 
 // Re-export the traits and key functions for easier access
 // This allows you to call forces::Force instead of forces::force::Force
-pub use contact::{check_particle_contact,check_object_contact, ContactManager, ContactType, Contact};
+pub use charge::add_charge;
+pub use contact::{ContactManager, ContactType, Contact};
 pub use neighbours::CellGrid;
 pub use objects::{check_surface_contact};
 pub use pairwise::{normal_linear, normal_hertzian, friction_viscous_damping, friction_cundall_strack, FrictionCundallStrack, FrictionViscous, NormalForce, add_coulomb, CoulombParams};
 pub use single::{add_gravity, Gravity, add_viscous_drag, ViscousDrag};
-use crate::md_sim::particle::MoleculeData;
+
+
+
 
 
 

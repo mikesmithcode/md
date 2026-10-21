@@ -302,7 +302,7 @@ def generate_charged_sphere(
             "rel_z": float(rz),
             "vx": float(vx), "vy": float(vy), "vz": float(vz),
             "wx": float(wx), "wy": float(wy), "wz": float(wz),
-            "radius": float(0.05 * rad),  # Smaller nodes for surface points
+            "radius": float(0.1 * rad),  # Smaller nodes for surface points
             "mass": 0.0,
             "charge": 0.0,  # Set all charges to 0.0 as requested
             "r": float(charge_col[0]), "g": float(charge_col[1]),

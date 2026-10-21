@@ -32,8 +32,8 @@ if __name__ == '__main__':
     
         # Define colour dictionary mapping ptype to (R, G, B, A)
     ptype_colours = {
-        0: (255.0, 255.0, 255.0, 250.0), # Positive main particle (White alpha=150)
-        1: (255.0, 0.0, 255.0, 250.0),   # Positive charge (Magenta)
+        0: (255.0, 255.0, 255.0, 150.0), # Positive main particle (White alpha=150)
+        1: (255.0, 255.0, 255.0, 255.0),   # Positive charge (Magenta)
         2: (255.0, 255.0, 255.0, 150.0), # Negative main particle (White alpha=150)
         3: (0.0, 255.0, 255.0, 250.0),   # Negative charge (Cyan)
         4: (0.0, 255.0, 0.0, 150.0),    # Static particles
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     charges = generate_charge_points(n_charges)
     
     
-    p = [generate_charged_sphere(positions[i], charges) for i in range(len(positions))]
+    p = [generate_charged_sphere(positions[i], charges, w=(0.0,10.0,0.0),ptype_colours=ptype_colours) for i in range(len(positions))]
     
     df = pl.concat(p)
     
@@ -70,33 +70,34 @@ if __name__ == '__main__':
     front_rect = [(0.0, 0.0, base_height), (0.0, 0.0, h-2*base_height), (w, 0.0, h-2*base_height), (w, 0.0, base_height)]
     
     base_df = create_rectangle(
-        vertices=rect, 
+        vertices=rect,
         id_val=0, 
-        colour=(0, 255, 0, 254)
+        colour=(0, 255, 0, 255)
     )
     
     left_df = create_rectangle(
         vertices=left_rect, 
         id_val=0, 
-        colour=(0, 255, 0, 254)
+        colour=(0, 255, 0, 100)
     )
     
     back_df = create_rectangle(
             vertices=back_rect, 
             id_val=0, 
-            colour=(0, 255, 0, 254)
+            colour=(0, 255, 0, 100)
     )
     
     right_df = create_rectangle(
             vertices=right_rect, 
             id_val=0, 
-            colour=(0, 255, 0, 254)
+            colour=(0, 255, 0, 100)
     )
     
     front_df = create_rectangle(
             vertices=front_rect, 
             id_val=0, 
-            colour=(0, 255, 0, 40),
+            colour=(0, 255, 0, 0),
+            visible=False
     )
         
     cell.append(base_df)

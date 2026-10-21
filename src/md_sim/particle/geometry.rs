@@ -1,6 +1,9 @@
 use glam::{DVec3,DMat3};
+use std::collections::HashMap;
 
 use super::ParticleVec;
+use crate::md_sim::force::Contact;
+
 /// Stores structural and inertial properties for a rigid multi-particle molecule.
 #[derive(Debug)]
 pub struct MoleculeData {
@@ -107,15 +110,21 @@ pub fn calculate_molecule_inertia(pids: &[usize], particles: &ParticleVec) -> DM
 }
 
 
-pub fn find_closest_charge(idx: usize, particles: &ParticleVec, molecule: &MoleculeData)-> usize{
-    let position_idx = particles.position[idx];
+pub fn find_closest_charge(
+    idx: usize, 
+    contact: &Contact,
+    particles: &ParticleVec, 
+    molecule_map: &HashMap<usize, MoleculeData>,
+)-> usize{
+    let molecule_i = molecule_map.get(&idx).unwrap();
+    let contact_pos = particles.position[idx] + contact.r_i;
     let mut min_id = usize::MAX;
     let mut min_dist = f64::MAX;
 
 
-    for &pid in &molecule.pids{
+    for &pid in &molecule_i.pids{
         if pid != idx{
-            let dist = (position_idx - particles.position[pid]).length();
+            let dist = (contact_pos - particles.position[pid]).length();
             if dist < min_dist{
                 min_dist = dist;
                 min_id = pid;

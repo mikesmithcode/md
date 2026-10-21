@@ -22,9 +22,9 @@ use md::md_sim::force::{FrictionCundallStrack, Gravity, NormalForce};
 use md::md_sim::force::{ContactManager, ContactType};
 // functions
 use md::md_sim::force::{add_gravity, normal_linear, friction_cundall_strack};
-use md::md_sim::force::{ check_particle_contact, check_surface_contact};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::particle::find_closest_charge;
+use md::md_sim::force::add_charge;
 use md::md_sim::utils::file_io::parse_simulation_args;
 
 
@@ -85,25 +85,29 @@ impl Forces for SimUpdate{
         molecule_map: &HashMap<usize, MoleculeData>,
         _settings: &SimulationSettings
     ) {
-         self.contact_manager.prune_contacts(|contact_type, _state| {
+         self.contact_manager.prune_contacts(|contact_type, contact| {
              // `contact_type` tells you which two particles or particle-plane were in contact.
              // `state` gives you the last known state of that contact.
-             match contact_type{
+
+             //NEED TO ADD CORRECT CHARGING LOGIC IN HERE
+             match *contact_type{
                 ContactType::Particle{i,j} =>{
-                    let molecule_i = molecule_map.get(&i).unwrap();
-                    let i_q = find_closest_charge(i, particles, molecule_i);
-                    if particles.ptype[i] == particles.ptype[j]{
-                        particles.charge[i_q] += self.model.charging.dq_pp;
-                    }
+                    
+                    let i_q = find_closest_charge(i, contact, particles, molecule_map);
+                    add_charge(i_q, particles, self.model.charging.dq_pp, self.model.charging.q_max);
+                    
+                    let j_q = find_closest_charge(j, contact, particles, molecule_map);
+                    add_charge(j_q, particles, self.model.charging.dq_pp, self.model.charging.q_max);
+
                     println!("Contact between particle {} and {} ended;", i, j);
-                    println!("particles have ptypes {} and {} ended;", particles.ptype[i], particles.ptype[j])
+                    println!("particles have ptypes {} and {} ended;", particles.ptype[i], particles.ptype[j]);
                     println!("Charges added to {} and {}", i_q, j_q);
                 }
                 ContactType::Plane{i, plane_id} =>{
-                    let molecule_i = molecule_map.get(i).unwrap();
-                    let i_q = find_closest_charge(*i, particles, molecule_i);
+                    let i_q = find_closest_charge(i, contact, particles, molecule_map);
+                    add_charge(i_q, particles, self.model.charging.dq_ps, self.model.charging.q_max);
                     println!("Contact between particle {} and plane {} ended; ", i, plane_id);
-                    println!("Charge added to {}", i_q);
+                    println!("Charge on {} now = {}", i_q, &particles.charge[i_q]);
 
                 }
              }
@@ -121,16 +125,17 @@ impl Forces for SimUpdate{
         (force, _torque)
     }
 
+    /// Forces between particle i and j.
+    /// 
     /// Only pairs of ptypes specified in sim.json with correct interaction_ptype will be passed
-    /// to this fn. [i,j] doesn't guarantee j,i if different ptypes. Only ptypes specified
-    /// as collision_ptypes get passed
+    /// to this fn. [i,j] doesn't guarantee [j,i]. 
     fn update_pair_forces(&self,i: usize,j: usize, mut force: DVec3, mut torque: DVec3, particles: &ParticleVec,settings: &SimulationSettings)->(DVec3, DVec3){
         //Only main particles have granular collisions.
-        if let Some(contact) = self.contact_manager.analyse_particle_contact(i,j,particles, settings){
+        if let Some(mut contact) = self.contact_manager.analyse_particle_contact(i,j,particles, settings){
             //Normal and tangential forces
             let (fn_mag, fn_vec)=normal_linear(&contact, &self.model.normal_force);
             //let (ft_vec, tt_vec) = friction_viscous_damping(fn_mag, &contact, &self.model.friction);
-            let (ft_vec, tt_vec) = friction_cundall_strack(fn_mag, &contact, &self.contact_manager, &self.model.friction, settings.dt);
+            let (ft_vec, tt_vec) = friction_cundall_strack(fn_mag, &mut contact, &self.model.friction);
 
             //Add to accumulators
             force += fn_vec + ft_vec;
@@ -141,11 +146,24 @@ impl Forces for SimUpdate{
     
     }
 
-    fn update_object_forces(&self,i: usize,mut force: DVec3,mut torque: DVec3,particles: &ParticleVec,object_spec: &ObjectSpec,settings: &SimulationSettings) -> (DVec3, DVec3) {
-        if let Some(contact) = check_surface_contact(i, particles, object_spec, settings) {
+    /// Forces between particle i and a single object
+    /// 
+    /// Only ptypes specified as collision_ptypes get passed. object_spec handles internally 
+    /// what kind of object rect, triangle etc.
+    fn update_object_forces(
+        &self,
+        i: usize,
+        mut force: DVec3,
+        mut torque: DVec3,
+        particles: &ParticleVec,
+        object_spec: &ObjectSpec,
+        settings: &SimulationSettings
+    ) -> (DVec3, DVec3) {
+        if let Some(mut contact) = self.contact_manager.analyse_surface_contact(i,particles, object_spec, settings){
+        
             let (fn_mag, fn_vec)=normal_linear(&contact, &self.model.normal_force);
             //let (ft_vec, tt_vec) = friction_viscous_damping(fn_mag, &contact, &self.model.friction);
-            let (ft_vec, tt_vec) = friction_cundall_strack(fn_mag, &contact, &self.contact_manager, &self.model.friction, settings.dt);
+            let (ft_vec, tt_vec) = friction_cundall_strack(fn_mag, &mut contact, &self.model.friction);
 
             //Add to accumulators
             force += fn_vec + ft_vec;
@@ -185,6 +203,7 @@ impl InputOutput for SimUpdate {
     fn ctx(&self) -> &SimulationContext {
         &self.ctx
     }
+
 
     fn save_on_exit(&self, step: usize) -> Result<(), std::io::Error> {
         self.contact_manager.save_at_step(self.ctx(), step);

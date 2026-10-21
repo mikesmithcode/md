@@ -21,7 +21,7 @@ pub fn periodic_wrap_molecules(
     let box_size = settings.sim_box_size;
     let periodic = settings.periodic;
 
-    for (_, mol) in molecule_map {
+    for mol in molecule_map.values() {
         // Calculate the current center of mass
         let (_, com_pos, _) = calculate_molecule_com(&mol.pids, particles);
 

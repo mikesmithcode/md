@@ -285,12 +285,8 @@ impl Scene {
 
         // Opaque Static/Dynamic Objects (Rectangles, Triangles, WireBoxes)
         for template in &resources.object_templates {
-            match template {
-                ObjectTemplate::Rectangle(t) if t.rectspec.colour.a >= 254 => opaque_objects.push(&t.mesh),
-                ObjectTemplate::Triangle(t) if t.trispec.colour.a >= 254 => opaque_objects.push(&t.mesh),
-                ObjectTemplate::Line(t) if t.linespec.colour.a >= 254 => opaque_objects.push(&t.mesh),
-                ObjectTemplate::WireBox(t) => opaque_objects.push(&t.mesh),
-                _ => {}
+            if template.visible() & template.opaque(){
+                opaque_objects.push(template.get_mesh());
             }
         }
 
@@ -310,11 +306,8 @@ impl Scene {
 
         // Transparent Static/Dynamic Objects
         for template in &resources.object_templates {
-            match template {
-                ObjectTemplate::Rectangle(t) if t.rectspec.colour.a < 254 => transparent_objects.push(&t.mesh),
-                ObjectTemplate::Triangle(t) if t.trispec.colour.a < 254 => transparent_objects.push(&t.mesh),
-                ObjectTemplate::Line(l) if l.linespec.colour.a < 254 => transparent_objects.push(&l.mesh),
-                _ => {}
+            if template.visible() & template.transparent(){
+                transparent_objects.push(template.get_mesh());
             }
         }
 

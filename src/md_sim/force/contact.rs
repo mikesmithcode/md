@@ -7,14 +7,11 @@
 use glam::DVec3;
 use serde::{Deserialize, Serialize, Deserializer, Serializer};
 use dashmap::DashMap;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::hash::Hash;
 
 
-use crate::md_sim::force::contact;
-use crate::md_sim::motion::MoleculeData;
 use crate::md_sim::utils::file_io::get_latest_file;
 use crate::md_sim::utils::check_delta;
 use crate::md_sim::particle::ParticleVec;
@@ -31,7 +28,8 @@ use crate::md_sim::utils::file_io::SimulationContext;
 /// Fields:
 /// * `overlap` - Penetration depth of the contact.
 /// * `normal` - Unit normal vector pointing from the interacting entity to the primary particle.
-/// * `r_contact` - Radial vector from the centre of the particle to the contact point (used for torque calculation).
+/// * `r_i` - Radial vector from the centre of the particle to the contact point (used for torque calculation).
+/// * `r_j` - Radial vector from centre of other particle to contact point. If the contact is with a surface this is DVec3::ZERO
 /// * `rel_vel` - Relative surface velocity between the contacting bodies at the contact point.
 /// * `r_eff` - effective rad curvature 1/r_eff = 1/r1 + 1/r2,
 /// * `m_eff` - Effective mass 1/m_eff = 1/m1+1/m2,
@@ -41,7 +39,8 @@ pub struct Contact{
     pub overlap: f64,
     pub tangential_disp: DVec3,
     pub normal: DVec3,
-    pub r_contact: DVec3, 
+    pub r_i: DVec3, 
+    pub r_j: DVec3,
     pub rel_vel: DVec3,
     pub r_eff: f64,
     pub m_eff: f64,
@@ -54,6 +53,31 @@ impl Contact  {
         self.rel_vel - self.rel_vel.dot(self.normal) * self.normal
     }
     
+    // Send the particle of interest i
+    pub fn get_contact(&self, query_i: usize) -> Self {
+        match self.contact_type {
+            ContactType::Particle { i, j } => {
+                // If the querying particle matches the canonical 'i', return as-is
+                if query_i == i {
+                    return self.clone();
+                }
+
+                // Otherwise, query_i must be 'j' (the larger index), so return the flipped version
+                let mut flipped = self.clone();
+                flipped.normal = -self.normal;
+                flipped.rel_vel = -self.rel_vel;
+                flipped.tangential_disp = -self.tangential_disp;
+                flipped.r_i = self.r_j;
+                flipped.r_j = self.r_i;
+                flipped.contact_type = ContactType::Particle { i: j, j: i };
+                flipped
+            }
+            ContactType::Plane { .. } => {
+                // Planes only have one particle side, so they don't need flipping
+                self.clone()
+            }
+        }
+    }
 }
 
 impl Default for Contact{
@@ -62,7 +86,8 @@ impl Default for Contact{
             overlap: 1e-5, 
             tangential_disp: DVec3::ZERO,
             normal: DVec3::new(0.0, 0.0, 1.0), 
-            r_contact: DVec3::new(0.0, 0.0, 0.005), 
+            r_i: DVec3::ZERO, 
+            r_j: DVec3::ZERO, 
             rel_vel: DVec3::new(0.0, 0.0, 0.0),
             r_eff: 0.0,
             m_eff: 0.0,
@@ -78,17 +103,6 @@ pub enum ContactType{
     Plane{i:usize,plane_id: usize},
 }
 
-//Make sure smallest index stored is always i
-impl ContactType {
-    pub fn particle(i: usize, j: usize) -> Self {
-        // Always store the smaller index first so (i, j) and (j, i) map to the exact same entry
-        if i < j {
-            ContactType::Particle { i, j }
-        } else {
-            ContactType::Particle { i: j, j: i }
-        }
-    }
-}
 
 
 ///------------------------------------------------------------------------------
@@ -153,46 +167,105 @@ impl ContactManager {
     }
 
     
-    pub fn analyse_particle_contact(&self,
+    pub fn analyse_particle_contact(
+        &self,
         i: usize,
         j: usize,
         particles: &ParticleVec,
         settings: &SimulationSettings,
     ) -> Option<Contact> {
-        // Get geometry (returns None if no collision)
-        let contact = compute_particle_contact(i, j, particles, settings)?;
+        //Check whether particles are collision ptypes
+        if !(settings.collision_mask[particles.ptype[i]] || settings.collision_mask[particles.ptype[j]]){
+            return None;
+        }
 
-        // Compute incremental tangential displacement for this step
-        let delta_tangential = contact.v_tang() * settings.dt;
+        // Always sort indices (smaller index first)
+        let sorted_i = std::cmp::min(i, j);
+        let sorted_j = std::cmp::max(i, j);
+        let canonical_type = ContactType::Particle{i:sorted_i, j:sorted_j};
 
-        let contact = self.add_or_update_contact_history(contact, delta_tangential);
+        let entry = self.states.entry(canonical_type);
 
-        Some(contact)
-    
-    }
-
-    /// Adds a new contact or updates an existing one by calculating the tangential displacement and adding this
-    /// to the current total.
-    pub fn add_or_update_contact_history(&self, mut contact: Contact, delta_tangential: DVec3) -> Contact{
-        let c_type = contact.contact_type.clone();
-        
-        let entry = self.states.entry(c_type);
         match entry {
-            dashmap::mapref::entry::Entry::Occupied(mut occ) => {
-                let existing = occ.get_mut();
-                existing.tangential_disp += delta_tangential;
-                existing.is_active = true;
-                contact.tangential_disp = existing.tangential_disp;
+            dashmap::mapref::entry::Entry::Vacant(vacant) => {
+                // Case 1: Does not exist -> Brand new contact
+                let contact = compute_particle_contact(sorted_i, sorted_j, particles, settings)?;               
+
+                let saved = contact.clone();
+                vacant.insert(saved);
+
+                // Return adjusted for whichever particle (i) asked for it
+                Some(contact.get_contact(i))
             }
-            dashmap::mapref::entry::Entry::Vacant(vac) => {
-                contact.tangential_disp = delta_tangential;
-                contact.is_active = true;
-                vac.insert(contact.clone());
+            dashmap::mapref::entry::Entry::Occupied(mut existing) => {
+                let contact_ref = existing.get_mut();
+
+                if !contact_ref.is_active {
+                    // Case 2: Exists, but is_active is false -> First update in this loop iteration
+                    let mut contact = compute_particle_contact(sorted_i, sorted_j, particles, settings)?;
+
+                    let old_tangential_disp = contact_ref.tangential_disp;
+                    let delta_tangential = contact.v_tang() * settings.dt;
+                    
+                    contact.tangential_disp = old_tangential_disp + delta_tangential;
+                    contact.is_active = true;
+
+                    *contact_ref = contact.clone();
+
+                    Some(contact.get_contact(i))
+                } else {
+                    // Case 3: Exists and is_active is true -> Already computed this step!
+                    // Do NOT recalculate. Just pull the stored canonical record and flip it for particle i.
+                    Some(contact_ref.get_contact(i))
+                }
             }
         }
-        contact
     }
-    
+
+    pub fn analyse_surface_contact(
+        &self,
+        i: usize,
+        particles: &ParticleVec,
+        object: &ObjectSpec,
+        settings: &SimulationSettings,
+    ) -> Option<Contact> {
+        //Check if particle is a collision ptype
+        if !settings.collision_mask[particles.ptype[i]] {
+            return None;
+        }
+
+        let contact_type = ContactType::Plane{i, plane_id: object.id()};
+        let entry = self.states.entry(contact_type);
+
+        match entry {
+            dashmap::mapref::entry::Entry::Vacant(vacant) => {
+                // Case 1: Does not exist -> Brand new contact
+                let contact = compute_surface_contact(i, particles, object)?;               
+
+                let saved = contact.clone();
+                vacant.insert(saved);
+
+                // Return adjusted for whichever particle (i) asked for it
+                Some(contact.get_contact(i))
+            }
+            dashmap::mapref::entry::Entry::Occupied(mut existing) => {
+                    let contact_ref = existing.get_mut();
+                    // Case 2: Exists
+                    let mut contact = compute_surface_contact(i, particles, object)?;
+
+                    let old_tangential_disp = contact_ref.tangential_disp;
+                    let delta_tangential = contact.v_tang() * settings.dt;
+                    
+                    contact.tangential_disp = old_tangential_disp + delta_tangential;
+                    contact.is_active = true;
+
+                    *contact_ref = contact.clone();
+
+                    Some(contact.get_contact(i))
+                }
+            }
+        }
+           
 
     /// if is_active has been set to false, contact has finished and needs cleaning up
     /// on_separation is a func describing what else to do at this point. You are passing
@@ -204,11 +277,13 @@ impl ContactManager {
         self.states.retain(|contact_type, state| {
             
             if !state.is_active {
+                //Prune Contact
                 on_separation(contact_type, state);
                 false
             } else {
+                //Keep Contact
                 state.is_active = false; // reset for the next step
-                true // keep it
+                true 
             }
         });
     }  
@@ -285,7 +360,7 @@ pub mod dashmap_as_vec {
     /// 
     /// # Arguments
     /// 
-    /// * `i`, `j` - Indices of the interacting particles.
+    /// * `i`, `j` - Indices of the interacting particles. i must be < j
     /// * `particles` - Reference to the particle data structure (position, velocity, omega, radius, mass, type).
     /// * `model` - Collision parameter set (`CollisionParams`) containing elastic modulus, damping factors, and friction coefficients.
     /// * `settings` - Global simulation configuration (`SimulationSettings`) for box size and periodicity.
@@ -301,9 +376,8 @@ pub mod dashmap_as_vec {
         settings: &SimulationSettings
     ) -> Option<Contact> { 
         
-        // exit if not a collision type
-        if !settings.collision_mask[particles.ptype[i]] {
-            return None;
+        if i>j{
+            panic!("i must be less than j");
         }
 
         let mut delta = particles.position[i] - particles.position[j];
@@ -337,13 +411,14 @@ pub mod dashmap_as_vec {
             let rel_vel = (particles.velocity[i] + particles.omega[i].cross(r_i)) 
                                 - (particles.velocity[j] + particles.omega[j].cross(r_j));
 
-            let contact_type = ContactType::particle(i, j);
+            let contact_type = ContactType::Particle{i, j};
 
             let contact = Contact {
                 overlap,
                 tangential_disp: DVec3::ZERO,
                 normal,
-                r_contact: r_i,
+                r_i,
+                r_j,
                 rel_vel, 
                 r_eff,
                 m_eff,
@@ -358,36 +433,8 @@ pub mod dashmap_as_vec {
     }
 
 
-
-
-    pub fn compute_object_contact(
-        i: usize,
-        object: &ObjectSpec,
-        particles: &ParticleVec,
-        settings: &SimulationSettings,
-    ) -> Option<Contact> {
-        // Exit early if particle type is excluded from collisions
-        if !settings.collision_mask[particles.ptype[i]] {
-            return None;
-        }
-
-        match object {
-            ObjectSpec::Rectangle(rect) => compute_surface_contact(i, rect, particles),
-            ObjectSpec::Triangle(tri) => compute_surface_contact(i, tri, particles),
-            ObjectSpec::WireBox(_box_spec) => {
-                // Not implemented since this is just a visual element
-                None 
-            }
-            ObjectSpec::Line(_line) => {
-                // Not implemented since this is just a visual element
-                None
-            }
-        }
-    }
-
-
     ///------------------------------------------------------------------------------
-    /// check_surface_contact
+    /// compute_surface_contact
     ///------------------------------------------------------------------------------
     /// Calculates collision geometry, relative kinematics, and effective contact properties 
     /// between a particle and any rigid object implementing `SurfaceKinematics`.
@@ -406,8 +453,8 @@ pub mod dashmap_as_vec {
     /// * `None` otherwise.
     fn compute_surface_contact<S: SurfaceKinematics>(
         i: usize,
+        particles: &ParticleVec,
         surface: &S,
-        particles: &ParticleVec
     ) -> Option<Contact> {
 
         let closest = surface.closest_point(particles.position[i]);
@@ -436,7 +483,8 @@ pub mod dashmap_as_vec {
             let contact = Contact {
                 overlap,
                 normal,
-                r_contact: r_i,
+                r_i,
+                r_j: DVec3::ZERO,
                 rel_vel,
                 r_eff,
                 m_eff,

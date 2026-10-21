@@ -30,7 +30,35 @@ impl ObjectTemplate {
             ObjectTemplate::Triangle(t) => &t.mesh,
         }
     }
+
+    pub fn visible(&self)-> bool{
+        match self {
+            ObjectTemplate::Line(l) => l.linespec.visible,
+            ObjectTemplate::WireBox(w) => w.boxspec.visible,
+            ObjectTemplate::Rectangle(r) => r.rectspec.visible,
+            ObjectTemplate::Triangle(t) => t.trispec.visible,
+        }
+    }
+
+    fn alpha(&self) -> u8 {
+        match self {
+            ObjectTemplate::Rectangle(r) => r.rectspec.colour.a,
+            ObjectTemplate::Triangle(t) => t.trispec.colour.a,
+            ObjectTemplate::Line(l) => l.linespec.colour.a,
+            ObjectTemplate::WireBox(w) => w.boxspec.colour.a,
+        }
+    }
+
+    pub fn transparent(&self)->bool{
+        self.alpha() < 254 
+    }
+
+    pub fn opaque(&self)->bool{
+        !self.transparent()
+    }
+
 }
+
 
 // -----------------------------------------------------------------------------------
 // Instancing Templates
@@ -296,15 +324,19 @@ pub struct RectTemplate {
 
 impl RectTemplate {
     pub fn new(context: &Context, rectspec: RectSpec) -> Self {
-        let mut mat = create_opaque_material(None);
-        mat.albedo = rectspec.colour;
+        
+        let mat = if rectspec.colour.a < 254 {
+            create_transparent_material(Some(rectspec.colour))
+        } else {
+            create_opaque_material(Some(rectspec.colour))
+        };
 
         let mesh = Gm::new(
             Mesh::new(context, &CpuMesh::square()),
             mat,
         );
 
-        let mut template = Self { mesh, rectspec: rectspec.clone() };
+        let mut template = Self { mesh, rectspec};
         template.update_transform(&ObjectSpec::Rectangle(rectspec));
         template.update_colour(&ObjectSpec::Rectangle(rectspec));
         template
@@ -500,7 +532,7 @@ fn create_transparent_material(colour: Option<Srgba>) -> PhysicalMaterial {
         },
         cull: Cull::None,//None, Back, Front
         write_mask: WriteMask::COLOR, //None
-        depth_test: DepthTest::Always,
+        depth_test: DepthTest::Less,
     };
     mat
 }
@@ -517,7 +549,7 @@ fn create_opaque_material(colour: Option<Srgba>) -> PhysicalMaterial {
     mat.render_states = three_d::RenderStates {
         cull: Cull::None,
         write_mask: WriteMask::COLOR_AND_DEPTH, // Fixed: must write depth for opaque objects!
-        depth_test: DepthTest::Always,
+        depth_test: DepthTest::Less,
         ..Default::default()
     };
     mat
