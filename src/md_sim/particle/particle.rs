@@ -22,7 +22,6 @@ use glam::f64::{DVec3,DQuat};
 use three_d::*;
 use soa_derive::StructOfArray;
 
-use crate::md_viz::SceneSettings;
 use crate::md_sim::MoleculeMap;
 
 

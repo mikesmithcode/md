@@ -13,5 +13,5 @@
       "visible": true,
       "thickness": 0.0005
     },
-    "patch_offset_scale":0.1
+    "patch_offset_scale":1.0
   }

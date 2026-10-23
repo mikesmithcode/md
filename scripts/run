@@ -2,10 +2,9 @@
 set -e
 
 show_help() {
-    echo "Usage: scripts/run [-b] [-d] [-f] [-r] [-x] [-n] [-v] [-s] [-o] [-h] <input_name>"
-    echo "  Note: The flags -b, -d, -f, -r, and -x are mutually exclusive (you can only use one)."
+    echo "Usage: scripts/run [-d] [-f] [-r] [-x] [-n] [-v] [-s] [-o] [-p] [-h] <input_name>"
+    echo "  Note: The flags -d, -f, -r, and -x are mutually exclusive (you can only use one)."
     echo "  Note: You cannot use -s and -o together."
-    echo "  -b    Flamegraph Mode: Profiles max-perf simulation performance using samply."
     echo "  -d    Debug Mode: Compiles and runs in debug mode."
     echo "  -f    Max-Perf Mode: Compiles and runs using the ultra-optimized max-perf profile."
     echo "  -r    Release Mode: Compiles and runs in release mode (default)."
@@ -14,25 +13,26 @@ show_help() {
     echo "  -v    Video Recording: Enables video output rendering."
     echo "  -s    Skip Particle Saving: Disables periodic particle data dumping."
     echo "  -o    Object Saving: Enables periodic object data dumping."
+    echo "  -p    Profiling Mode: Enables custom code-block profiling (--features profiling)."
     echo "  -h    Show help."
     exit 0
 }
 
 PROFILE_FLAG="--release"  # Release mode is default
 PROFILE_DIR="release"     # Default build directory
-FLAMEGRAPH_MODE=false
 EXECUTE_ONLY=false
 HEADLESS=false            # Graphics enabled by default
 RECORD_VIDEO=false
 SAVE_PARTICLES=true
 SAVE_OBJECTS=false
+PROFILING_MODE=false
 
 # Track explicit flag usage and conflicts
 MODE_COUNT=0
 EXPLICIT_S=false
 EXPLICIT_O=false
 
-while getopts "bdfnxvsoh" opt; do
+while getopts "dfnxvsoph" opt; do
   case $opt in
     d) 
       PROFILE_FLAG="" 
@@ -49,12 +49,6 @@ while getopts "bdfnxvsoh" opt; do
       PROFILE_DIR="release"
       MODE_COUNT=$((MODE_COUNT + 1))
       ;;
-    b) 
-      FLAMEGRAPH_MODE=true 
-      PROFILE_FLAG="--profile max-perf"
-      PROFILE_DIR="max-perf"
-      MODE_COUNT=$((MODE_COUNT + 1))
-      ;;
     x) 
       EXECUTE_ONLY=true 
       MODE_COUNT=$((MODE_COUNT + 1))
@@ -69,14 +63,17 @@ while getopts "bdfnxvsoh" opt; do
       SAVE_OBJECTS=true 
       EXPLICIT_O=true
       ;;
+    p) 
+      PROFILING_MODE=true 
+      ;;
     h) show_help ;;
     \?) echo "Invalid option: -$OPTARG" >&2; exit 1 ;;
   esac
 done
 
-# Check for conflicting mode flags (-b, -d, -f, -r, -x)
+# Check for conflicting mode flags (-d, -f, -r, -x)
 if [ "$MODE_COUNT" -gt 1 ]; then
-    echo "Error: Conflicting flags detected. You can only use one of [-b, -d, -f, -r, -x]." >&2
+    echo "Error: Conflicting flags detected. You can only use one of [-d, -f, -r, -x]." >&2
     echo "Run 'scripts/run -h' for help." >&2
     exit 1
 fi
@@ -109,9 +106,13 @@ fi
 
 BINARY="./target/$PROFILE_DIR/$TARGET_NAME"
 
-echo "--- Launching Simulation [Profile: $PROFILE_DIR] (Headless: $HEADLESS, Video: $RECORD_VIDEO, Save Particles: $SAVE_PARTICLES, Save Objects: $SAVE_OBJECTS) ---"
+CARGO_FLAGS=""
+if [ "$PROFILING_MODE" = true ]; then
+    CARGO_FLAGS="--features profiling"
+fi
 
-# Execute based on the selected mode
+echo "--- Launching Simulation [Profile: $PROFILE_DIR] (Headless: $HEADLESS, Video: $RECORD_VIDEO, Save Particles: $SAVE_PARTICLES, Save Objects: $SAVE_OBJECTS, Profiling: $PROFILING_MODE) ---"
+
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     export GDK_BACKEND=x11
     export QT_QPA_PLATFORM=xcb
@@ -124,9 +125,6 @@ if [ "$EXECUTE_ONLY" = true ]; then
     fi
     echo "--- Using existing binary (-x) in [$PROFILE_DIR mode] ---"
     "$BINARY" "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
-elif [ "$FLAMEGRAPH_MODE" = true ]; then
-    echo "--- Launching Samply Profiler (Max-Perf Mode) ---"
-    samply record cargo run $PROFILE_FLAG --bin "$TARGET_NAME" -- "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
 else
-    cargo run $PROFILE_FLAG --bin "$TARGET_NAME" -- "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
+    cargo run $PROFILE_FLAG $CARGO_FLAGS --bin "$TARGET_NAME" -- "$TARGET_NAME" "$SIM_ARG" "$HEADLESS" "$RECORD_VIDEO" "$SAVE_PARTICLES" "$SAVE_OBJECTS"
 fi

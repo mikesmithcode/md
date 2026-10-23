@@ -26,6 +26,102 @@ use crate::md_sim::{Forces, Motion, InputOutput, Simulation, SimulationSettings}
 use crate::md_sim::utils::{save_particles, save_objects, load_latest_particles, load_latest_objects};
 use crate::md_viz::{init_scene, actions::UserAction};
 
+#[macro_export]
+macro_rules! debug_print {
+    ($($arg:tt)*) => {
+        // cfg!(debug_assertions) is evaluated at compile time. 
+        // In release/max-perf builds, the compiler completely strips this out.
+        if cfg!(debug_assertions) {
+            println!($($arg)*);
+        }
+    };
+}
+
+#[cfg(feature = "profiling")]
+pub mod profiler {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{Duration, Instant};
+    use std::sync::LazyLock;
+    use dashmap::DashMap;
+
+    // Global thread-safe registry mapping scope names to (total_nanos, call_count)
+    pub static PROFILER_REGISTRY: LazyLock<DashMap<&'static str, (AtomicU64, AtomicU64)>> = 
+        LazyLock::new(DashMap::new);
+
+    pub struct ProfileGuard {
+        name: &'static str,
+        start: Instant,
+    }
+
+    impl ProfileGuard {
+        #[inline(always)]
+        pub fn new(name: &'static str) -> Self {
+            Self {
+                name,
+                start: Instant::now(),
+            }
+        }
+    }
+
+    impl Drop for ProfileGuard {
+        fn drop(&mut self) {
+            let elapsed_ns = self.start.elapsed().as_nanos() as u64;
+            let entry = PROFILER_REGISTRY
+                .entry(self.name)
+                .or_insert_with(|| (AtomicU64::new(0), AtomicU64::new(0)));
+            
+            entry.0.fetch_add(elapsed_ns, Ordering::Relaxed);
+            entry.1.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    pub fn print_summary() {
+        println!("\n==========================================================================");
+        println!("{:45} | {:<12} | {:<10} | {:<12}", "Scope Name", "Total Time", "Calls", "Avg / Call");
+        println!("--------------------------------------------------------------------------");
+
+        // Sort items by total time descending for easy reading
+        let mut metrics: Vec<(&'static str, Duration, u64)> = PROFILER_REGISTRY
+            .iter()
+            .map(|item| {
+                let name = *item.key();
+                let total_ns = item.value().0.load(Ordering::Relaxed);
+                let count = item.value().1.load(Ordering::Relaxed);
+                (name, Duration::from_nanos(total_ns), count)
+            })
+            .collect();
+
+        metrics.sort_by(|a, b| b.1.cmp(&a.1));
+
+        for (name, total, count) in metrics {
+            let avg = if count > 0 { total / count as u32 } else { Duration::ZERO };
+            println!("{:45} | {:<12?} | {:<10} | {:<12?}", name, total, count, avg);
+        }
+        println!("==========================================================================\n");
+    }
+}
+
+// Macro when profiling is DISABLED (expands to absolute nothingness)
+#[cfg(not(feature = "profiling"))]
+#[macro_export]
+macro_rules! profile_scope {
+    ($name:expr) => {};
+}
+
+#[cfg(not(feature = "profiling"))]
+pub fn print_profile_summary() {}
+
+// Macro when profiling is ENABLED
+#[cfg(feature = "profiling")]
+#[macro_export]
+macro_rules! profile_scope {
+    ($name:expr) => {
+        let _profiler_guard = $crate::profiler::ProfileGuard::new($name);
+    };
+}
+
+#[cfg(feature = "profiling")]
+pub use profiler::print_summary as print_profile_summary;
 
 
 pub fn run_simulation<U: Forces + Motion + InputOutput + Sync>(sim_update: U) {
@@ -55,7 +151,10 @@ pub fn run_simulation<U: Forces + Motion + InputOutput + Sync>(sim_update: U) {
     let mut final_step = start_step;
 
     for step in start_step..=(start_step + sim.settings.num_steps) {
-        sim.update(step);
+        {
+            profile_scope!("update loop");
+            sim.update(step);
+        }
         final_step = step;
 
         if let Some(ref mut scene) = scene_opt {
@@ -65,6 +164,7 @@ pub fn run_simulation<U: Forces + Motion + InputOutput + Sync>(sim_update: U) {
 
             // Only poll events and handle window interaction if we are actively displaying live
             if !output_settings.headless && is_display_step {
+                profile_scope!("polling window");
                 let (close_requested, action) = scene.poll_events();
                 if close_requested {
                     break;
@@ -80,16 +180,19 @@ pub fn run_simulation<U: Forces + Motion + InputOutput + Sync>(sim_update: U) {
 
             // If we are either displaying *or* recording this step, update the visual buffers!
             if (!output_settings.headless && is_display_step) || is_recording {
+                profile_scope!("updating display_pos");
                 sim.update_display_pos(&scene.scene_settings);
             }
 
             // Render to screen if it's time
             if !output_settings.headless && is_display_step {
+                profile_scope!("rendering to screen");
                 scene.display(sim.get_particles(), sim.get_objects()).expect("Error displaying");
             }
 
             // Save frame for video if enabled
             if is_recording {
+                profile_scope!("recording video");
                 let _ = scene.save_frame(sim.get_particles(), sim.get_objects());
             }
         }
@@ -117,4 +220,8 @@ pub fn run_simulation<U: Forces + Motion + InputOutput + Sync>(sim_update: U) {
     }
 
     println!("Simulation finished");
+    
+    crate::print_profile_summary();
 }
+
+

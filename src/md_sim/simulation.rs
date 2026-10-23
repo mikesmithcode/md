@@ -33,6 +33,7 @@
 use glam::DVec3;
 use std::collections::HashMap;
 
+use crate::profile_scope;
 use crate::md_sim::ObjectSpec;
 use crate::md_sim::particle::MoleculeData;
 use crate::md_sim::particle::ParticleVec;
@@ -113,7 +114,7 @@ impl<S> Simulation<S>
             for object in scene_objects {
                 self.sim_update.update_objects(object, &mut self.particles, &self.settings, self.time);
             }
-        }
+        };
 
         //----------------------------------------------------------------------------
         // Calculate all the forces
@@ -131,7 +132,7 @@ impl<S> Simulation<S>
                 self.forces[i] += force;
                 self.torques[i] += torque;
             }
-        }
+        };
 
         if self.sim_update.has_object_forces() {
             
@@ -159,7 +160,7 @@ impl<S> Simulation<S>
                     self.torques[i] += total_torque;
                 }
             }
-        }
+        };
 
 
         // Grid checks nearby particles and calculates all pair forces between particles i and j.
@@ -174,7 +175,7 @@ impl<S> Simulation<S>
                 &self.sim_update, 
                 &self.settings
             );
-        }
+        };
 
         // Correct finite precision error if simulation in 2D
         match self.settings.dimensions {
@@ -234,7 +235,7 @@ impl<S> Simulation<S>
         self.objects.as_deref()
     }
 
-    pub fn update_display_pos(&mut self, scene_settings: &SceneSettings){
+    pub fn update_display_pos(&mut self, _scene_settings: &SceneSettings){
         //self.sim_update.update_visuals(&mut self.particles, &self.molecule_map, scene_settings);
 
     }

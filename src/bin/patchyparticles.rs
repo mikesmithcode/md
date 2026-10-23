@@ -158,6 +158,8 @@ impl Forces for SimUpdate{
         object_spec: &ObjectSpec,
         settings: &SimulationSettings
     ) -> (DVec3, DVec3) {
+        
+
         if let Some(mut contact) = self.contact_manager.analyse_surface_contact(i,particles, object_spec, settings){
         
             let (fn_mag, fn_vec)=normal_linear(&contact, &self.model.normal_force);

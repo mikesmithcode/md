@@ -7,6 +7,7 @@ use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::SimulationSettings;
 use crate::md_sim::utils::{check_delta, InteractionContext};
 use crate::md_sim::Forces;
+use crate::profile_scope;
 
 ///------------------------------------------------------------------------------
 /// CellGrid
@@ -168,6 +169,7 @@ impl CellGrid {
         particles: &mut ParticleVec,
         settings: &SimulationSettings,
     ) {
+        profile_scope!("check_and_rebuild_neighbours");
         let threshold_sq = (settings.skin * 0.5).powi(2);
 
         let count_changed = particles.len() != self.last_particle_count;
@@ -213,6 +215,7 @@ impl CellGrid {
         user_impl: &F,
         settings: &SimulationSettings,
     ) {
+        profile_scope!("apply_pair_forces");
         let process_particle = |(i, (f_out, t_out)): (usize, (&mut DVec3, &mut DVec3))| {
             let mut local_force = DVec3::ZERO;
             let mut local_torque = DVec3::ZERO;
@@ -400,6 +403,7 @@ impl CellGrid {
     ///
     /// * `particles` - Reference to particle state buffers.
     pub(super) fn rebuild_verlet_table(&mut self, particles: &ParticleVec) {
+        profile_scope!("rebuilding the verlet table");
         let offsets = &self.cell_offsets;
         let indices = &self.cell_particle_ids;
         let neighbours = &self.neighbour_table;

@@ -64,14 +64,14 @@ pub trait InputOutput {
 
     fn update_visuals(
         &self,
-        particles: &mut ParticleVec,
-        molecule_map: &MoleculeMap,
+        _particles: &mut ParticleVec,
+        _molecule_map: &MoleculeMap,
         scene_settings: &SceneSettings,
     )-> Result<(), std::io::Error> {
 
         
 
-        let patch_scale = scene_settings.patch_offset_scale;
+        let _patch_scale = scene_settings.patch_offset_scale;
         //particles.update_display_pos(molecule_map, patch_scale);
         
         Ok(())

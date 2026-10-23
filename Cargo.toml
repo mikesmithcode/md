@@ -27,3 +27,7 @@ dashmap = { version = "6.2.1", features = ["rayon"] }
 
 [lib]
 doctest = false
+
+[features]
+default = []
+profiling = []
