@@ -459,6 +459,7 @@ pub fn load_particles(file_path: &Path) -> Result<(ParticleVec, f64), Box<dyn st
                 rel_y.unwrap_or(0.0),
                 rel_z.unwrap_or(0.0),
             ),
+            display_pos: DVec3::ZERO,
             velocity: DVec3::new(
                 vx.unwrap_or(0.0),
                 vy.unwrap_or(0.0),

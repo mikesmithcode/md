@@ -25,7 +25,7 @@ pub fn add_charge(i:usize, particles: &mut ParticleVec, dq: f64, qmax: f64){
         particles.colour[i] = colour;
         
     }
-    println!("add_charge: q {}, qmax {}", q, qmax);
-    println!("color {:?}", colour);
+    //println!("add_charge: q {}, qmax {}", q, qmax);
+    //println!("color {:?}", colour);
     
 }

@@ -26,6 +26,7 @@ pub struct SceneSettings {
     pub vid_fps: u32,
     #[serde(default)]
     pub sim_box: BoxSpec,
+    pub patch_offset_scale: f64,
 }
 
 impl SceneSettings {
@@ -49,6 +50,7 @@ impl Default for SceneSettings {
             display_steps: 1000,
             vid_fps: 30,
             sim_box: BoxSpec::default(), // The sim_box_size will be overwritten with values from the Simulation config.
+            patch_offset_scale: 0.001
         }
     }
 }

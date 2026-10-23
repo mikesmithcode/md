@@ -1,10 +1,7 @@
-/// benchmarksetup.rs
-/// 
-/// Cube of particles are dropped under gravity onto a grid of fixed particles. This is used as a setup script for benchmark.rs
+/// Particles composed of chargeable patches bouncing in a box.
 
 
 use glam::DVec3;
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 // Imports from simulation library
@@ -13,7 +10,7 @@ use md::md_sim::{Forces, Motion, InputOutput};
 //high level simulation structures
 use md::md_sim::{ObjectSpec, ParticleVec, SimulationSettings};
 use md::md_sim::utils::file_io::SimulationContext;
-use md::md_sim::particle::MoleculeData;
+use md::md_sim::MoleculeMap;
 //model structs
 use md::md_sim::motion::Vibration;
 use md::md_sim::particle::Charging;
@@ -82,7 +79,7 @@ impl Forces for SimUpdate{
     
     fn handle_contact_separation(
         &mut self, particles: &mut ParticleVec, 
-        molecule_map: &HashMap<usize, MoleculeData>,
+        molecule_map: &MoleculeMap,
         _settings: &SimulationSettings
     ) {
          self.contact_manager.prune_contacts(|contact_type, contact| {
@@ -99,15 +96,15 @@ impl Forces for SimUpdate{
                     let j_q = find_closest_charge(j, contact, particles, molecule_map);
                     add_charge(j_q, particles, self.model.charging.dq_pp, self.model.charging.q_max);
 
-                    println!("Contact between particle {} and {} ended;", i, j);
-                    println!("particles have ptypes {} and {} ended;", particles.ptype[i], particles.ptype[j]);
-                    println!("Charges added to {} and {}", i_q, j_q);
+                    //println!("Contact between particle {} and {} ended;", i, j);
+                    //println!("particles have ptypes {} and {} ended;", particles.ptype[i], particles.ptype[j]);
+                    //println!("Charges added to {} and {}", i_q, j_q);
                 }
                 ContactType::Plane{i, plane_id} =>{
                     let i_q = find_closest_charge(i, contact, particles, molecule_map);
                     add_charge(i_q, particles, self.model.charging.dq_ps, self.model.charging.q_max);
-                    println!("Contact between particle {} and plane {} ended; ", i, plane_id);
-                    println!("Charge on {} now = {}", i_q, &particles.charge[i_q]);
+                    //println!("Contact between particle {} and plane {} ended; ", i, plane_id);
+                    //println!("Charge on {} now = {}", i_q, &particles.charge[i_q]);
 
                 }
              }
@@ -123,7 +120,7 @@ impl Forces for SimUpdate{
         if particles.ptype[i] == 0{
             
             force = add_gravity(i, force, particles, &self.model.gravity);
-            println!("add_gravity: particle id : {}, ptype {}, force {:?}", i, &particles.ptype[i], force);
+            //println!("add_gravity: particle id : {}, ptype {}, force {:?}", i, &particles.ptype[i], force);
         }
         (force, _torque)
     }
@@ -179,12 +176,12 @@ impl Forces for SimUpdate{
 
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
+    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &MoleculeMap, _time:f64) {
         integrate_rigid_bodies(forces,torques, particles, molecule_map, settings);
     }
 
     // Optional depending on integration scheme.
-    fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
+    fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &MoleculeMap) {
         integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
 
     }

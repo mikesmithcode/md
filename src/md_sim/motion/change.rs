@@ -1,11 +1,11 @@
 use glam::DVec3;
 use itertools::izip;
 use three_d::Srgba;
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use crate::md_sim::{SimulationSettings, particle::ParticleVec};
-use crate::md_sim::particle::{calculate_molecule_com, MoleculeData};
+use crate::md_sim::particle::{calculate_molecule_com};
+use crate::md_sim::MoleculeMap;
 
 //-------------------------------------------------------------------------------------------------------
 // Special functions
@@ -15,7 +15,7 @@ use crate::md_sim::particle::{calculate_molecule_com, MoleculeData};
 /// This is used to apply periodic boundary conditions
 pub fn periodic_wrap_molecules(
     particles: &mut ParticleVec, 
-    molecule_map: &HashMap<usize, MoleculeData>,
+    molecule_map: &MoleculeMap,
     settings: &SimulationSettings
 ) {
     let box_size = settings.sim_box_size;

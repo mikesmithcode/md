@@ -14,15 +14,19 @@ import polars as pl
 
 
 if __name__ == '__main__':
-    config, particles_filepath, objects_filepath = get_config()
+    sim_config, scene_config, particles_filepath, objects_filepath = get_config()
     #========================================================================
     # Read simulation parameters to get simulation box dimensions
     #========================================================================
 
-    box = config["sim_box_size"]
+    box = sim_config["sim_box_size"]
     w = box[0]
     d = box[1]
     h = box[2]
+    
+    patch_offset_scale = scene_config["patch_offset_scale"]
+    if patch_offset_scale == 1.0:
+        patch_offset_scale = None
     
     print('box', box)
     
@@ -32,7 +36,7 @@ if __name__ == '__main__':
     
         # Define colour dictionary mapping ptype to (R, G, B, A)
     ptype_colours = {
-        0: (255.0, 255.0, 255.0, 150.0), # Positive main particle (White alpha=150)
+        0: (255.0, 255.0, 255.0, 50.0), # Positive main particle (White alpha=150)
         1: (255.0, 255.0, 255.0, 255.0),   # Positive charge (Magenta)
         2: (255.0, 255.0, 255.0, 150.0), # Negative main particle (White alpha=150)
         3: (0.0, 255.0, 255.0, 250.0),   # Negative charge (Cyan)
@@ -46,7 +50,7 @@ if __name__ == '__main__':
     charges = generate_charge_points(n_charges)
     
     
-    p = [generate_charged_sphere(positions[i], charges, mol_id=i, w=(0.0,10.0,0.0),ptype_colours=ptype_colours) for i in range(len(positions))]
+    p = [generate_charged_sphere(positions[i], charges, mol_id=i, patch_offset_scale=patch_offset_scale,w=(0.0,10.0,0.0),ptype_colours=ptype_colours) for i in range(len(positions))]
     
     df = pl.concat(p)
     

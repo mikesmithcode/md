@@ -9,6 +9,8 @@ pub use test_utils::{assert_dvec3_near,setup_single_molecule_data, create_grid_a
 pub use crate::md_sim::{SimulationSettings, Forces, Motion, ObjectSpec, ParticleVec};
 use crate::md_viz::actions::UserAction;
 use crate::md_sim::utils::file_io::SimulationContext;
+use crate::md_sim::MoleculeMap;
+use crate::md_viz::SceneSettings;
 
 #[cfg(test)]
 mod tests;
@@ -57,6 +59,21 @@ pub trait InputOutput {
 
     /// Called whenever dynamic model parameters are updated during execution.
     fn save_changes_model(&self, _step: usize) -> Result<(), std::io::Error> {
+        Ok(())
+    }
+
+    fn update_visuals(
+        &self,
+        particles: &mut ParticleVec,
+        molecule_map: &MoleculeMap,
+        scene_settings: &SceneSettings,
+    )-> Result<(), std::io::Error> {
+
+        
+
+        let patch_scale = scene_settings.patch_offset_scale;
+        //particles.update_display_pos(molecule_map, patch_scale);
+        
         Ok(())
     }
 

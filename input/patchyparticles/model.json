@@ -1,12 +1,12 @@
 {
  "normal_force": {
-    "modulus": 1.0e5,
+    "modulus": 1.0e6,
     "restitution": 0.7,
     "plane_modulus": 1.0e6,
     "plane_restitution": 0.7
   },
   "friction":{
-    "modulus":1.0e5,
+    "modulus":1.0e6,
     "mu":0.4,
     "restitution":0.7
   },

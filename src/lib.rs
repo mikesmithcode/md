@@ -58,27 +58,41 @@ pub fn run_simulation<U: Forces + Motion + InputOutput + Sync>(sim_update: U) {
         sim.update(step);
         final_step = step;
 
-            //Poll window events and render graphics on EVERY step (keeps keyboard responsive)
-            if let Some(ref mut scene) = scene_opt {
-                if !output_settings.headless & (step%scene.scene_settings.display_steps == 0){
-                    let (close_requested, action) = scene.poll_events(); // No event_loop argument needed!
-                    if close_requested {
-                        break;
-                    }
+        if let Some(ref mut scene) = scene_opt {
+            // Determine if this step requires the scene to touch the particles
+            let is_display_step = step % scene.scene_settings.display_steps == 0;
+            let is_recording = output_settings.record_video; // (plus any frequency check if needed)
 
-                    match action {
-                        UserAction::None => {}
-                        other_action => {
-                            sim.handle_key(other_action);
-                        }
-                    }
-                    scene.display(sim.get_particles(), sim.get_objects()).expect("Error displaying");
+            // Only poll events and handle window interaction if we are actively displaying live
+            if !output_settings.headless && is_display_step {
+                let (close_requested, action) = scene.poll_events();
+                if close_requested {
+                    break;
                 }
 
-                if output_settings.record_video {
-                    let _ = scene.save_frame(sim.get_particles(), sim.get_objects());
+                match action {
+                    UserAction::None => {}
+                    other_action => {
+                        sim.handle_key(other_action);
+                    }
                 }
-            }       
+            }
+
+            // If we are either displaying *or* recording this step, update the visual buffers!
+            if (!output_settings.headless && is_display_step) || is_recording {
+                sim.update_display_pos(&scene.scene_settings);
+            }
+
+            // Render to screen if it's time
+            if !output_settings.headless && is_display_step {
+                scene.display(sim.get_particles(), sim.get_objects()).expect("Error displaying");
+            }
+
+            // Save frame for video if enabled
+            if is_recording {
+                let _ = scene.save_frame(sim.get_particles(), sim.get_objects());
+            }
+        }
 
         // Write particles and / or objects to parquet files
         if step % sim.settings.dump == 0 {

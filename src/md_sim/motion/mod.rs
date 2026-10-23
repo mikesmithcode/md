@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use glam::DVec3;
 
 mod change;
@@ -9,6 +8,8 @@ pub use integration::{integrate_singleparticle_update,integrate_singleparticle_c
 
 pub use crate::md_sim::{SimulationSettings, ParticleVec, ObjectSpec};
 pub use super::particle::MoleculeData;
+use crate::md_sim::MoleculeMap;
+
 
 #[cfg(test)]
 mod tests;
@@ -45,7 +46,7 @@ pub trait Motion {
         _torques: &[DVec3],
         _particles: &mut ParticleVec, 
         _settings: &SimulationSettings,
-        _molecule_map: &HashMap<usize, MoleculeData>,
+        _molecule_map: &MoleculeMap,
         _time: f64
     );
 
@@ -75,7 +76,7 @@ pub trait Motion {
         _torques: &[DVec3],
         _particles: &mut ParticleVec, 
         _settings: &SimulationSettings,
-        _molecule_map: &HashMap<usize, MoleculeData>
+        _molecule_map: &MoleculeMap
     ) {
         // Optional: No correction by default
     }

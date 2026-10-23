@@ -4,11 +4,11 @@
 
 use glam::{DVec3, DMat3, DQuat};
 use itertools::izip;
-use std::collections::HashMap;
 
 use crate::md_sim::motion::change::enforce_boundary;
 use crate::md_sim::{SimulationSettings, ParticleVec};
-use crate::md_sim::particle::{calculate_molecule_com, MoleculeData};
+use crate::md_sim::particle::calculate_molecule_com;
+use crate::md_sim::MoleculeMap;
 
 
 //-------------------------------------------------------------------------------------------------------
@@ -141,7 +141,7 @@ pub fn integrate_rigid_bodies(
     forces: &[DVec3], 
     torques: &[DVec3],
     particles: &mut ParticleVec, 
-    molecule_map: &HashMap<usize, MoleculeData>,
+    molecule_map: &MoleculeMap,
     settings: &SimulationSettings
 ) {
     let dt = settings.dt;
@@ -149,40 +149,55 @@ pub fn integrate_rigid_bodies(
     let sim_box_size = settings.sim_box_size;
     let periodic = settings.periodic;
 
-    for (mol_id, mol) in molecule_map { 
-        println!("updating molecule {}", mol_id);
+    for (mol_id, mol) in molecule_map {        
         let lead_idx = mol.pids[0];    
         
-        // Calculate current COM and aggregate forces/torques via shared helper
+        // COM & Forces
         let (total_mass, com_pos, com_vel) = calculate_molecule_com(&mol.pids, particles);
         let (total_force, total_torque) = compute_molecule_forces_and_torques(
-                                                            &mol.pids, forces, torques, particles, com_pos
-                                                            );
-        println!("total_force {}", total_force);
-        // Update COM Velocity and Angular Velocity (Half-step predictor)
+            &mol.pids, forces, torques, particles, com_pos
+        );
+        
+        // Translate
         let acc = total_force / total_mass;
         let new_com_vel = com_vel + (acc * half_dt);
         
+
+        // Rotational Update
         let rot_mat = DMat3::from_quat(particles.orientation[lead_idx]);
         let i_global = rot_mat * mol.inertia * rot_mat.transpose();
         let omega = particles.omega[lead_idx];
         let gyroscopic = omega.cross(i_global * omega);
-        let alpha = i_global.inverse() * (total_torque - gyroscopic);
+        
+        // Check for matrix inversion safety if needed
+        let inv_matrix = i_global.inverse();
+        let alpha = if !inv_matrix.is_finite() {
+            eprintln!("ERROR: [Mol {}] Inertia tensor is singular/non-finite!", mol_id);
+            DVec3::ZERO
+        } else {
+            inv_matrix * (total_torque - gyroscopic)
+        };  
         let new_omega = omega + (alpha * half_dt);
 
-        // Update Orientation and COM Position (Full step)
+        // Position & Orientation Full Step
         let new_com_pos = com_pos + (new_com_vel * dt);
         let delta_q = DQuat::from_scaled_axis(new_omega * dt);
         let new_orientation = (delta_q * particles.orientation[lead_idx]).normalize();
 
-        // Update every constituent particle's state
+        //println!("  [Mol {}] New COM Pos: {:?}, New Orientation (quat): {:?}", mol_id, new_com_pos, new_orientation);
+
+        // 5. Constituent Particle Updates
         let rot_mat_new = DMat3::from_quat(new_orientation);
         for &idx in &mol.pids {
             let r_global = rot_mat_new * particles.rel_pos[idx];
+            
             particles.velocity[idx] = new_com_vel + new_omega.cross(r_global);
             particles.position[idx] = new_com_pos + r_global;
             particles.orientation[idx] = new_orientation;
             particles.omega[idx] = new_omega;
+
+            // Optional trace for individual constituent particle movement
+            // println!("    Particle {}: r_global={:?}, pos_old={:?}, pos_new={:?}", idx, r_global, old_pos, particles.position[idx]);
 
             enforce_boundary(
                 &mut particles.position[idx], 
@@ -223,7 +238,7 @@ pub fn integrate_rigid_bodies_correct(
     forces: &[DVec3], 
     torques: &[DVec3],
     particles: &mut ParticleVec, 
-    molecule_map: &HashMap<usize, MoleculeData>,
+    molecule_map: &MoleculeMap,
     settings: &SimulationSettings
 ) {
     let half_dt = settings.dt * 0.5;

@@ -245,6 +245,7 @@ def generate_charged_sphere(
     w: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     v: Tuple[float, float, float] = (0.0, 0.0, 0.0),
     rad: float = 0.005,
+    patch_offset_scale=None,
     density: float = 1200,
     main_ptype: int = 0,
     charge_ptype: int = 1,
@@ -281,7 +282,7 @@ def generate_charged_sphere(
         "mass": float(mass),
         "charge": 0.0,
         "r": float(main_col[0]), "g": float(main_col[1]),
-        "b": float(main_col[2]), "a": float(main_col[3])
+        "b": float(main_col[2]), "a": float(main_col[3]),
     }
 
     # 2. Surface charge nodes mapped to the pre-calculated unit vectors
@@ -289,25 +290,46 @@ def generate_charged_sphere(
     for idx, pt in enumerate(surface_points, start=1):
         rx, ry, rz = pt * rad
         
-        charge_rows.append({
-            "t": 0.0,
-            "id": int(idx),
-            "molecule_id": mol_id,
-            "ptype": int(charge_ptype),
-            "x": float(cx + rx),
-            "y": float(cy + ry),
-            "z": float(cz + rz),
-            "rel_x": float(rx),
-            "rel_y": float(ry),
-            "rel_z": float(rz),
-            "vx": float(vx), "vy": float(vy), "vz": float(vz),
-            "wx": float(wx), "wy": float(wy), "wz": float(wz),
-            "radius": float(0.1 * rad),
-            "mass": 0.0,
-            "charge": 0.0,
-            "r": float(charge_col[0]), "g": float(charge_col[1]),
-            "b": float(charge_col[2]), "a": float(charge_col[3])
-        })
+        if patch_offset_scale is None:
+            charge_rows.append({
+                "t": 0.0,
+                "id": int(idx),
+                "molecule_id": mol_id,
+                "ptype": int(charge_ptype),
+                "x": float(cx + rx),
+                "y": float(cy + ry),
+                "z": float(cz + rz),
+                "rel_x": float(rx),
+                "rel_y": float(ry),
+                "rel_z": float(rz),
+                "vx": float(vx), "vy": float(vy), "vz": float(vz),
+                "wx": float(wx), "wy": float(wy), "wz": float(wz),
+                "radius": float(0.05* rad),
+                "mass": 0.0,
+                "charge": 0.0,
+                "r": float(charge_col[0]), "g": float(charge_col[1]),
+                "b": float(charge_col[2]), "a": float(charge_col[3])
+            })
+        else:
+            charge_rows.append({
+                "t": 0.0,
+                "id": int(idx),
+                "molecule_id": mol_id,
+                "ptype": int(charge_ptype),
+                "x": float(cx + rx),
+                "y": float(cy + ry),
+                "z": float(cz + rz),
+                "rel_x": float(rx),
+                "rel_y": float(ry),
+                "rel_z": float(rz),
+                "vx": float(vx), "vy": float(vy), "vz": float(vz),
+                "wx": float(wx), "wy": float(wy), "wz": float(wz),
+                "radius": float((1-patch_offset_scale)* rad),
+                "mass": 0.0,
+                "charge": 0.0,
+                "r": float(charge_col[0]), "g": float(charge_col[1]),
+                "b": float(charge_col[2]), "a": float(charge_col[3])
+            })
 
     # Combine into a single Polars DataFrame
     df = pl.concat([

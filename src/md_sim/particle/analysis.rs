@@ -1,9 +1,9 @@
 
 use glam::{DVec3, DMat3};
-use std::collections::HashMap;
 
 use super::ParticleVec;
-use super::{MoleculeData, calculate_molecule_com};
+use super::calculate_molecule_com;
+use crate::md_sim::MoleculeMap;
 
 //// Calculates total system kinetic energy (Translational + Rotational)
 ///
@@ -15,7 +15,7 @@ use super::{MoleculeData, calculate_molecule_com};
 /// # Returns
 ///
 /// * `f64` - The aggregated kinetic energy of all rigid molecules in the simulation system.
-pub fn calculate_kinetic_energy(particles: &ParticleVec, molecules: &HashMap<usize, MoleculeData>) -> f64 {
+pub fn calculate_kinetic_energy(particles: &ParticleVec, molecules: &MoleculeMap) -> f64 {
     let mut total_ke = 0.0;
 
     // Translational KE: sum(0.5 * m_total * v_com^2)
@@ -48,7 +48,7 @@ pub fn calculate_kinetic_energy(particles: &ParticleVec, molecules: &HashMap<usi
 /// # Returns
 ///
 /// * `DVec3` - The integrated 3D vector representing total angular momentum across all molecules.
-pub fn calculate_total_angular_momentum(particles: &ParticleVec, molecules: &HashMap<usize, MoleculeData>) -> DVec3 {
+pub fn calculate_total_angular_momentum(particles: &ParticleVec, molecules: &MoleculeMap) -> DVec3 {
     let mut total_l = DVec3::ZERO;
 
     for mol in molecules.values() {

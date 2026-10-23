@@ -10,8 +10,7 @@ mod charge;
 use glam::DVec3;
 use crate::md_sim::particle::ParticleVec;
 use crate::md_sim::{ObjectSpec, SimulationSettings};
-use std::collections::HashMap;
-use crate::md_sim::particle::MoleculeData;
+use crate::md_sim::MoleculeMap;
 
 // Re-export the traits and key functions for easier access
 // This allows you to call forces::Force instead of forces::force::Force
@@ -190,7 +189,7 @@ pub trait Forces {
     /// ```
     fn handle_contact_separation(&mut self,
         _particles: &mut ParticleVec, 
-        _molecule_map: &HashMap<usize, MoleculeData>,
+        _molecule_map: &MoleculeMap,
         _settings: &SimulationSettings
         ) {
             

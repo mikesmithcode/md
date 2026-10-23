@@ -159,6 +159,7 @@ impl Scene {
         transparent_transforms.clear();
         transparent_colours.clear();
 
+        //added display_pos
         for (pos, rad, col) in soa_zip!(particles, [position, radius, colour]) {
             let transform = Mat4::from_translation(vec3(pos.x as f32, pos.y as f32, pos.z as f32))
                 * Mat4::from_scale(*rad as f32);

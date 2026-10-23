@@ -10,7 +10,7 @@ pub mod simulation_settings;
 
 // Re-export main Structs
 pub use self::particle::{Particle, ParticleVec, ObjectSpec, LineSpec, RectSpec, TriSpec, BoxSpec, SurfaceKinematics};
-pub use self::simulation::Simulation;
+pub use self::simulation::{Simulation, MoleculeMap};
 pub use self::simulation_settings::{SimulationSettings, Dimensions};
 //Reexport Traits
 pub use self::force::Forces;

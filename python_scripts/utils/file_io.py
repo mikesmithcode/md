@@ -84,15 +84,18 @@ def get_config(*args, **kwargs):
     # Define file paths (loads config based on the target name, e.g., 'silo.')
     config_dir = Path("input") / target_name
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_path = config_dir / "sim.json"
+    sim_config_path = config_dir / "sim.json"
+    scene_config_path = config_dir / "scene.json"
     
     print("\nget_config is copying model.json from input to your output folder\n")
     shutil.copy(str(config_dir / 'model.json'), str(output_config_dir / 'model_0000000000.json'))
     
     
     
-    # Load configuration file
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = json.load(f)
+    # Load configuration files
+    with open(sim_config_path, "r", encoding="utf-8") as f:
+        sim_config = json.load(f)
+    with open(scene_config_path, "r", encoding="utf-8") as f:
+        scene_config = json.load(f)
         
-    return config, particles_filepath, objects_filepath
+    return sim_config, scene_config, particles_filepath, objects_filepath

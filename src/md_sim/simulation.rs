@@ -21,10 +21,10 @@
 //! }
 //!
 //! impl Motion for SimUpdate {
-//!     fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>, _time: f64) {
+//!     fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings, molecule_map: &MoleculeMap, _time: f64) {
 //!         integrate_rigid_bodies(forces, torques, particles, molecule_map, settings);
 //!     }
-//!     fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
+//!     fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec, settings: &SimulationSettings, molecule_map: &MoleculeMap) {
 //!         integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings)
 //!     }
 //! }
@@ -32,7 +32,6 @@
 
 use glam::DVec3;
 use std::collections::HashMap;
-use itertools::izip;
 
 use crate::md_sim::ObjectSpec;
 use crate::md_sim::particle::MoleculeData;
@@ -43,7 +42,9 @@ use crate::md_sim::Motion;
 use crate::md_sim::InputOutput;
 use crate::md_sim::{SimulationSettings, Dimensions};
 use crate::md_viz::actions::UserAction;
+use crate::md_viz::SceneSettings;
 use crate::md_sim::motion::periodic_wrap_molecules;
+
 
 
 /// The main simulation engine orchestrating particle states, forces, boundary grids, and time integration steps.
@@ -63,7 +64,7 @@ pub struct Simulation<S>
     pub current_step: usize,
     pub cell_grid: CellGrid,
     pub time: f64,
-    pub molecule_map: HashMap<usize, MoleculeData>,
+    pub molecule_map: MoleculeMap,
 }
 
 impl<S> Simulation<S> 
@@ -233,6 +234,11 @@ impl<S> Simulation<S>
         self.objects.as_deref()
     }
 
+    pub fn update_display_pos(&mut self, scene_settings: &SceneSettings){
+        //self.sim_update.update_visuals(&mut self.particles, &self.molecule_map, scene_settings);
+
+    }
+
     // Resets the force and torque vectors to zero, resizing them if particle counts have changed.
     fn reset_forces(&mut self) {
         if self.forces.len() != self.particles.len() {
@@ -245,15 +251,17 @@ impl<S> Simulation<S>
     }
 }
 
+pub type MoleculeMap = HashMap<usize, MoleculeData>;
+
 /// Groups particle identifiers by their molecular IDs and constructs inertial mapping data for each molecule.
-fn build_molecule_map(particles: &mut ParticleVec) -> HashMap<usize, MoleculeData> {
-    // Group indices by mol_id
+fn build_molecule_map(particles: &mut ParticleVec) -> MoleculeMap {
+    // Group true array indices by mol_id using enumerate()
     let mut temp_map: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (id, &mol_id) in izip!(&particles.id, &particles.molecule_id) {
-        temp_map.entry(mol_id).or_default().push(*id);
+    for (i, &mol_id) in particles.molecule_id.iter().enumerate() {
+        temp_map.entry(mol_id).or_default().push(i);
     }
 
-    // Convert to MoleculeData - store inertia
+    // Convert to MoleculeData
     let mut molecule_map = HashMap::new();
     for (mol_id, pids) in temp_map {
         let mol_data = MoleculeData::new(pids, particles);

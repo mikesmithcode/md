@@ -17,6 +17,7 @@ use md::md_sim::force::{normal_linear, friction_cundall_strack, ContactManager};
 use md::md_sim::motion::{integrate_rigid_bodies, integrate_rigid_bodies_correct};
 use md::md_sim::utils::file_io::{SimulationContext, parse_simulation_args, get_latest_file};
 use md::md_sim::particle::MoleculeData;
+use md::md_sim::MoleculeMap;
 
 
     
@@ -148,12 +149,12 @@ impl Forces for SimUpdate{
 
 
 impl Motion for SimUpdate{
-    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>, _time:f64) {
+    fn update_motion(&self, forces: &[glam::DVec3], torques: &[DVec3],particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &MoleculeMap, _time:f64) {
         integrate_rigid_bodies(forces,torques, particles, molecule_map, settings);
     }
 
     // Optional depending on integration scheme.
-    fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &HashMap<usize, MoleculeData>) {
+    fn correct_motion(&self, forces: &[glam::DVec3], torques: &[DVec3], particles: &mut ParticleVec,settings: &SimulationSettings, molecule_map: &MoleculeMap) {
         integrate_rigid_bodies_correct(forces, torques, particles, molecule_map, settings);
     }
 }
